@@ -51,7 +51,34 @@ class FtbSlot()(implicit p: Parameters) extends XSBundle with FTBParams {
   val sharing = Bool()
   val valid   = Bool()
 
-  def setLowerStatByTarget(pc: UInt, target: UInt, isShare: Boolean): Unit = {
+
+
+
+}
+
+class FTBEntry(implicit p: Parameters) extends XSBundle with FTBParams with BPUUtils {
+  
+  /** Slot information */
+  val valid   = Bool()
+  val offset  = UInt(log2Ceil(PredictWidth).W)
+  val tarStat = UInt(TAR_STAT_SZ.W)
+  val lower   = UInt(JMP_OFFSET_LEN.W)
+  val sharing = Bool()  // means is branch
+
+  /** Partial Fall-Through Address */
+  val carry       = Bool()
+  val pftAddr     = UInt(log2Up(PredictWidth).W)
+
+  /** Jump type */ //TODO: compat with sharing
+  val isCall      = Bool()
+  val isRet       = Bool()
+  val isJalr      = Bool()
+
+  val last_may_be_rvi_call = Bool()
+
+  val always_taken = Bool()
+
+  def setLowerStatByTarget(pc: UInt, target: UInt, isShare: Boolean = false): Unit = {
     val pcHigher = pc(VAddrBits - 1, JMP_OFFSET_LEN + 1)
     val targetHigher = target(VAddrBits - 1, JMP_OFFSET_LEN + 1)
     val stat = Mux(targetHigher > pcHigher, TAR_OVF, Mux(targetHigher < pcHigher, TAR_UDF, TAR_FIT))
@@ -70,74 +97,30 @@ class FtbSlot()(implicit p: Parameters) extends XSBundle with FTBParams {
     ))
     Cat(higher, lower, 0.U(1.W))
   }
-}
 
-class FTBEntry(implicit p: Parameters) extends XSBundle with FTBParams with BPUUtils {
-  
-  
-  val valid       = Bool()
-
-  val tailSlot = new FtbSlot()
-
-  // Partial Fall-Through Address
-  val pftAddr     = UInt(log2Up(PredictWidth).W)
-  val carry       = Bool()
-
-  val isCall      = Bool()
-  val isRet       = Bool()
-  val isJalr      = Bool()
-
-  val last_may_be_rvi_call = Bool()
-
-  val always_taken = Bool()
-
-  def getSlotForBr(idx: Int): FtbSlot = this.tailSlot
-
-  def allSlotsForBr: FtbSlot = this.tailSlot
-
-
-  def setByJmpTarget(pc: UInt, target: UInt) = {
-    this.tailSlot.setLowerStatByTarget(pc, target, isShare = false)
-  }
-
-  def getTargetVec(pc: UInt): UInt = tailSlot.getTarget(pc)
-
-
-  def getOffsetVec = tailSlot.offset
   def isJal = !isJalr
   def getFallThrough(pc: UInt) = getFallThroughAddr(pc, carry, pftAddr)
-  def hasBr(offset: UInt) = tailSlot.valid && tailSlot.offset <= offset && tailSlot.sharing
 
-  def getBrMaskByOffset(offset: UInt): Bool =
-    tailSlot.valid && tailSlot.offset <= offset && tailSlot.sharing
+  def getBrMaskByOffset(offset: UInt): Bool = this.valid && this.offset <= offset && this.sharing
 
-  def getBrRecordedVec(offset: UInt): Bool =
-    tailSlot.valid && tailSlot.offset === offset && tailSlot.sharing
+  def getBrRecordedVec(offset: UInt): Bool = this.valid && this.offset === offset && this.sharing
 
-    
   def brIsSaved(offset: UInt): Bool = getBrRecordedVec(offset)
 
-  def brValids: Bool = tailSlot.valid && tailSlot.sharing
+  def brValids: Bool = this.valid && this.sharing
 
-  def noEmptySlotForNewBr: Bool = tailSlot.valid
+  def noEmptySlotForNewBr: Bool = this.valid
 
-  def newBrCanNotInsert(offset: UInt): Bool = tailSlot.valid && tailSlot.offset < offset
+  def newBrCanNotInsert(offset: UInt): Bool = this.valid && this.offset < offset
 
-  def jmpValid: Bool = tailSlot.valid && !tailSlot.sharing
+  def jmpValid: Bool = this.valid && !this.sharing
 
-  def brOffset: UInt = tailSlot.offset
-
-  def display(cond: Bool): Unit = {
-  }
-
+  def brOffset: UInt = this.offset
 }
 
 class FTBEntryWithTag(implicit p: Parameters) extends XSBundle with FTBParams with BPUUtils {
   val entry = new FTBEntry
   val tag = UInt(tagSize.W)
-  def display(cond: Bool): Unit = {
-    entry.display(cond)
-  }
 }
 
 class FTBMeta(implicit p: Parameters) extends XSBundle with FTBParams {
@@ -290,8 +273,6 @@ class FTB(parentName:String = "Unknown")(implicit p: Parameters) extends BasePre
     write_way.valid := u_valid
     write_way.bits := Mux(io.update_write_alloc, allocWriteWay, io.update_write_way)
 
-    // print hit entry info
-    Mux1H(total_hits, ftb.io.r.resp.data).display(true.B)
   } // FTBBank
 
   val ftbBank = Module(new FTBBank(numSets, numWays))
@@ -401,8 +382,6 @@ class FTB(parentName:String = "Unknown")(implicit p: Parameters) extends BasePre
   XSDebug("s2_br_taken_mask=%b, s2_real_taken_mask=%b\n",
     io.in.bits.resp_in(dupForFtb).s2.full_pred(dupForFtb).br_taken_mask, io.out.s2.full_pred(dupForFtb).real_slot_taken_mask)
   XSDebug("s2_target=%x\n", io.out.s2.target(dupForFtb))
-
-  s2_ftb_entry_dup(dupForFtb).display(true.B)
 
   XSPerfAccumulate("ftb_read_hits", RegNext(io.s0_fire(dupForFtb)) && s1_ftb_hit)
   XSPerfAccumulate("ftb_read_misses", RegNext(io.s0_fire(dupForFtb)) && !s1_ftb_hit)
