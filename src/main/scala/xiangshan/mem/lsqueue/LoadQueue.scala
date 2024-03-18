@@ -1067,6 +1067,12 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   io.lqCancelCnt := RegNext(lastCycleCancelCount + lastEnqCancel)
 
+
+  private val LQValidCount_perf = validCount
+  (0 until LoadQueueSize).foreach({ case i => {
+    XSPerfAccumulate(s"SQSize_${i}_fire", (LQValidCount_perf === i.U))
+  }})
+
   /**
     * misc
     */

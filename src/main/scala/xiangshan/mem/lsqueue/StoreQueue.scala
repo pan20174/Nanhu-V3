@@ -147,7 +147,6 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   val deqPtrExt = RegInit(VecInit((0 until StorePipelineWidth).map(_.U.asTypeOf(new SqPtr))))
   val cmtPtrExt = RegInit(VecInit((0 until CommitWidth).map(_.U.asTypeOf(new SqPtr))))
   val issuePtrExt = RegInit(0.U.asTypeOf(new SqPtr))
-  val validCounter = RegInit(0.U(log2Ceil(LoadQueueSize + 1).W))
 
   assert(cmtPtrExt.head <= enqPtrExt.head)
   assert(rdataPtrExt.head <= cmtPtrExt.head)
@@ -762,6 +761,12 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     enqPtrExt(0).value === deqPtrExt(0).value && 
     enqPtrExt(0).flag === deqPtrExt(0).flag
   )
+
+
+  private val SQValidCount_perf = validCount
+  (0 until StoreQueueSize).foreach({case i => {
+    XSPerfAccumulate(s"SQSize_${i}_fire", (SQValidCount_perf === i.U))
+  }})
 
   // perf counter
   QueuePerf(StoreQueueSize, validCount, !allowEnqueue)

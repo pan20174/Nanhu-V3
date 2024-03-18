@@ -689,6 +689,14 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
   io.full := ~Cat(entries.map(_.io.primary_ready)).andR
 
+  ///more count busy MissEntry
+  val MQCount_pref = Wire(UInt((cfg.nMissEntries).W))
+  (0 until cfg.nMissEntries).foreach({ case i => {
+    MQCount_pref(i) := PopCount(entries.map(!_.io.primary_ready))
+    XSPerfAccumulate(s"MissEntry_${i}_fire",MQCount_pref(i))
+  }})
+
+
   if (env.EnableDifftest) {
     val difftest = DifftestModule(new DiffRefillEvent)
     difftest.coreid := io.hartId
