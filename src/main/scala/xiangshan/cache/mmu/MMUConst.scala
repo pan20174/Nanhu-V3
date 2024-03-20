@@ -91,6 +91,11 @@ trait HasTlbConst extends HasXSParameter {
   val flagLen = 8
   val pteResLen = XLEN - ppnLen - 2 - flagLen
 
+  val tlbContiguous = 8
+  val sectorTlbWitdh = log2Up(tlbContiguous)
+  val sectorPpnLen = ppnLen - sectorTlbWitdh
+  val sectorVpbLeb = vpnLen - sectorTlbWitdh
+
   val sramSinglePort = true
 
   val timeOutThreshold = 10000
