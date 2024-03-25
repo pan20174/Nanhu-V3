@@ -764,7 +764,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
 
 
   private val SQValidCount_perf = validCount
-  (0 until StoreQueueSize).foreach({case i => {
+  (0 to StoreQueueSize).foreach({case i => {
     XSPerfAccumulate(s"SQSize_${i}_fire", (SQValidCount_perf === i.U))
   }})
 
