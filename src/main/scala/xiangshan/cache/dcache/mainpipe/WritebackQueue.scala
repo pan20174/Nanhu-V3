@@ -658,7 +658,7 @@ class WritebackQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModu
   XSPerfAccumulate("wb_req", io.req.fire)
 
   val perfValidCount = RegNext(PopCount(entries.map(e => e.io.block_addr.valid)))
-  (0 until cfg.nReleaseEntries).foreach({ case i => {
+  (0 to cfg.nReleaseEntries).foreach({ case i => {
     XSPerfAccumulate(s"writebackEntry_num_${i}_fire", perfValidCount === i.U)
   }})
 

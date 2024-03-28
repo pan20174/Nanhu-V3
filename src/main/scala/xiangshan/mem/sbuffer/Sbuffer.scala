@@ -836,6 +836,36 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
 
   val perf_valid_entry_count = RegNext(PopCount(VecInit(stateVec.map(s => !s.isInvalid())).asUInt))
 
+  val req_dcache_half_cacheline_mask = Wire(Vec(2,Bool()))
+  req_dcache_half_cacheline_mask.foreach(_ := false.B)
+  when(io.dcache.req.fire){
+    when(io.dcache.req.bits.mask(31,0).andR === 0.U){
+      req_dcache_half_cacheline_mask(0) := true.B
+    }
+
+    when(io.dcache.req.bits.mask(63, 32).andR === 0.U) {
+      req_dcache_half_cacheline_mask(1) := true.B
+    }
+  }
+
+  val req_dcache_quarter_cacheline_mask = Wire(Vec(4,Bool()))
+  req_dcache_quarter_cacheline_mask.foreach(_ := false.B)
+  when(io.dcache.req.fire){
+    for(i <- 0 until 3){
+     when(io.dcache.req.bits.mask((i + 1) * 16 - 1,i * 16).andR === 0.U) {
+       req_dcache_quarter_cacheline_mask(i) := true.B
+     }
+    }
+  }
+
+  XSPerfAccumulate("sbuffer_write_dcache_fire", io.dcache.req.fire)
+  XSPerfAccumulate("sbuffer_write_dcache_0_empty", req_dcache_half_cacheline_mask(0))
+  XSPerfAccumulate("sbuffer_write_dcache_1_empty", req_dcache_half_cacheline_mask(1))
+  XSPerfAccumulate("req_dcache_quarter_cacheline_mask_0", req_dcache_quarter_cacheline_mask(0))
+  XSPerfAccumulate("req_dcache_quarter_cacheline_mask_1", req_dcache_quarter_cacheline_mask(1))
+  XSPerfAccumulate("req_dcache_quarter_cacheline_mask_2", req_dcache_quarter_cacheline_mask(2))
+  XSPerfAccumulate("req_dcache_quarter_cacheline_mask_3", req_dcache_quarter_cacheline_mask(3))
+
   (0 to StoreBufferSize).foreach({case i =>
     XSPerfAccumulate(s"sbuffer_num_${i}_fire",perf_valid_entry_count === i.U)
   })
