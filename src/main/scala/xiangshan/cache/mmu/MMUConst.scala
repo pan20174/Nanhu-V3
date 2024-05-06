@@ -33,15 +33,10 @@ case class TLBParameters
   useDmode: Boolean = true,
   sameCycle: Boolean = false,
   missSameCycle: Boolean = false,
-  normalNSets: Int = 1, // when da or sa
-  normalNWays: Int = 8, // when fa or sa
-  superNSets: Int = 1,
-  superNWays: Int = 2,
-  normalReplacer: Option[String] = Some("random"),
-  superReplacer: Option[String] = Some("plru"),
-  normalAssociative: String = "fa", // "fa", "sa", "da", "sa" is not supported
-  superAssociative: String = "fa", // must be fa
-  normalAsVictim: Boolean = false, // when get replace from fa, store it into sram
+  nWays: Int = 48,
+  // To avoid issues with unexpected nSets values in FA Cache, 
+  // we hardcode nSets to 1 and restrict user modifications
+  replacer: Option[String] = Some("plru"),
   outReplace: Boolean = false,
   shouldBlock: Boolean = false, // only for perf, not support for io
   partialStaticPMP: Boolean = false, // partila static pmp result stored in entries
