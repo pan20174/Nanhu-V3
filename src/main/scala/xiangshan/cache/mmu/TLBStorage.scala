@@ -99,6 +99,7 @@ class BankedAsyncDataModuleTemplateWithDup[T <: Data](
 class TLBFA(
   sameCycle: Boolean,
   ports: Int,
+  nDups: Int,
   nSets: Int,
   nWays: Int,
   saveLevel: Boolean = false,
@@ -107,7 +108,7 @@ class TLBFA(
 )(implicit p: Parameters) extends TlbModule with HasPerfEvents with HasPerfLogging {
   require(!(sameCycle && saveLevel))
 
-  val io = IO(new TlbStorageIO(nSets, nWays, ports))
+  val io = IO(new TlbStorageIO(nSets, nWays, ports, nDups))
   io.r.req.map(_.ready := true.B)
 
   val v = RegInit(VecInit(Seq.fill(nWays)(false.B)))
@@ -135,12 +136,16 @@ class TLBFA(
     resp.valid := { if (sameCycle) req.valid else RegNext(req.valid) }
     resp.bits.hit := Cat(hitVecReg).orR
     if (nWays == 1) {
-      resp.bits.ppn(0) := entries(0).genPPN(saveLevel, req.valid)(vpn_gen_ppn)
-      resp.bits.perm(0) := entries(0).perm
+      for (d <- 0 until nDups) {
+        resp.bits.ppn(d) := entries(0).genPPN(saveLevel, req.valid)(vpn_gen_ppn)
+        resp.bits.perm(d) := entries(0).perm
+      }
       isSuperPage(i) := entries(0).isSuperPage()
     } else {
-      resp.bits.ppn(0) := ParallelMux(hitVecReg zip entries.map(_.genPPN(saveLevel, req.valid)(vpn_gen_ppn)))
-      resp.bits.perm(0) := ParallelMux(hitVecReg zip entries.map(_.perm))
+      for (d <- 0 until nDups) {
+        resp.bits.ppn(d) := ParallelMux(hitVecReg zip entries.map(_.genPPN(saveLevel, req.valid)(vpn_gen_ppn)))
+        resp.bits.perm(d) := ParallelMux(hitVecReg zip entries.map(_.perm))
+      }
       isSuperPage(i) := ParallelMux(hitVecReg zip entries.map(_.isSuperPage()))
     }
     io.r.resp_hit_sameCycle(i) := Cat(hitVec).orR
@@ -235,7 +240,7 @@ object TlbStorage {
     normalPage: Boolean,
     superPage: Boolean
   )(implicit p: Parameters) = {
-    val storage = Module(new TLBFA(sameCycle, ports, nSets, nWays, saveLevel, normalPage, superPage))
+    val storage = Module(new TLBFA(sameCycle, ports, nDups, nSets, nWays, saveLevel, normalPage, superPage))
     storage.suggestName(s"tlb_${name}_fa")
     storage.io
   }

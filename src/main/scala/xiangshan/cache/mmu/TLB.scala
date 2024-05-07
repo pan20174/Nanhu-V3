@@ -58,7 +58,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
   val sfence_bits = RegEnable(io.sfence.bits, io.sfence.valid)
   val sfence = Wire(new SfenceBundle)
   sfence.valid := sfence_valid
-  sfence.bits := sfence.bits
+  sfence.bits := sfence_bits
 
   val satp = csr_dup.head.satp
   val priv = csr_dup.head.priv
@@ -78,6 +78,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     name = "tlbfa",
     sameCycle = q.sameCycle,
     ports = Width,
+    nDups = nRespDups,
     nSets = 1,
     nWays = q.nWays,
     saveLevel = q.saveLevel,
