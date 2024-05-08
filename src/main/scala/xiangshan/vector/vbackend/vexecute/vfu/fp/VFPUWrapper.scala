@@ -6,7 +6,7 @@ import chisel3.util.experimental.decode._
 import org.chipsalliance.cde.config.Parameters
 import darecreek.exu.vfu._
 import xiangshan.Redirect
-import fudian.FloatPoint
+import fudian._
 
 class VFPUWrapper(implicit p: Parameters) extends VFuModule {
   val io = IO(new Bundle {
@@ -261,7 +261,13 @@ class VFPUWrapper(implicit p: Parameters) extends VFuModule {
   val ele64 = Wire(UInt(64.W))
   ele64 := 0.U
   when(fire) {
-    when(vfredmax_vs || vfredmin_vs) {
+    when((vfredosum_vs || vfredusum_vs || vfwredosum_vs || vfwredusum_vs) && (frm =/= RDN)) {
+      when(eew.is32) {
+        ele64 := Cat(~0.U(33.W), 0.U(31.W))
+      }.otherwise {
+        ele64 := Cat(1.U(1.W), 0.U(63.W))
+      }
+    }.elsewhen(vfredmax_vs || vfredmin_vs) {
       when(eew.is32) {
         ele64 := Cat(0.U(32.W), FloatPoint.defaultNaNUInt(VFPU.f32.expWidth, VFPU.f32.precision))
       }.otherwise {
@@ -582,7 +588,7 @@ class VFPUWrapper(implicit p: Parameters) extends VFuModule {
   val cmp_fflag = Wire(UInt(5.W))
   val old_cmp_fflag = RegInit(0.U(5.W))
 
-  when(flush) {
+  when(flush || vs1_zero_bypass) {
     red_fflag := 0.U
   }.elsewhen(output_en && io.out.valid && io.out.ready && (io.out.bits.uop.sysUop.robIdx === currentRobIdx)) {
     red_fflag := 0.U
@@ -607,7 +613,7 @@ class VFPUWrapper(implicit p: Parameters) extends VFuModule {
   val red_en = RegInit(false.B)
   val flush_fpu_cycle = RegInit(0.U(4.W))
 
-  when(fpu_red && fire) {
+  when(flush || (fpu_red && fire) || !io.in.valid) {
     flush_fpu_cycle := 0.U
   }.elsewhen(fpu_red && io.in.valid && io.out.ready && !red_uop_busy) {
     when(flush_fpu_cycle === 9.U) {
@@ -617,7 +623,9 @@ class VFPUWrapper(implicit p: Parameters) extends VFuModule {
     }
   }
 
-  when((flush_fpu_cycle === 9.U) && io.out.ready) {
+  when(flush) {
+    red_en := false.B
+  }.elsewhen((flush_fpu_cycle === 9.U) && io.in.valid && io.out.ready) {
     red_en := true.B
   }.elsewhen(fpu_red && fire) {
     red_en := false.B

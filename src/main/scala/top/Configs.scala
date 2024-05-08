@@ -245,7 +245,7 @@ class WithNKBL2
         enablePerf = false,
         hasMbist = p.hasMbist,
         hasShareBus = p.hasShareBus,
-        prefetch = Some(coupledL2.prefetch.HyperPrefetchParams()),
+        prefetch = Some(coupledL2.prefetch.PrefetchReceiverParams()),
         /*
         del L2 prefetche recv option, move into: prefetch =  PrefetchReceiverParams
         prefetch options:

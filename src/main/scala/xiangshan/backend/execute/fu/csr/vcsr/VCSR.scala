@@ -26,6 +26,7 @@ class VCSRWithVtypeRenameIO(implicit p: Parameters) extends VectorBaseBundle {
   }
   val debug_vtype = Input(UInt(XLEN.W))
   val debug_vl = Input(UInt(XLEN.W))
+  val vlUpdate = Input(Valid(UInt(log2Ceil(VLEN + 1).W)))
 }
 
 class VCSRWithRobIO(implicit p: Parameters) extends VectorBaseBundle {
@@ -57,21 +58,19 @@ class VSetFu(implicit p: Parameters) extends XSModule with HasXSParameter {
     val vtypeNew      = Output(UInt(XLEN.W))
     val vlNew         = Output(UInt(XLEN.W))
     val wbToCtrlValid = Output(Bool())
+    val vlOld         = Input(UInt(log2Ceil(VLEN + 1).W))
   })
   /** ********************************************************************************************
    * 1.vsetivli
    * 2.vsetvli with src0 === x0 and dest =/= x0
-   * 3.vsetvl with src0 === x0 and dest =/= x0
-   * 4.vsetvli and vsetvl, with src0 === x0 and dest === x0, oldVl has been writebacked
-   * 5.vsetvli and vsetvl, with src0 === x0 and dest === x0, oldVl has not been writebacked
-   * 6.other vsetvl and vsetvli
+   * 3.need old vl
+   * 4.other vsetvl and vsetvli
    *
    * 1: fuOpType === vsetivli
-   * 2 and 3: (fuOpType === vsetvli || fuOpType === vsetvl) && imm(19, 11).andR
-   * 4: (fuOpType === vsetvli || fuOpType === vsetvl) && imm(19) && !(imm(18, 11).andR), avl is in imm(18, 11)
-   * 5 and 6: (fuOpType === vsetvli || fuOpType === vsetvl) && !imm(19), avl is in src0
+   * 2: fuOpType === vsetvl && imm(19, 11).andR
+   * 3: (fuOpType === vsetvli || fuOpType === vsetvl) && imm(19) && !imm(19, 11).andR
    *
-   * 1, 2 should bypass to waitqueue; 3, 4, 5, 6 should wait for writeback from csr.
+   * 1, 2 should bypass to waitqueue; 3, 4 should wait for writeback from csr.
    * ******************************************************************************************* */
   private val imm     = io.in.bits.uop.ctrl.imm
   private val uimm    = imm(4, 0)
@@ -79,27 +78,29 @@ class VSetFu(implicit p: Parameters) extends XSModule with HasXSParameter {
   private val zimm_i  = imm(10, 0)
 
   private val opType = io.in.bits.uop.ctrl.fuOpType
-  private val vlBits = log2Up(VLEN) + 1
 
   private val type1 = opType === CSROpType.vsetivli
   private val type2 = opType === CSROpType.vsetvli && io.in.bits.uop.ctrl.imm(19, 11).andR
-  private val type3 = opType === CSROpType.vsetvl && io.in.bits.uop.ctrl.imm(19, 11).andR
-  private val type4 = (opType === CSROpType.vsetvl || opType === CSROpType.vsetvli) && imm(19).asBool && !(imm(18, 11).andR)
-  private val type56 = (opType === CSROpType.vsetvl || opType === CSROpType.vsetvli) && !imm(19).asBool
+  private val type3 = (opType === CSROpType.vsetvl || opType === CSROpType.vsetvli) && imm(19).asBool && !(imm(18, 11).andR)
+  private val type4 = !(type1 || type2 || type3)
 
   private val avl = Wire(UInt(XLEN.W))
 
   when(type1){
     avl := ZeroExt(uimm, XLEN)
-  }.elsewhen(type4){
-    avl := ZeroExt(io.in.bits.uop.ctrl.imm(vlBits + 10, 11), XLEN)
+  }.elsewhen(type3){
+    avl := ZeroExt(io.vlOld, XLEN)
   }.otherwise{
     avl := io.in.bits.src(0)
   }
 
-  private def GenVtype(in:UInt):VtypeStruct = {
+  private def GenVtype(in: UInt, isReg: Boolean):VtypeStruct = {
     val res = Wire(new VtypeStruct)
-    res.vill := in(2, 0) === 4.U || in(5).asBool
+    if(isReg) {
+      res.vill := in(2, 0) === 4.U || in(5).asBool || in(XLEN-1)
+    } else {
+      res.vill := in(2, 0) === 4.U || in(5).asBool
+    }
     res.reserved := 0.U
     res.vma := Mux(res.vill, 0.U, in(7))
     res.vta := Mux(res.vill, 0.U, in(6))
@@ -107,9 +108,9 @@ class VSetFu(implicit p: Parameters) extends XSModule with HasXSParameter {
     res.vlmul := Mux(res.vill, 0.U, in(2, 0))
     res
   }
-  private val iiVtype = GenVtype(zimm_ii)
-  private val riVtype = GenVtype(zimm_i)
-  private val rrVtype = GenVtype(io.in.bits.src(1))
+  private val iiVtype = GenVtype(zimm_ii, false)
+  private val riVtype = GenVtype(zimm_i, false)
+  private val rrVtype = GenVtype(io.in.bits.src(1), true)
   private val vtype = MuxCase(0.U.asTypeOf(new VtypeStruct), Seq(
     (opType === CSROpType.vsetivli) -> iiVtype,
     (opType === CSROpType.vsetvli) -> riVtype,
@@ -133,12 +134,12 @@ class VSetFu(implicit p: Parameters) extends XSModule with HasXSParameter {
   private val vl = Wire(UInt(log2Ceil(VLEN + 1).W))
   when(vtype.vill){
     vl := 0.U
-  }.elsewhen(type2 || type3 || avl > vlmax){
+  }.elsewhen(type2 || avl > vlmax){
     vl := vlmax
   }.otherwise{
     vl := avl
   }
-  private val wbToCtrlCond = type3 || type4 || type56
+  private val wbToCtrlCond = type3 || type4
   io.wbToCtrlValid := io.in.valid && wbToCtrlCond
   io.vtypeNew := Cat(vtype.vill, vtype.vma, vtype.vta, vtype.vsew, vtype.vlmul)
   io.vlNew := vl

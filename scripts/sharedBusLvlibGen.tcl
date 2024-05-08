@@ -10,6 +10,32 @@ proc bit {x} {
     return $num
 }
 
+proc d2b {d width} {
+    set b ""
+    while { $d != 0 } {
+        set b "[expr $d % 2]$b"
+        set d [expr $d / 2]
+        set width [expr $width - 1]
+    }
+    while { $width != 0 } {
+        set b "0$b"
+        set width [expr $width - 1]
+    }
+    return $b
+}
+
+proc buswidth {arg} {
+    if {[regexp {\[([0-9]*):([0-9]*)\]} $arg]} {
+       regexp {\[([0-9]*):([0-9]*)\]} $arg bus msb lsb
+       set width [expr $msb - $lsb + 1]
+    } elseif {[regexp {\[([0-9]*)\]} $arg]} {
+       set width 1
+    } else {
+       set width 0
+    }
+    return $width
+}
+
 
 set file_name [lindex $argv 0]
 set file_source [open $file_name r+]
@@ -47,12 +73,18 @@ while { [gets $file_source line] >= 0 } {
             set arr_mem($num_line,$count) [file rootname [lindex $list_temp $count]]
             incr count
         }
-        regexp {([0-9]*)p([0-9]*)x([0-9]*)m([0-9]*)(.*)} $arr_mem($num_line,1) sum port_num depth width mask multicycle
-        set selectOH $arr_mem($num_line,5)
+        set logical_mem    $arr_mem($num_line,1)
+        set bitwrite       $arr_mem($num_line,4)
+        set bankaddr_width [buswidth $arr_mem($num_line,5)]
+        set selectOH       $arr_mem($num_line,6)
+        set physical_mem   $arr_mem($num_line,8)
+        regexp {([0-9]*)p([0-9]*)x([0-9]*)m([0-9]*)(.*)} $logical_mem sum port_num depth width mask multicycle
         set rambits [bit $depth]
+        set rambits [expr $rambits + $bankaddr_width]
+        set depth   [expr $depth * (2 ** $bankaddr_width)]
         set mask_bits [expr $width / $mask]
         set width [expr $width / $selectOH]
-        puts $file_sink_log "MemoryTemplate(mbist_$arr_mem($num_line,1)) \{"
+        puts $file_sink_log "MemoryTemplate(mbist_$logical_mem) \{"
         puts $file_sink_log "  Algorithm : SMarchChkbvcd;"
         if {[regexp {multicycle} $multicycle mtc]} {
            puts $file_sink_log "  OperationSet : SyncWRVcd_ReadCyclesPerOp2_Setup0_WriteCyclesPerOp2;"
@@ -70,7 +102,18 @@ while { [gets $file_source line] >= 0 } {
                     puts $file_sink_log "  Port([lindex $line 0]\[[expr $rambits - 1]:0\]) \{"
                 } elseif {[regexp {.*mask.*} [lindex $line 0]] && $mask_bits != 1} {
                     if {$selectOH >=  $mask_bits} {
-                       puts $file_sink_log "  Port([lindex $line 0]) \{"
+                       set data_joint 1
+                       if {[regexp {([0-9]*)x([0-9]*)} $physical_mem]} {
+                         regexp {([0-9]*)x([0-9]*)} $physical_mem sum cell_depth cell_width
+                         if {$cell_width < $width} {
+                           set data_joint [expr int(ceil(double($width)/$cell_width))]
+                         }
+                       }
+                       if {$data_joint > 1} {
+                         puts $file_sink_log "  Port([lindex $line 0]\[[expr $data_joint - 1]:0\]) \{"
+                       } else {
+                         puts $file_sink_log "  Port([lindex $line 0]) \{"
+                       }
                     } else {
                        set mask_bits [expr $mask_bits / $selectOH]
                        puts $file_sink_log "  Port([lindex $line 0]\[[expr $mask_bits - 1]:0\]) \{"
@@ -95,7 +138,18 @@ while { [gets $file_source line] >= 0 } {
                     puts $file_sink_log "  Port([lindex $line 0]\[[expr $rambits - 1]:0\]) \{"                
                 } elseif {[regexp {.*mask.*} [lindex $line 0]] && $mask_bits != 1} {
                     if {$selectOH >=  $mask_bits} {
-                       puts $file_sink_log "  Port([lindex $line 0]) \{"                
+                       set data_joint 1
+                       if {[regexp {([0-9]*)x([0-9]*)} $physical_mem]} {
+                         regexp {([0-9]*)x([0-9]*)} $physical_mem sum cell_depth cell_width
+                         if {$cell_width < $width} {
+                           set data_joint [expr int(ceil(double($width)/$cell_width))]
+                         }
+                       }
+                       if {$data_joint > 1} {
+                         puts $file_sink_log "  Port([lindex $line 0]\[[expr $data_joint - 1]:0\]) \{"
+                       } else {
+                         puts $file_sink_log "  Port([lindex $line 0]) \{"
+                       }
                     } else {
                        set mask_bits [expr $mask_bits / $selectOH]
                        puts $file_sink_log "  Port([lindex $line 0]\[[expr $mask_bits - 1]:0\]) \{"                
@@ -125,8 +179,8 @@ while { [gets $file_source line] >= 0 } {
         puts $file_sink_log "      CountRange \[0:[expr [expr $depth / 4] - 1]\];"
         puts $file_sink_log "    \}"
         puts $file_sink_log "  \}"
-        if {[regexp {([0-9]*)x([0-9]*)} $arr_mem($num_line,7)]} {
-           regexp {([0-9]*)x([0-9]*)} $arr_mem($num_line,7) sum cell_depth cell_width
+        if {[regexp {([0-9]*)x([0-9]*)} $physical_mem]} {
+           regexp {([0-9]*)x([0-9]*)} $physical_mem sum cell_depth cell_width
            set cell_rambits [bit $cell_depth] 
            set cell_sum [expr $cell_depth * $cell_width]
            set sum [expr $width * $depth]
@@ -147,8 +201,8 @@ while { [gets $file_source line] >= 0 } {
                  }
                  set num_temp 0
                  while {$num_temp < $num_inst} {
-                    set temp_code [format "%X" $num_temp]
-                    puts $file_sink_log "    code($decodebits'h$temp_code) : u_sram_$num_temp;"
+                    set temp_code [d2b $num_temp $decodebits]
+                    puts $file_sink_log "    code($decodebits'b$temp_code) : u_sram_$num_temp;"
                     incr num_temp
                  }
                  puts $file_sink_log "  \}"
@@ -166,7 +220,7 @@ while { [gets $file_source line] >= 0 } {
                  }
                  set num_temp 0
                  while {$num_temp < $addr_joint} {
-                    set temp_code [format "%X" $num_temp]
+                    set temp_code [d2b $num_temp $decodebits]
                     set index [expr $num_temp * $data_joint]
                     set inst_col u_sram_$index
                     set temp 1
@@ -184,7 +238,7 @@ while { [gets $file_source line] >= 0 } {
            set num_temp 0
            while {$num_temp < $num_inst} {
                puts $file_sink_log "  PhysicalToLogicalMapping(u_sram_$num_temp) \{"
-               puts $file_sink_log "  MemoryTemplate : $arr_mem($num_line,7);"
+               puts $file_sink_log "  MemoryTemplate : $physical_mem;"
                puts $file_sink_log "  PinMappings \{"
                if {$pvs_joint > 1} {
                   set mod [expr $num_temp % $pvs_joint]
@@ -212,7 +266,7 @@ while { [gets $file_source line] >= 0 } {
                } else {
                    puts $file_sink_log "    PhysicalMemoryAddress\[[expr $cell_rambits - 1]:0\]      : LogicalMemoryAddress\[[expr $cell_rambits - 1]:0\];"            
                }
-               if { $arr_mem($num_line,4) == "true"} {
+               if { $bitwrite == "true"} {
                   if {$pvs_joint > 1} {
                      set num_maskbits 0
                      set mod [expr $num_temp % $pvs_joint]
@@ -258,7 +312,12 @@ while { [gets $file_source line] >= 0 } {
            close $file_sink_log
            if {$file_sink_log_name_forward == $file_sink_log_name} {
            } else {
-              puts "$file_sink_log_name is generated successfully"
+              if {([expr $num_inst * $cell_width / $addr_joint] == $width) || ([expr $num_inst * $width / $addr_joint] == $cell_width)} {
+                puts "$file_sink_log_name is generated successfully"
+              } else {
+                puts "$file_sink_log_name is generated completely"
+                puts "Warning!! LogicalDataBits not fully Mapping To PhysicalDataBits in $file_sink_log_name, Please Confirm Mapping matches the Actual Situation"
+              }
               set file_sink_log_name_forward $file_sink_log_name
            }
         } else {
@@ -283,23 +342,27 @@ if {$err_flag == "true"} {
    puts ""
 }
 
-set code_num [bit $arr_mem([expr $num_line - 1],2)]
+set intf_name  $arr_mem(1,0)
+set intf_addr  $arr_mem(1,1)
+set intf_data  $arr_mem(1,2)
+set intf_array $arr_mem(1,3)
+set intf_be    $arr_mem(1,4)
 set file_sink_clu [open $file_sink_clu_name w+]
-puts $file_sink_clu "MemoryClusterTemplate($arr_mem(1,0)) \{"
-puts $file_sink_clu "  MemoryBistInterface($arr_mem(1,0)) \{"
+puts $file_sink_clu "MemoryClusterTemplate($intf_name) \{"
+puts $file_sink_clu "  MemoryBistInterface($intf_name) \{"
 set count 3
 set list_rf_port "{mbist_addr WriteAddress Input} {mbist_addr_rd Address Input} {mbist_indata Data Input} {mbist_outdata Data Output} {mbist_readen ReadEnable Input} {mbist_writeen WriteEnable Input} {mbist_array MemoryGroupAddress Input} {mbist_be GroupWriteEnable Input} {mbist_all ConfigurationData Input}"
 set list_sram_port "{mbist_addr Address Input} {mbist_indata Data Input} {mbist_outdata Data Output} {mbist_readen ReadEnable Input} {mbist_writeen WriteEnable Input} {mbist_array MemoryGroupAddress Input} {mbist_be GroupWriteEnable Input} {mbist_all ConfigurationData Input}"
 if {[regexp {RF} $file_sink_clu_name]} {
     foreach line $list_rf_port {
         if {[regexp {.*data.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,2) - 1]:0\]) \{"                
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_data - 1]:0\]) \{"                
         } elseif {[regexp {.*addr.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,1) - 1]:0\]) \{"                
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_addr - 1]:0\]) \{"                
         } elseif {[regexp {.*mbist_be.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,4) - 1]:0\]) \{"                
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_be - 1]:0\]) \{"                
         } elseif {[regexp {.*mbist_array.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,3) - 1]:0\]) \{"
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_array - 1]:0\]) \{"
         } else {
             puts $file_sink_clu "  Port([lindex $line 0]) \{"
         }
@@ -310,13 +373,13 @@ if {[regexp {RF} $file_sink_clu_name]} {
 } else {
     foreach line $list_rf_port {
         if {[regexp {.*data.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,2) - 1]:0\]) \{"                
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_data - 1]:0\]) \{"                
         } elseif {[regexp {.*addr.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,1) - 1]:0\]) \{"                
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_addr - 1]:0\]) \{"                
         } elseif {[regexp {.*mbist_be.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,4) - 1]:0\]) \{"                
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_be - 1]:0\]) \{"                
         } elseif {[regexp {.*mbist_array.*} [lindex $line 0]]} {
-            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $arr_mem(1,3) - 1]:0\]) \{"
+            puts $file_sink_clu "  Port([lindex $line 0]\[[expr $intf_array - 1]:0\]) \{"
         } else {
             puts $file_sink_clu "  Port([lindex $line 0]) \{"
         }
@@ -329,25 +392,35 @@ puts $file_sink_clu "      // \[end\]   : Interface port functions }}}"
 puts $file_sink_clu "    MemoryGroupAddressDecoding(GroupAddress) {"
 set count 3
 while {$count < $num_line} {
-    set temp_code [format "%X" $arr_mem($count,2)]
-    puts $file_sink_clu "        code($code_num'h$temp_code)   : $arr_mem($count,0);"
+    set logical_label  $arr_mem($count,0)
+    set logical_array  $arr_mem($count,2)
+    set temp_code    [d2b $logical_array $intf_array]
+    set temp_codehex [format "%X" $logical_array]
+    puts $file_sink_clu "        code($intf_array'b$temp_code)   : $logical_label; //$intf_array'h$temp_codehex"
     incr count
 }
 puts $file_sink_clu "    }"
 set count 3
 set mtc_flag false
 while {$count < $num_line} {
-    regexp {([0-9]*)p([0-9]*)x([0-9]*)m([0-9]*)(.*)} $arr_mem($count,1) sum port_num depth width mask multicycle
-    set selectOH $arr_mem($count,5)
+    set logical_label  $arr_mem($count,0)
+    set logical_mem    $arr_mem($count,1)
+    set pipdepth       $arr_mem($count,3)
+    set bitwrite       $arr_mem($count,4)
+    set bankaddr_width [buswidth $arr_mem($count,5)]
+    set selectOH       $arr_mem($count,6)
+    set physical_mem   $arr_mem($count,8)
+    regexp {([0-9]*)p([0-9]*)x([0-9]*)m([0-9]*)(.*)} $logical_mem sum port_num depth width mask multicycle
     set rambits [bit $depth]
+    set rambits [expr $rambits + $bankaddr_width]
     set mask_bits [expr $width / $mask]
     set width [expr $width / $selectOH]
     if {[regexp {multicycle} $multicycle mtc]} {
        set mtc_flag true
     }
-    puts $file_sink_clu "    LogicalMemoryToInterfaceMapping($arr_mem($count,0)) {"
-    puts $file_sink_clu "      MemoryTemplate : mbist_$arr_mem($count,1);"
-    puts $file_sink_clu "      PipelineDepth : $arr_mem($count,3);"
+    puts $file_sink_clu "    LogicalMemoryToInterfaceMapping($logical_label) {"
+    puts $file_sink_clu "      MemoryTemplate : mbist_$logical_mem;"
+    puts $file_sink_clu "      PipelineDepth : $pipdepth;"
     puts $file_sink_clu "      PinMappings {"
     puts $file_sink_clu "        LogicalMemoryDataInput\[[expr $width - 1]:0\]        : InterfaceDataInput\[[expr $width - 1]:0\];"
     puts $file_sink_clu "        LogicalMemoryDataOutput\[[expr $width - 1]:0\]       : InterfaceDataOutput\[[expr $width - 1]:0\];"
@@ -357,9 +430,20 @@ while {$count < $num_line} {
     } else {
        puts $file_sink_clu "        LogicalMemoryAddress\[[expr $rambits - 1]:0\]          : InterfaceAddress\[[expr $rambits - 1]:0\];"
     }
-    if {$arr_mem($count,4) == "true"} {
+    if {$bitwrite == "true"} {
        if {$selectOH >=  $mask_bits} {
-          puts $file_sink_clu "        LogicalMemoryGroupWriteEnable\[0\]  : InterfaceGroupWriteEnable\[0\];"
+          set data_joint 1
+          if {[regexp {([0-9]*)x([0-9]*)} $physical_mem]} {
+            regexp {([0-9]*)x([0-9]*)} $physical_mem sum cell_depth cell_width
+            if {$cell_width < $width} {
+              set data_joint [expr int(ceil(double($width)/$cell_width))]
+            }
+          }
+          if {$data_joint > 1} {
+            puts $file_sink_clu "        LogicalMemoryGroupWriteEnable\[[expr $data_joint - 1]:0\]  : InterfaceGroupWriteEnable\[[expr $data_joint - 1]:0\];"
+          } else {
+            puts $file_sink_clu "        LogicalMemoryGroupWriteEnable\[0\]  : InterfaceGroupWriteEnable\[0\];"
+          }
        } else {
           set mask_bits [expr $mask_bits / $selectOH]
           puts $file_sink_clu "        LogicalMemoryGroupWriteEnable\[[expr $mask_bits - 1]:0\]  : InterfaceGroupWriteEnable\[[expr $mask_bits - 1]:0\];"

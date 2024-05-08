@@ -30,6 +30,7 @@ import xiangshan.backend.writeback.{WriteBackSinkNode, WriteBackSinkParam, Write
 import xiangshan.frontend.Ftq_RF_Components
 import xiangshan.vector.HasVectorParameters
 import xiangshan._
+import xiangshan.backend.decode.ImmUnion
 import xiangshan.backend.execute.exu.ExuType
 import xiangshan.vector.vbackend.vregfile.{MoveReq, VectorRfReadPort, VrfHelper}
 import xs.utils.{DelayN, SignExt, ZeroExt}
@@ -47,24 +48,24 @@ class AddrGen(implicit p:Parameters) extends XSModule{
     val stride = Input(UInt(XLEN.W))
     val offset = Input(UInt(VLEN.W))
     val target = Output(UInt(XLEN.W))
+    val imm = Output(UInt(ImmUnion.maxLen.W))
   })
   private val isStride = io.uop.ctrl.srcType(1) === SrcType.reg
   private val sew = io.uop.vctrl.eew(1)
-  private val elmOff = io.uop.elmIdx << io.uop.vctrl.eew(2)
-  private val rawOffset = VrfHelper.extractElement(io.uop.segIdx, io.offset, sew, VLEN, XLEN)
-  private val offset = MuxCase(0.U(VAddrBits.W), Seq(
-    (sew === 0.U) -> ZeroExt(rawOffset(7, 0), VAddrBits),
-    (sew === 1.U) -> ZeroExt(rawOffset(15, 0), VAddrBits),
-    (sew === 2.U) -> ZeroExt(rawOffset(31, 0), VAddrBits),
-    (sew === 3.U) -> rawOffset(VAddrBits - 1, 0),
-  ))
-  private val offsetTarget = io.base(VAddrBits - 1, 0) + offset + elmOff
 
-  private val stride = Cat(io.stride(XLEN - 1), io.stride(VAddrBits - 1, 0))
-  private val strideOffset = (stride.asSInt * io.uop.segIdx)(VAddrBits - 1, 0).asUInt
-  private val strideTarget = io.base(VAddrBits - 1, 0) + strideOffset + elmOff
+  private val rawOffset = VrfHelper.extractElement(io.uop.segIdx, io.offset, sew, VLEN, XLEN)
+  private val offsetTarget = MuxCase(0.U(XLEN.W), Seq(
+    (sew === 0.U, io.base + ZeroExt(rawOffset(7, 0), XLEN)),
+    (sew === 1.U, io.base + ZeroExt(rawOffset(15, 0), XLEN)),
+    (sew === 2.U, io.base + ZeroExt(rawOffset(31, 0), XLEN)),
+    (sew === 3.U, io.base + rawOffset),
+  ))
+
+  private val strideOffset = (io.stride.asSInt * io.uop.segIdx)(XLEN - 1, 0)
+  private val strideTarget = io.base + strideOffset
 
   io.target := Mux(isStride, strideTarget, offsetTarget)
+  io.imm := (io.uop.elmIdx << io.uop.vctrl.eew(2)(1, 0)).asUInt
 }
 
 class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends LazyModule with HasXSParameter with HasVectorParameters{
@@ -240,7 +241,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
               addrGen.io.offset := offsetReg
               addrGen.io.uop := uopReg
               exuInBundle.src(0) := addrGen.io.target
-              exuInBundle.uop.ctrl.imm := 0.U
+              exuInBundle.uop.ctrl.imm := addrGen.io.imm
             }
           }.otherwise {
             issueBundle.src(0) := intRf.io.read(intRfReadIdx).data

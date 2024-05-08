@@ -99,7 +99,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   pmp_req_vec(3) <> ifu.io.pmp.req
 
   for (i <- pmp_check.indices) {
-    pmp_check(i).apply(tlbCsr.priv.imode, pmp.io.pmp, pmp.io.pma, pmp_req_vec(i))
+    pmp_check(i).apply(tlbCsr.priv.imode, tlbCsr.satp.mode, pmp.io.pmp, pmp.io.pma, pmp_req_vec(i))
   }
   icache.io.pmp(0).resp <> pmp_check(0).resp
   icache.io.pmp(1).resp <> pmp_check(1).resp
@@ -163,6 +163,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
 
   icache.io.csr_pf_enable     := RegNext(csrCtrl.l1I_pf_enable)
   icache.io.csr_parity_enable := RegNext(csrCtrl.icache_parity_enable)
+  icache.io.backend_redirect  := io.backend.toFtq.redirect.valid
 
   //IFU-Ibuffer
   ibuffer.io.in <> ifu.io.toIbuffer

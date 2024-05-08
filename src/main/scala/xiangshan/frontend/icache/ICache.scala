@@ -488,6 +488,8 @@ class ICacheIO(implicit p: Parameters) extends ICacheBundle
   /* CSR control signal */
   val csr_pf_enable = Input(Bool())
   val csr_parity_enable = Input(Bool())
+
+  val backend_redirect  = Input(Bool())
 }
 
 class ICache(val parentName:String = "Unknown")(implicit p: Parameters) extends LazyModule with HasICacheParameters {
@@ -565,6 +567,8 @@ class ICacheImp(outer: ICache) extends LazyModuleImp(outer) with HasICacheParame
 
   mainPipe.io.csr_parity_enable := io.csr_parity_enable
 
+  mainPipe.io.flush := io.fencei.start || io.backend_redirect
+
   if(cacheParams.hasPrefetch){
     prefetchPipe.io.fromFtq <> io.prefetch
     when(!io.csr_pf_enable){
@@ -630,8 +634,8 @@ class ICacheImp(outer: ICache) extends LazyModuleImp(outer) with HasICacheParame
   }
 
   val perfEvents = Seq(
-    ("icache_miss_cnt  ", false.B),
-    ("icache_miss_penalty", BoolStopWatch(start = false.B, stop = false.B || false.B, startHighPriority = true)),
+    ("icache_miss_cnt  ", bus.a.fire),
+    ("icache_miss_penalty", BoolStopWatch(start = bus.a.fire, stop = bus.d.fire, startHighPriority = true)),
   )
   generatePerfEvent()
 

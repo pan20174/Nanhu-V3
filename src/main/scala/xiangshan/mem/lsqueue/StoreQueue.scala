@@ -220,6 +220,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val index = io.enq.req(i).bits.sqIdx.value
     when (canEnqueue(i) && !enqCancel(i)) {
       uop(index).robIdx := io.enq.req(i).bits.robIdx
+      uop(index).uopIdx := io.enq.req(i).bits.uopIdx
       allocated(index) := true.B
       datavalid(index) := false.B
       addrvalid(index) := false.B
@@ -269,9 +270,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val validCond = io.storeIn(i).valid && !io.storeIn(i).bits.uop.robIdx.needFlush(io.brqRedirect)
     d.bits.robIdx := RegEnable(io.storeIn(i).bits.uop.robIdx, validCond)
     d.bits.vaddr := RegEnable(io.storeIn(i).bits.vaddr, validCond)
-    d.bits.segIdx := RegEnable(io.storeIn(i).bits.uop.segIdx, validCond)
-    d.bits.sqIdx := RegEnable(io.storeIn(i).bits.uop.sqIdx, validCond)
-    d.bits.lqIdx := DontCare
+    d.bits.uopIdx := RegEnable(io.storeIn(i).bits.uop.uopIdx, validCond)
     d.bits.eVec := io.storeInRe(i).uop.cf.exceptionVec
     d.valid := RegNext(validCond & !io.storeIn(i).bits.miss, false.B)// miss will trigger replay, dont record excpt.
   })
@@ -282,9 +281,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   exceptionGen.io.mmioUpdate.bits.eVec := mmioEvec
   exceptionGen.io.mmioUpdate.bits.robIdx := io.rob
   exceptionGen.io.mmioUpdate.bits.vaddr := io.uncache.req.bits.addr
-  exceptionGen.io.mmioUpdate.bits.segIdx := uop(deqPtr).segIdx
-  exceptionGen.io.mmioUpdate.bits.sqIdx := deqPtrExt(0)
-  exceptionGen.io.mmioUpdate.bits.lqIdx := DontCare
+  exceptionGen.io.mmioUpdate.bits.uopIdx := uop(deqPtr).uopIdx
 
   exceptionGen.io.clean := false.B
 
@@ -315,7 +312,8 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     when (io.storeIn(i).valid) {
       val addr_valid = !io.storeIn(i).bits.miss
       addrvalid(stWbIndex) := addr_valid //!io.storeIn(i).bits.mmio
-      active(stWbIndex) := io.storeIn(i).bits.uop.loadStoreEnable
+      active(stWbIndex) := io.storeIn(i).bits.uop.loadStoreEnable &&
+        !(exceptionInfo.valid && exceptionInfo.bits.Deactivate(io.storeIn(i).bits.uop.robIdx, io.storeIn(i).bits.uop.uopIdx))
       v_pAddrModule.io.waddr(i) := stWbIndex
       v_pAddrModule.io.wdata_p (i) := io.storeIn(i).bits.paddr
       v_pAddrModule.io.wdata_v (i) := io.storeIn(i).bits.vaddr
@@ -325,7 +323,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
 
       uop(stWbIndex).ctrl := io.storeIn(i).bits.uop.ctrl
       uop(stWbIndex).mergeIdx := io.storeIn(i).bits.uop.mergeIdx
-      uop(stWbIndex).uopIdx := io.storeIn(i).bits.uop.uopIdx
+      uop(stWbIndex).segIdx := io.storeIn(i).bits.uop.segIdx
       uop(stWbIndex).uopNum := io.storeIn(i).bits.uop.uopNum
       uop(stWbIndex).vctrl := io.storeIn(i).bits.uop.vctrl
       uop(stWbIndex).debugInfo := io.storeIn(i).bits.uop.debugInfo
@@ -491,7 +489,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   switch(mmio_state) {
     is(s_idle) {
       when(RegNext(readyToLeave(deqPtr) && deqMmio && allocated(deqPtr) && allvalid(deqPtr))) {
-        mmio_state := s_req_mmio
+        mmio_state := Mux(active(deqPtr), s_req_mmio, s_wb_mmio)
       }
     }
     is(s_req_mmio) {
@@ -554,7 +552,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   // (4) writeback to ROB (and other units): mark as writebacked
   val defaultEVec = Wire(ExceptionVec())
   defaultEVec.foreach(_ := false.B)
-  val excptHit = exceptionInfo.valid && deqUop.robIdx === exceptionInfo.bits.robIdx && deqUop.segIdx === exceptionInfo.bits.segIdx
+  val excptHit = exceptionInfo.valid && deqUop.robIdx === exceptionInfo.bits.robIdx && deqUop.uopIdx === exceptionInfo.bits.uopIdx
   io.mmioStout.valid := (mmio_state === s_wb_mmio)
   io.mmioStout.bits.uop := deqUop
   io.mmioStout.bits.uop.cf.exceptionVec := Mux(excptHit, exceptionInfo.bits.eVec, defaultEVec)
@@ -579,8 +577,10 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     */
   private val readyToDeq = Reg(Vec(StoreQueueSize, Bool()))
   for (i <- 0 until StoreQueueSize) {
-    readyToDeq(i) := readyToLeave(i) & writebacked_sta(i) & writebacked_std(i) & allocated(i) &
-      !(uop(i).robIdx === exceptionInfo.bits.robIdx && exceptionInfo.valid)
+    readyToDeq(i) := readyToLeave(i) & writebacked_sta(i) & writebacked_std(i) & allocated(i)
+    when(exceptionInfo.valid && allocated(i) && exceptionInfo.bits.Deactivate(uop(i).robIdx, uop(i).uopIdx)) {
+      active(i) := false.B
+    }
   }
   private val cmtVec = Seq.tabulate(CommitWidth)({idx =>
     val ptr = cmtPtrExt(idx)

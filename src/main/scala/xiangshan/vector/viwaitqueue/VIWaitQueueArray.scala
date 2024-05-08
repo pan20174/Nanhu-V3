@@ -127,35 +127,68 @@ class VIWakeQueueEntryUpdateNetwork(implicit p: Parameters) extends XSModule wit
     }
   }
 
-  private val _emuls = Seq.fill(3)(Wire(UInt(3.W)))
-  _emuls.zip(emuls).foreach({case(a, b) =>
-    a := MuxCase(0.U, Seq(
-      (b === 1.U, 1.U),
-      (b === 2.U, 3.U),
-      (b === 3.U, 7.U),
-      (b === 4.U, 5.U) //Illegal
-    ))
+  private val _emuls = Seq.fill(3)(Wire(UInt(4.W)))
+  _emuls.zip(emuls).zipWithIndex.foreach({case((a, b), i) =>
+    if(i != 2) {
+      a := MuxCase(0.U, Seq(
+        (b === 1.U, 1.U),
+        (b === 2.U, 3.U),
+        (b === 3.U, 7.U),
+        (b === 4.U, 9.U) //Illegal
+      ))
+    } else {
+      when(vctrl.isLs){
+        a := MuxCase(vctrl.nf - 1.U, Seq(
+          (b === 1.U, (vctrl.nf * 2.U) - 1.U),
+          (b === 2.U, (vctrl.nf * 4.U) - 1.U),
+          (b === 3.U, (vctrl.nf * 8.U) - 1.U),
+          (b === 4.U, 9.U) //Illegal
+        ))
+      }.otherwise {
+        a := MuxCase(0.U, Seq(
+          (b === 1.U, 1.U),
+          (b === 2.U, 3.U),
+          (b === 3.U, 7.U),
+          (b === 4.U, 9.U) //Illegal
+        ))
+      }
+    }
   })
-
+  private val destCheckEmul = MuxCase(0.U, Seq(
+    (emuls(2) === 1.U, 1.U),
+    (emuls(2) === 2.U, 3.U),
+    (emuls(2) === 3.U, 7.U),
+    (emuls(2) === 4.U, 9.U) //Illegal
+  ))
   private def VGroupIllegal(idx:Int):Bool = {
     require(idx <= 2)
-    val vg = if(idx == 2) ctrl.ldest else ctrl.lsrc(idx)
-    (vg & _emuls(idx)).orR || _emuls(idx) === 5.U
+    val vgiCond = if(idx == 2) {
+      (ctrl.ldest & destCheckEmul).orR || (ctrl.ldest +& _emuls(idx) > 31.U)
+    } else {
+      (ctrl.lsrc(idx) & _emuls(idx)).orR || (ctrl.lsrc(idx) +& _emuls(idx) > 31.U)
+    }
+    dontTouch(vgiCond)
+    vgiCond || _emuls(idx) === 9.U
   }
 
   private def IllegalOverlapSrc(idx:Int):Bool = {
     require(idx < 2)
     val dst = ctrl.ldest
     val src = ctrl.lsrc(idx)
-    val dstEnd = dst + _emuls(2)
-    val srcEnd = src + _emuls(idx)
+    val dstEnd = dst +& _emuls(2)
+    val srcEnd = src +& _emuls(idx)
     val overlapLow = Mux(src < dst, dst, src)
     val overlapHigh = Mux(dstEnd < srcEnd, dstEnd, srcEnd)
     val passCond0 = vctrlNext.eewType(2) === EewType.scalar
     val passCond1 = vctrlNext.eew(2) === vctrlNext.eew(idx)
     val passCond2 = (vctrlNext.eew(2).asSInt < vctrlNext.eew(idx).asSInt) && (overlapLow === src)
-    val passCond3 = (vctrlNext.eew(2).asSInt > vctrlNext.eew(idx).asSInt) && (overlapHigh === dstEnd)
+    val passCond3 = (vctrlNext.eew(2).asSInt > vctrlNext.eew(idx).asSInt) && (overlapHigh === dstEnd) && emuls(idx) >= 0.U && emuls(idx) <= 3.U
     val passCond4 = !(ctrl.vdWen && ctrl.srcType(idx) === SrcType.vec)
+    dontTouch(passCond0)
+    dontTouch(passCond1)
+    dontTouch(passCond2)
+    dontTouch(passCond3)
+    dontTouch(passCond4)
     val pass = passCond0 || passCond1 || passCond2 || passCond3 || passCond4
     val checkAnyway = vctrl.notOverlay && ctrl.vdWen && ctrl.srcType(idx) === SrcType.vec
     val isOverlap = overlapLow <= overlapHigh
@@ -282,10 +315,12 @@ class VIWaitQueueArray(implicit p: Parameters) extends XSModule with HasVectorPa
     val vtypeWb = Flipped(ValidIO(new VtypeWbIO))
     val redirect = Input(Valid(new Redirect))
     val flushMask = Output(UInt(size.W))
+    val needMergeIdxMask = Output(UInt(size.W))
   })
   private val array = Reg(Vec(size, new VIWakeQueueEntry))
 
-  io.flushMask := Cat(array.map(_.uop.robIdx.needFlush(io.redirect)).reverse)
+  io.flushMask := Cat(array.map(e => e.uop.robIdx.needFlush(io.redirect) || !e.robEnqueued).reverse)
+  io.needMergeIdxMask := Cat(array.map(_.robEnqueued).reverse)
 
   private val updateNetworkSeq = Seq.fill(size)(Module(new VIWakeQueueEntryUpdateNetwork))
 

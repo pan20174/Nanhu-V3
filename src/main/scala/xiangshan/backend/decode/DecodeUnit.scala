@@ -534,7 +534,7 @@ object VectorArithDecode extends DecodeConstants {
     VFMAX_VV ->List(SrcType.vec,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     
     VFMERGE_VFM -> List(SrcType.fp, SrcType.vec,  SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
-    VFMV_V_F    -> List(SrcType.fp, SrcType.vec,  SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
+    VFMV_V_F    -> List(SrcType.fp, SrcType.DC,  SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     
     VFMIN_VF ->List(SrcType.fp,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     VFMIN_VV ->List(SrcType.vec,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
@@ -1056,11 +1056,12 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   val isvectorstore = BitPat("b???????_?????_?????_000_?????_0100111") === ctrl_flow.instr || BitPat("b???????_?????_?????_101_?????_0100111") === ctrl_flow.instr || BitPat("b???????_?????_?????_110_?????_0100111") === ctrl_flow.instr || BitPat("b???????_?????_?????_111_?????_0100111") === ctrl_flow.instr
   val isVtype  = BitPat("b???????_?????_?????_111_?????_1010111") === ctrl_flow.instr
   val isVector = (BitPat("b???????_?????_?????_???_?????_1010111") === ctrl_flow.instr || isvectorload || isvectorstore) && !isVtype
+  val vsetNeedOldVl = isVtype && ctrl_flow.instr(RS1_MSB, RS1_LSB) === 0.U && ctrl_flow.instr(RD_MSB, RD_LSB) === 0.U && cs.srcType(0) === SrcType.reg
 
-  // vcs := Wire(new CtrlSignals()).decodev(ctrl_flow.instr, vdecode_table)
+  when(vsetNeedOldVl) {
+    cs.noSpecExec := true.B
+  }
 
-  // cs := Mux(isVector, vcs, scs)
-  // cs := scs
   cs.isVector := isVector && !illegalInst && !ctrl_flow.exceptionVec.asUInt.orR
   cs.isVtype := isVtype && !illegalInst && !ctrl_flow.exceptionVec.asUInt.orR
 

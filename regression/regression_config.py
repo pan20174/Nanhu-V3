@@ -4,30 +4,6 @@ import time
 import sys
 from pprint import pprint
 
-
-'''
-
-  'case': { 'vector': {'list': ['valu',
-                                'vcompare',
-                                'vfix',
-                                'vfp',
-                                'vmac',
-                                'vmask',
-                                'vnarrow',
-                                'vpermutation',
-                                'vreduction',
-                                'vwiden'
-                                ]
-                      }
-          },
-  'config': { 'case_path': 'vcase',
-              'part_list': ['vmask', 'vpermutation'],
-              'sim_mode': 'part',
-              'simulator': 'verilator'
-            }
-
-'''
-
 def case_list_check(all_list, part_list):
   for part in part_list:
     if part not in all_list:
@@ -78,7 +54,3 @@ def get_case_list(path, test_list):
         line = line.replace('\n', '').replace('\r', '')
         case_list[test_name].append(line)
   return case_list
-
-# test_list = parse_config()['config']['part_list']
-# list_out = get_case_list('./', test_list)
-# print(list_out)

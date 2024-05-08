@@ -42,7 +42,10 @@ class VDecodeUnit(implicit p: Parameters) extends XSModule with VDecodeUnitConst
   uop.vctrl.funct3 := io.in.cf.instr(F3_MSB, F3_LSB)
   uop.vctrl.nf := Mux(uop.vctrl.emulType === EmulType.lmul, io.in.cf.instr(NF_MSB, NF_LSB) +& 1.U(1.W), 1.U)
   uop.vctrl.vm := !io.in.cf.instr(VM_LSB)
-
+  private val isIndexedSegLoad = uop.ctrl.fuType === FuType.ldu && uop.ctrl.srcType(1) === SrcType.vec && io.in.cf.instr(NF_MSB, NF_LSB).orR
+  when(isIndexedSegLoad) {
+    uop.vctrl.notOverlay := true.B
+  }
   when(io.in.ctrl.selImm =/= SelImm.IMM_X) {
     uop.ctrl.imm := io.in.cf.instr(VS1_MSB, VS1_LSB)
   }

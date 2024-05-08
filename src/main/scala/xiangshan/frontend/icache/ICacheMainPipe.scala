@@ -90,6 +90,7 @@ class ICachePerfInfo(implicit p: Parameters) extends ICacheBundle{
 
 class ICacheMainPipeInterface(implicit p: Parameters) extends ICacheBundle {
   /*** internal interface ***/
+  val flush       = Input(Bool())
   val metaArray   = new ICacheMetaReqBundle
   val dataArray   = new ICacheDataReqBundle
   val mshr        = Vec(PortNumber, new ICacheMSHRBundle)
@@ -281,7 +282,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule with HasPerfLo
     tlb_slot.has_latch_resp := false.B
   }
 
-  s0_can_go      := !missSwitchBit && s1_ready && sram_ready
+  s0_can_go      := !missSwitchBit && s1_ready && sram_ready && (!io.flush)
   s0_slot_fire   := tlb_slot.valid && (tlb_all_resp || tlb_slot.has_latch_resp) && s0_can_go
   s0_fetch_fire  := s0_valid && !tlb_slot.valid && s0_can_go
   s0_fire        := s0_slot_fire || s0_fetch_fire
@@ -302,7 +303,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule with HasPerfLo
   /** s1 control */
   val tlbRespAllValid = WireInit(false.B)
 
-  val s1_valid = generatePipeControl(lastFire = s0_fire, thisFire = s1_fire, thisFlush = tlb_miss_flush, lastFlush = false.B)
+  val s1_valid = generatePipeControl(lastFire = s0_fire, thisFire = s1_fire, thisFlush = (tlb_miss_flush || io.flush), lastFlush = false.B)
 
   val s1_req_vaddr   = RegEnable( s0_final_vaddr,    s0_fire)
   val s1_req_vsetIdx = RegEnable( s0_final_vsetIdx, s0_fire)
@@ -316,7 +317,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule with HasPerfLo
   val s1_tlb_latch_resp_af = RegEnable( tlb_slot.tlb_resp_af, s0_fire)
 
   s1_ready := s2_ready && tlbRespAllValid  || !s1_valid
-  s1_fire  := s1_valid && tlbRespAllValid && s2_ready && !tlb_miss_flush
+  s1_fire  := s1_valid && tlbRespAllValid && s2_ready && !tlb_miss_flush && !io.flush
 
   fromITLB.map(_.ready := true.B)
 
@@ -416,6 +417,7 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule with HasPerfLo
   s2_ready      := (s2_valid && s2_fetch_finish && !io.respStall) || (!s2_valid && s2_miss_available)
   s2_fire       := s2_valid && s2_fetch_finish && !io.respStall
 
+  val s2_flush_latch = holdReleaseLatch(valid = io.flush && s2_valid,    release = s2_fire,      flush = false.B)
   /** s2 data */
   val mmio = RegEnable(VecInit(fromPMP.map(port => port.mmio)),s1_fire)  // TODO: handle it
 
@@ -751,13 +753,20 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule with HasPerfLo
 
 
       when(s2_fire && missStateQueue(j)(i) === m_refilled){
-        missStateQueue(j)(i)     := m_wait_sec_miss
+        when(s2_flush_latch) {
+          missStateQueue(j)(i)   := m_invalid
+        }.otherwise {
+          missStateQueue(j)(i)     := m_wait_sec_miss
+        }
       }
 
       /*** Only the first cycle to check whether meet the secondary miss ***/
       when(missStateQueue(j)(i) === m_wait_sec_miss){
         /*** The seondary req has been fix by this slot and another also hit || the secondary req for other cacheline and hit ***/
-        when((slot_slove(i) && s2_fire) || (!slot_slove(i) && s2_fire) ) {
+        when(io.flush) {
+          missStateQueue(j)(i)     := m_invalid
+        }
+        .elsewhen(s2_fire) {
           missStateQueue(j)(i)     := m_invalid
         }
         /*** The seondary req has been fix by this slot but another miss/f3 not ready || the seondary req for other cacheline and miss ***/
@@ -820,8 +829,8 @@ class ICacheMainPipe(implicit p: Parameters) extends ICacheModule with HasPerfLo
   /** response to IFU */
 
   (0 until PortNumber).map{ i =>
-    if(i ==0) toIFU(i).valid          := s2_fire
-       else   toIFU(i).valid          := s2_fire && s2_double_line
+    if(i ==0) toIFU(i).valid          := s2_fire && !s2_flush_latch
+       else   toIFU(i).valid          := s2_fire && !s2_flush_latch && s2_double_line
     //when select is high, use sramData. Otherwise, use registerData.
     toIFU(i).bits.registerData  := s2_register_datas(i)
     toIFU(i).bits.sramData  := s2_hit_datas(i)

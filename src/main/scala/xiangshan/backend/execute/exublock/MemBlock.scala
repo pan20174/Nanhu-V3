@@ -299,6 +299,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     io.error.report_to_beu := false.B
     io.error.valid := false.B
   }
+  private val vmEnable = io.tlbCsr.priv.dmode <= ModeS && io.tlbCsr.satp.mode.orR
 
   private val loadUnits = Seq.fill(exuParameters.LduCnt)(Module(new LoadUnit))
   private val storeUnits = Seq.fill(exuParameters.StuCnt)(Module(new StoreUnit))
@@ -505,12 +506,13 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   ))
   val tlbcsr_pmp = tlbcsr_dup.drop(2).map(RegNext(_))
   for (((p,d),i) <- (pmp_check zip dtlb_pmps).zipWithIndex) {
-    p.apply(tlbcsr_pmp(i).priv.dmode, pmp.io.pmp, pmp.io.pma, d)
+    p.apply(tlbcsr_pmp(i).priv.dmode, tlbcsr_pmp(i).satp.mode, pmp.io.pmp, pmp.io.pma, d)
     require(p.req.bits.size.getWidth == d.bits.size.getWidth)
   }
   val pmp_check_ptw = Module(new PMPCheckerv2(lgMaxSize = 3, sameCycle = false, leaveHitMux = true))
   pmp_check_ptw.io.apply(
     ModeS,
+    8.U,
     pmp.io.pmp, pmp.io.pma, io.ptw.resp.valid,
     Cat(io.ptw.resp.bits.data.entry.ppn, 0.U(12.W)).asUInt
   )
@@ -569,6 +571,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     // ld-ld violation check
     loadUnits(i).io.lsq.loadViolationQuery <> lsq.io.loadViolationQuery(i)
     loadUnits(i).io.csrCtrl       <> csrCtrl
+    loadUnits(i).io.vmEnable := RegNext(vmEnable, false.B)
     // dtlb
     loadUnits(i).io.tlb <> dtlb_reqs.take(exuParameters.LduCnt)(i)
     dtlb_reqs.take(exuParameters.LduCnt)(i).req.valid := loadUnits(i).io.tlb.req.valid && !loadUnits(i).io.tlb.req.bits.robIdx.needFlush(Pipe(redirectIn))
@@ -671,6 +674,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     stu.io.rsIdx        :=  staIssues(i).rsIdx
     // NOTE: just for dtlb's perf cnt
     stu.io.isFirstIssue := staIssues(i).rsFeedback.isFirstIssue
+    stu.io.vmEnable := RegNext(vmEnable, false.B)
     stu.io.stin         <> staIssues(i).issue
     stu.io.lsq          <> lsq.io.storeIn(i)
     stu.io.lsq_replenish <> lsq.io.storeInRe(i)

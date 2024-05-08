@@ -138,6 +138,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   ctrlBlock.io.vcsrToRename.vlRead.readEn := RegNext(csrioIn.vcsr.vtype.vlRead.readEn, false.B)
   csrioIn.vcsr.vtype.vtypeRead.data := Pipe(ctrlBlock.io.vcsrToRename.vtypeRead.data, 2)
   csrioIn.vcsr.vtype.vlRead.data := Pipe(ctrlBlock.io.vcsrToRename.vlRead.data, 2)
+  csrioIn.vcsr.vtype.vlUpdate := Pipe(ctrlBlock.io.vcsrToRename.vlUpdate)
   ctrlBlock.io.vcsrToRename.vtypeWbToRename := Pipe(csrioIn.vcsr.vtype.vtypeWbToRename)
   
   ctrlBlock.io.lqCancelCnt := exuBlock.io.lqCancelCnt
@@ -145,7 +146,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   ctrlBlock.io.sqDeq := exuBlock.io.sqDeq
   ctrlBlock.io.lqDeq := exuBlock.io.lqDeq
   ctrlBlock.io.stIn := exuBlock.io.stIn
-  ctrlBlock.io.mmuEnable := exuBlock.io.csrio.tlb.satp.mode =/= 0.U && exuBlock.io.csrio.tlb.priv.dmode < ModeM
+  ctrlBlock.io.mmuEnable := exuBlock.io.csrio.tlb.priv.dmode < ModeM
   exuBlock.io.enqLsq <> ctrlBlock.io.enqLsq
   ctrlBlock.io.redirectIn := exuBlock.io.redirectOut
   ctrlBlock.io.preWalk := exuBlock.io.preWalk

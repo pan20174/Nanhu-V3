@@ -367,14 +367,14 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     }
     cacheOpShouldResp := true.B
   }
-  // when (io.cacheOp_req_dup(0).valid && isReadTagECC(io.cacheOp_req_bits_opCode_dup(0))) {
+  when (io.cacheOp_req_dup(0).valid && isReadTagECC(io.cacheOp_req_bits_opCode_dup(0))) {
   //   for (i <- 0 until (readPorts / 3)) {
   //     array(i).io.ecc_read.valid := true.B
   //     array(i).io.ecc_read.bits.idx := io.cacheOp.req.bits.index
   //     array(i).io.ecc_read.bits.way_en := UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
   when (io.cacheOp_req_dup(1).valid && isWriteTag(io.cacheOp_req_bits_opCode_dup(1))){
     for (i <- 0 until (readPorts / 3)) {
       array(i).io.write.valid := true.B
@@ -384,15 +384,15 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     }
     cacheOpShouldResp := true.B
   }
-  // when(io.cacheOp_req_dup(2).valid && isWriteTagECC(io.cacheOp_req_bits_opCode_dup(2))){
+  when(io.cacheOp_req_dup(2).valid && isWriteTagECC(io.cacheOp_req_bits_opCode_dup(2))){
   //   for (i <- 0 until (readPorts / 3)) {
   //     array(i).io.ecc_write.valid := true.B
   //     array(i).io.ecc_write.bits.idx := io.cacheOp.req.bits.index
   //     array(i).io.ecc_write.bits.way_en := UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //     array(i).io.ecc_write.bits.ecc := io.cacheOp.req.bits.write_tag_ecc
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
   
 
   when (io.cacheOp_req_dup(3).valid && isReadTag(io.cacheOp_req_bits_opCode_dup(3))){
@@ -403,14 +403,14 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     }
     cacheOpShouldResp := true.B
   }
-  // when (io.cacheOp_req_dup(4).valid && isReadTagECC(io.cacheOp_req_bits_opCode_dup(4))) {
+  when (io.cacheOp_req_dup(4).valid && isReadTagECC(io.cacheOp_req_bits_opCode_dup(4))) {
   //   for (i <- (readPorts / 3) until ((readPorts / 3) * 2)) {
   //     array(i).io.ecc_read.valid := true.B
   //     array(i).io.ecc_read.bits.idx := io.cacheOp.req.bits.index
   //     array(i).io.ecc_read.bits.way_en := UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
   when (io.cacheOp_req_dup(5).valid && isWriteTag(io.cacheOp_req_bits_opCode_dup(5))){
     for (i <- (readPorts / 3) until ((readPorts / 3) * 2)) {
       array(i).io.write.valid := true.B
@@ -420,15 +420,15 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     }
     cacheOpShouldResp := true.B
   }
-  // when(io.cacheOp_req_dup(6).valid && isWriteTagECC(io.cacheOp_req_bits_opCode_dup(6))){
+  when(io.cacheOp_req_dup(6).valid && isWriteTagECC(io.cacheOp_req_bits_opCode_dup(6))){
   //   for (i <- (readPorts / 3) until ((readPorts / 3) * 2)) {
   //     array(i).io.ecc_write.valid := true.B
   //     array(i).io.ecc_write.bits.idx := io.cacheOp.req.bits.index
   //     array(i).io.ecc_write.bits.way_en := UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //     array(i).io.ecc_write.bits.ecc := io.cacheOp.req.bits.write_tag_ecc
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
 
   when (io.cacheOp_req_dup(7).valid && isReadTag(io.cacheOp_req_bits_opCode_dup(7))){
     for (i <- ((readPorts / 3) * 2) until readPorts) {
@@ -438,14 +438,14 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     }
     cacheOpShouldResp := true.B
   }
-  // when (io.cacheOp_req_dup(8).valid && isReadTagECC(io.cacheOp_req_bits_opCode_dup(8))) {
+  when (io.cacheOp_req_dup(8).valid && isReadTagECC(io.cacheOp_req_bits_opCode_dup(8))) {
   //   for (i <- ((readPorts / 3) * 2) until readPorts) {
   //     array(i).io.ecc_read.valid := true.B
   //     array(i).io.ecc_read.bits.idx := io.cacheOp.req.bits.index
   //     array(i).io.ecc_read.bits.way_en := UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
   when (io.cacheOp_req_dup(9).valid && isWriteTag(io.cacheOp_req_bits_opCode_dup(9))){
     for (i <- ((readPorts / 3) * 2) until readPorts) {
       array(i).io.write.valid := true.B
@@ -455,15 +455,15 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     }
     cacheOpShouldResp := true.B
   }
-  // when(io.cacheOp_req_dup(10).valid && isWriteTagECC(io.cacheOp_req_bits_opCode_dup(10))){
+  when(io.cacheOp_req_dup(10).valid && isWriteTagECC(io.cacheOp_req_bits_opCode_dup(10))){
   //   for (i <- ((readPorts / 3) * 2) until readPorts) {
   //     array(i).io.ecc_write.valid := true.B
   //     array(i).io.ecc_write.bits.idx := io.cacheOp.req.bits.index
   //     array(i).io.ecc_write.bits.way_en := UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //     array(i).io.ecc_write.bits.ecc := io.cacheOp.req.bits.write_tag_ecc
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
 
   io.cacheOp.resp.valid := RegNext(io.cacheOp.req.valid && cacheOpShouldResp)
   io.cacheOp.resp.bits.read_tag_low := Mux(io.cacheOp.resp.valid, array(0).io.resp(RegNext(io.cacheOp.req.bits.wayNum)), 0.U)

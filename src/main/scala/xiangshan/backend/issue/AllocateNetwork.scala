@@ -23,7 +23,7 @@ package xiangshan.backend.issue
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import xiangshan.MicroOp
+import xiangshan.{MicroOp, XSModule}
 import xs.utils.PickOneLow
 
 class Switch2[T <: Data](gen:T) extends Module{
@@ -36,13 +36,61 @@ class Switch2[T <: Data](gen:T) extends Module{
   io.out(1) := Mux(io.switch, io.in(0), io.in(1))
 }
 
+object LSFRTap {
+  def bits0: Seq[Int] = Seq(0)
+  def bits1: Seq[Int] = Seq(0)
+  def bits2: Seq[Int] = Seq(0, 1)
+  def bits3: Seq[Int] = Seq(1, 2)
+  def bits4: Seq[Int] = Seq(2, 3)
+  def bits5: Seq[Int] = Seq(2, 4)
+  def bits6: Seq[Int] = Seq(4, 5)
+  def bits7: Seq[Int] = Seq(5, 6)
+  def bits8: Seq[Int] = Seq(3, 4, 5, 7)
+  def bits9: Seq[Int] = Seq(4, 8)
+  def bits10: Seq[Int] = Seq(6, 9)
+  def bits11: Seq[Int] = Seq(8, 10)
+  def bits12: Seq[Int] = Seq(0, 3, 5 ,11)
+  def bits13: Seq[Int] = Seq(0, 2 ,3, 12)
+  def bits14: Seq[Int] = Seq(0, 2 ,4, 13)
+  def bits15: Seq[Int] = Seq(13, 14)
+  def bits16: Seq[Int] = Seq(3, 12, 14, 15)
+  def bits17: Seq[Int] = Seq(13, 16)
+  def bits18: Seq[Int] = Seq(10, 17)
+  def bits19: Seq[Int] = Seq(0, 1, 5, 18)
+  def bits20: Seq[Int] = Seq(16, 19)
+  def bits21: Seq[Int] = Seq(18, 20)
+  def bits22: Seq[Int] = Seq(20, 21)
+  def bits23: Seq[Int] = Seq(17, 22)
+  def bits24: Seq[Int] = Seq(16, 21, 22, 23)
+  def bits25: Seq[Int] = Seq(21, 24)
+  def bits26: Seq[Int] = Seq(0, 1, 5, 25)
+  def bits27: Seq[Int] = Seq(0, 1, 4, 26)
+  def bits28: Seq[Int] = Seq(24, 27)
+  def bits29: Seq[Int] = Seq(26, 28)
+  def bits30: Seq[Int] = Seq(0, 3, 5, 29)
+  def bits31: Seq[Int] = Seq(27, 30)
+  def bits32: Seq[Int] = Seq(0, 1, 21, 31)
+
+  def TapSeq = Seq(
+    bits0,  bits1,  bits2,  bits3,
+    bits4,  bits5,  bits6,  bits7,
+    bits8,  bits9,  bits10, bits11,
+    bits12, bits13, bits14, bits15,
+    bits16, bits17, bits18, bits19,
+    bits20, bits21, bits22, bits23,
+    bits24, bits25, bits26, bits27,
+    bits28, bits29, bits30, bits31,
+  )
+}
 class LSFR(width:Int, init:Option[Int] = None) extends Module{
   val io = IO(new Bundle{
     val en = Input(Bool())
     val value = Output(UInt(width.W))
   })
+  require(width > 0)
+  private val tap = LSFRTap.TapSeq(width)
   private val lfsr = RegInit(init.getOrElse(-1).U(width.W)) // random initial value based on simulation seed
-  private val xor = lfsr.asBools.reduce(_^_)
+  private val xor = tap.map(t => lfsr.asBools.reverse(t)).reduce(_^_)
   when(io.en) {
     lfsr := Mux(lfsr === 0.U, 1.U, Cat(xor, lfsr(width - 1, 1)))
   }
@@ -91,16 +139,16 @@ class SwitchNetwork[T <: Data](gen:T, channelNum:Int) extends Module{
   io.out(3) := switchList(5).io.out(1)
 }
 
-class RandomizationNetwork[T <: Data](gen:T, channelNum:Int) extends Module{
+class RandomizationNetwork[T <: Data](gen:T, channelNum:Int)(implicit p:Parameters) extends XSModule{
   val io = IO(new Bundle {
     val enqFire = Input(Bool())
     val in = Input(Vec(channelNum,gen))
     val out = Output(Vec(channelNum,gen))
   })
-  private val LSFR = Module(new LSFR(6,Some(39)))
+  private val LSFR = Module(new LSFR(log2Ceil(RobSize + 1),Some(39)))
   LSFR.io.en := io.enqFire
   private val switchNetwork = Module(new SwitchNetwork(gen, channelNum))
-  switchNetwork.io.ctrl := LSFR.io.value
+  switchNetwork.io.ctrl := LSFR.io.value(5, 0)
   switchNetwork.io.in := io.in
   io.out := switchNetwork.io.out
 }
@@ -181,7 +229,7 @@ class SqueezeNetwork[T <: Valid[K], K <: Data](gen:T, channelNum:Int) extends Mo
   * }}}
   */
 
-class AllocateNetwork(bankNum:Int, entryNumPerBank:Int, name:Option[String] = None)(implicit p: Parameters) extends Module{
+class AllocateNetwork(bankNum:Int, entryNumPerBank:Int, name:Option[String] = None)(implicit p: Parameters) extends XSModule{
   private val entryIdxOHWidth = entryNumPerBank
   private val bankIdxWidth = log2Ceil(bankNum)
   val io = IO(new Bundle {

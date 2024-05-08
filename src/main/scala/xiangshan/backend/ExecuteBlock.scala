@@ -164,7 +164,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
   rf.io.extraReads.take(vrf.rfReadNum).zip(vrf.io.scalarReads).foreach({ case (a, b) => a <> b })
   rf.io.extraReads.last <> vpBlk.io.rfReadPort.srf
   rf.io.redirect := Pipe(localRedirect)
-  rf.io.mmuEnable := intBlk.io.csrio.tlb.satp.mode =/= 0.U && intBlk.io.csrio.tlb.priv.dmode < ModeM
+  rf.io.mmuEnable := intBlk.io.csrio.tlb.priv.dmode < ModeM
 
   vrf.io.hartId := io.hartId
   vrf.io.debug_vec_rat := io.debug_vec_rat

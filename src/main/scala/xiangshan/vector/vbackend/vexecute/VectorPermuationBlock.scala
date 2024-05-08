@@ -87,7 +87,7 @@ class VectorPermutationBlock(implicit p: Parameters) extends LazyModule{
     permutation.io.in.vs2_preg_idx := issueDataReg.pvs2
     permutation.io.in.old_vd_preg_idx := issueDataReg.pov
     permutation.io.in.mask_preg_idx := issueDataReg.pvm
-    permutation.io.in.uop_valid := issueValidReg
+    permutation.io.in.uop_valid := issueValidReg && !issueDataReg.uop.robIdx.needFlush(io.redirect)
     permutation.io.in.rdata := rfRespData
     permutation.io.in.rvalid := rfRespValid
     permutation.io.redirect := io.redirect

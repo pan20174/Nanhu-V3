@@ -38,6 +38,7 @@ class StoreUnit_S0(implicit p: Parameters) extends XSModule with HasPerfLogging 
     val isFirstIssue = Input(Bool())
     val out = Decoupled(new LsPipelineBundle)
     val dtlbReq = DecoupledIO(new TlbReq)
+    val vmEnable = Input(Bool())
   })
 
   // send req to dtlb
@@ -80,7 +81,11 @@ class StoreUnit_S0(implicit p: Parameters) extends XSModule with HasPerfLogging 
     "b10".U   -> (io.out.bits.vaddr(1,0) === 0.U), //w
     "b11".U   -> (io.out.bits.vaddr(2,0) === 0.U)  //d
   ))
+  private val vaddr = io.in.bits.src(0) + SignExt(io.in.bits.uop.ctrl.imm(11, 0), XLEN)
+  dontTouch(vaddr)
+  private val illegalAddr = vaddr(XLEN - 1, VAddrBits - 1) =/= 0.U && vaddr(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
   io.out.bits.uop.cf.exceptionVec(storeAddrMisaligned) := !addrAligned && io.in.bits.uop.loadStoreEnable
+  io.out.bits.uop.cf.exceptionVec(storePageFault) := Mux(io.in.bits.uop.loadStoreEnable & io.vmEnable, illegalAddr, false.B)
 
   XSPerfAccumulate("in_valid", io.in.valid)
   XSPerfAccumulate("in_fire", io.in.fire)
@@ -137,7 +142,7 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule with HasPerfLogging 
   io.out.bits.paddr := s1_paddr
   io.out.bits.miss := false.B
   io.out.bits.mmio := s1_mmio && EnableMem
-  io.out.bits.uop.cf.exceptionVec(storePageFault) := io.dtlbResp.bits.excp(0).pf.st && EnableMem
+  io.out.bits.uop.cf.exceptionVec(storePageFault) := (io.dtlbResp.bits.excp(0).pf.st || io.in.bits.uop.cf.exceptionVec(storePageFault)) && EnableMem
   io.out.bits.uop.cf.exceptionVec(storeAccessFault) := io.dtlbResp.bits.excp(0).af.st && EnableMem
 
   io.lsq.valid := io.in.valid
@@ -204,6 +209,7 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
     val pmp = Flipped(new PMPRespBundle())
     val rsIdx = Input(new RsIdx)
     val isFirstIssue = Input(Bool())
+    val vmEnable = Input(Bool())
     val lsq = ValidIO(new LsPipelineBundle)
     val lsq_replenish = Output(new LsPipelineBundle())
     val stout = DecoupledIO(new ExuOutput) // writeback store
@@ -221,6 +227,7 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   io.tlb.req_kill := false.B
   store_s0.io.rsIdx := io.rsIdx
   store_s0.io.isFirstIssue := io.isFirstIssue
+  store_s0.io.vmEnable := io.vmEnable
 
   io.storeMaskOut.valid := store_s0.io.in.valid
   io.storeMaskOut.bits.mask := store_s0.io.out.bits.mask

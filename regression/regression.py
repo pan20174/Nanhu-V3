@@ -7,14 +7,7 @@ import regression_config as rcfg
 import multi_task
 import record
 
-def parse_case_list(file_name):
-	with open(file_name, 'r') as f:
-		case_list = f.readlines()
-		return case_list
-	return []
-
 def main():
-	simulator = ""
 	cfg = rcfg.parse_config('./regression')
 	test_list = []
 	if cfg['config']['sim_mode'] == 'part':
@@ -23,10 +16,10 @@ def main():
 		test_list = cfg['case']['list']
 	print(test_list)
 	sim_num = cfg['config']['sim_num']
-	multi_task.multi_task_run(sim_num, cfg, test_list)
-	record.sim_result_statistic(cfg, test_list)
-	
-
+	#multi_task.multi_task_run(sim_num, cfg, test_list)
+	exec_res = record.res_analysis(cfg, test_list)
+	print(exec_res)
+	record.only_fault_link(cfg, test_list)
 
 if __name__ == '__main__':
 	main()

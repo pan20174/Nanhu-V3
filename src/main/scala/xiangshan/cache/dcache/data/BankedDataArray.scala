@@ -512,14 +512,14 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
     }
     cacheOpShouldResp := true.B
   }
-  // when (io.cacheOp_req_dup(0).valid && CacheInstrucion.isReadDataECC(io.cacheOp_req_bits_opCode_dup(0))) {
+  when (io.cacheOp_req_dup(0).valid && CacheInstrucion.isReadDataECC(io.cacheOp_req_bits_opCode_dup(0))) {
   //   for (bank_index <- 0 until (DCacheBanks / 3)) {
   //     val ecc_bank = ecc_banks(bank_index)
   //     ecc_bank.io.r.req.valid := true.B
   //     ecc_bank.io.r.req.bits.setIdx := io.cacheOp.req.bits.index
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
   when(io.cacheOp_req_dup(1).valid && CacheInstrucion.isWriteData(io.cacheOp_req_bits_opCode_dup(1))) {
     for (bank_index <- 0 until (DCacheBanks / 3)) {
       val data_bank = data_banks(bank_index)
@@ -530,7 +530,7 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
     }
     cacheOpShouldResp := true.B
   }
-  // when(io.cacheOp_req_dup(2).valid && CacheInstrucion.isWriteDataECC(io.cacheOp_req_bits_opCode_dup(2))){
+  when(io.cacheOp_req_dup(2).valid && CacheInstrucion.isWriteDataECC(io.cacheOp_req_bits_opCode_dup(2))){
   //   for (bank_index <- 0 until (DCacheBanks / 3)) {
   //     val ecc_bank = ecc_banks(bank_index)
   //     ecc_bank.io.w.req.valid := true.B
@@ -540,8 +540,8 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
   //       waymask = UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //     )
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
 
 
   when(io.cacheOp_req_dup(3).valid && CacheInstrucion.isReadData(io.cacheOp_req_bits_opCode_dup(3))) {
@@ -553,14 +553,14 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
     }
     cacheOpShouldResp := true.B
   }
-  // when (io.cacheOp_req_dup(4).valid && CacheInstrucion.isReadDataECC(io.cacheOp_req_bits_opCode_dup(4))) {
+  when (io.cacheOp_req_dup(4).valid && CacheInstrucion.isReadDataECC(io.cacheOp_req_bits_opCode_dup(4))) {
   //   for (bank_index <- (DCacheBanks / 3) until ((DCacheBanks / 3) * 2)) {
   //     val ecc_bank = ecc_banks(bank_index)
   //     ecc_bank.io.r.req.valid := true.B
   //     ecc_bank.io.r.req.bits.setIdx := io.cacheOp.req.bits.index
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
   when(io.cacheOp_req_dup(5).valid && CacheInstrucion.isWriteData(io.cacheOp_req_bits_opCode_dup(5))) {
     for (bank_index <- (DCacheBanks / 3) until ((DCacheBanks / 3) * 2)) {
       val data_bank = data_banks(bank_index)
@@ -571,7 +571,7 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
     }
     cacheOpShouldResp := true.B
   }
-  // when(io.cacheOp_req_dup(6).valid && CacheInstrucion.isWriteDataECC(io.cacheOp_req_bits_opCode_dup(6))){
+  when(io.cacheOp_req_dup(6).valid && CacheInstrucion.isWriteDataECC(io.cacheOp_req_bits_opCode_dup(6))){
   //   for (bank_index <- (DCacheBanks / 3) until ((DCacheBanks / 3) * 2)) {
   //     val ecc_bank = ecc_banks(bank_index)
   //     ecc_bank.io.w.req.valid := true.B
@@ -581,8 +581,8 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
   //       waymask = UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //     )
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
 
   when(io.cacheOp_req_dup(7).valid && CacheInstrucion.isReadData(io.cacheOp_req_bits_opCode_dup(7))) {
     for (bank_index <- ((DCacheBanks / 3) * 2) until DCacheBanks) {
@@ -593,14 +593,14 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
     }
     cacheOpShouldResp := true.B
   }
-  // when (io.cacheOp_req_dup(8).valid && CacheInstrucion.isReadDataECC(io.cacheOp_req_bits_opCode_dup(8))) {
+  when (io.cacheOp_req_dup(8).valid && CacheInstrucion.isReadDataECC(io.cacheOp_req_bits_opCode_dup(8))) {
   //   for (bank_index <- ((DCacheBanks / 3) * 2) until DCacheBanks) {
   //     val ecc_bank = ecc_banks(bank_index)
   //     ecc_bank.io.r.req.valid := true.B
   //     ecc_bank.io.r.req.bits.setIdx := io.cacheOp.req.bits.index
   //   }
-  //     cacheOpShouldResp := true.B
-  // }
+      cacheOpShouldResp := true.B
+  }
   when(io.cacheOp_req_dup(9).valid && CacheInstrucion.isWriteData(io.cacheOp_req_bits_opCode_dup(9))) {
     for (bank_index <- ((DCacheBanks / 3) * 2) until DCacheBanks) {
       val data_bank = data_banks(bank_index)
@@ -611,7 +611,7 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
     }
     cacheOpShouldResp := true.B
   }
-  // when(io.cacheOp_req_dup(10).valid && CacheInstrucion.isWriteDataECC(io.cacheOp_req_bits_opCode_dup(10))){
+  when(io.cacheOp_req_dup(10).valid && CacheInstrucion.isWriteDataECC(io.cacheOp_req_bits_opCode_dup(10))){
   //   for (bank_index <- ((DCacheBanks / 3) * 2) until DCacheBanks) {
   //     val ecc_bank = ecc_banks(bank_index)
   //     ecc_bank.io.w.req.valid := true.B
@@ -621,8 +621,8 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
   //       waymask = UIntToOH(io.cacheOp.req.bits.wayNum(4, 0))
   //     )
   //   }
-  //   cacheOpShouldResp := true.B
-  // }
+    cacheOpShouldResp := true.B
+  }
 
   io.cacheOp.resp.valid := RegNext(io.cacheOp.req.valid && cacheOpShouldResp)
   for (bank_index <- 0 until DCacheBanks) {

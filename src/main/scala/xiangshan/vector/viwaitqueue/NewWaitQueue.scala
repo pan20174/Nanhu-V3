@@ -99,7 +99,11 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
 
   //MergeId Allocation Logics
   private val redirectValidDelay = RegNext(io.redirect.valid, false.B)
-  private val needMergeNum = distanceBetween(enqPtr, mergePtr)
+  private val mergeMask = UIntToMask(mergePtr.value, VIWaitQueueWidth)
+  private val enqXorMerge = enqMask ^ mergeMask
+  private val notAllocMask = Mux(mergePtr.value < enqPtr.value || mergePtr === enqPtr, enqXorMerge, (~enqXorMerge).asUInt)
+  private val canAllocMask = notAllocMask & table.io.needMergeIdxMask
+  private val needMergeNum = PopCount(canAllocMask)
   io.vmbAlloc.req.zipWithIndex.foreach({case(req, i) =>
     req.valid := i.U < needMergeNum & !io.redirect.valid & !redirectValidDelay
     table.io.read(i).addr := mergePtrVec(i).value

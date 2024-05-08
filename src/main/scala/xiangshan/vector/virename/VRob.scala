@@ -113,7 +113,7 @@ class VRob(implicit p: Parameters) extends VectorBaseModule with HasCircularQueu
       wptr := (enqPtr - (i+1).U).value
     }
   }
-  val exceptionCmtValid = io.exception.valid && io.exception.bits.uop.vctrl.isLs && !ExceptionNO.selectFrontend(io.exception.bits.uop.cf.exceptionVec).reduce(_ | _)
+  val exceptionCmtValid = io.exception.valid && !io.exception.bits.isInterrupt && io.exception.bits.uop.vctrl.isLs && !ExceptionNO.selectFrontend(io.exception.bits.uop.cf.exceptionVec).reduce(_ | _)
   val commitValid = io.commit.rob.isCommit && io.commit.rob.commitValid.asUInt.orR || exceptionCmtValid
   val commitRobIdx = Mux(exceptionCmtValid, io.exception.bits.uop.robIdx, Mux1H(io.commit.rob.commitValid, io.commit.rob.robIdx))
   when(commitValid) {

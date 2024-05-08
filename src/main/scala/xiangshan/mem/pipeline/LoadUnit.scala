@@ -73,6 +73,7 @@ class LoadUnit_S0(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val fastpath = Input(new LoadToLoadIO)
     val s0_kill = Input(Bool())
     val s0_cancel = Output(Bool())
+    val vmEnable = Input(Bool())
   })
   require(LoadPipelineWidth == exuParameters.LduCnt)
 
@@ -143,7 +144,11 @@ class LoadUnit_S0(implicit p: Parameters) extends XSModule with HasDCacheParamet
   io.out.bits.mask := s0_mask
   io.out.bits.uop := s0_uop
 
+  private val vaddr = io.in.bits.src(0) + SignExt(imm12, XLEN)
+  dontTouch(vaddr)
+  private val illegalAddr = vaddr(XLEN - 1, VAddrBits - 1) =/= 0.U && vaddr(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
   io.out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := Mux(EnableMem, !addrAligned, false.B)
+  io.out.bits.uop.cf.exceptionVec(loadPageFault) := Mux(EnableMem & io.vmEnable, illegalAddr, false.B)
 
   io.out.bits.rsIdx := io.rsIdx
   io.out.bits.isFirstIssue := io.isFirstIssue
@@ -255,7 +260,7 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule with HasPerfLogging{
 
   // current ori test will cause the case of ldest == 0, below will be modifeid in the future.
   // af & pf exception were modified
-  io.out.bits.uop.cf.exceptionVec(loadPageFault) := io.dtlbResp.bits.excp(0).pf.ld && EnableMem
+  io.out.bits.uop.cf.exceptionVec(loadPageFault) := (io.dtlbResp.bits.excp(0).pf.ld || io.in.bits.uop.cf.exceptionVec(loadPageFault)) && EnableMem
   io.out.bits.uop.cf.exceptionVec(loadAccessFault) := io.dtlbResp.bits.excp(0).af.ld && EnableMem
 
   io.out.bits.ptwBack := io.dtlbResp.bits.ptwBack
@@ -521,7 +526,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val lsq = new LoadToLsqIO
     val fastUop = ValidIO(new MicroOp) // early wakeup signal generated in load_s1, send to RS in load_s2
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
-
+    val vmEnable = Input(Bool())
     val tlb = new TlbRequestIO(2)
     val pmp = Flipped(new PMPRespBundle()) // arrive same to tlb now
 
@@ -554,6 +559,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   load_s0.io.rsIdx := io.rsIdx
   load_s0.io.isFirstIssue := io.isFirstIssue
   load_s0.io.s0_kill := false.B
+  load_s0.io.vmEnable := io.vmEnable
   val s0_tryPointerChasing = !io.ldin.valid && io.fastpathIn.valid
   val s0_pointerChasingVAddr = io.fastpathIn.data(5, 0) +& io.loadFastImm(5, 0)
   load_s0.io.fastpath.valid := io.fastpathIn.valid

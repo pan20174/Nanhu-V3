@@ -428,7 +428,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   vxsat.bits := wvcsr.zip(csrDataRead).map({
     case (w, c) => Mux(w, c.vxsat, 0.U)
   }).reduce(_ | _)
-  val dirty_vs = io.commits.isCommit && VecInit(vecWen).asUInt.orR
+  val dirty_vs = (io.commits.isCommit && VecInit(vecWen).asUInt.orR) || io.csr.vstart.valid || io.csr.vxsat.valid
   val dirty_fs = io.commits.isCommit && VecInit(fpWen).asUInt.orR
   val blockCommit = hasWFI || exceptionWaitingRedirect
 
@@ -531,7 +531,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     }
   }
 
-  when(io.exception.valid && io.exception.bits.uop.ctrl.isVector) {
+  when(io.exception.valid && io.exception.bits.uop.ctrl.isVector && !io.exception.bits.isInterrupt) {
     vstart.valid := !selectFrontend(exceptionGen.io.state.bits.exceptionVec).reduce(_ | _)
     vstart.bits := exceptionGen.io.state.bits.vstart
   }.elsewhen(vstartSet0.asUInt.orR) {
