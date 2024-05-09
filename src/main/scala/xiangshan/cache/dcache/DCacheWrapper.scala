@@ -482,8 +482,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val probeQueue = Module(new ProbeQueue(edge))
   val wb         = Module(new WritebackQueue(edge))
 
-  //load req s0
-//  require(io.lsu.load.length == 2)
   val ldAllValid = io.lsu.load(0).req.valid && io.lsu.load(1).req.valid
   val ldRob = io.lsu.load.map(_.req.bits.robIdx)
   val ldSelRead = Mux(ldAllValid,Mux(ldRob(0) < ldRob(1),0.U,1.U),0.U)
@@ -541,9 +539,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   tag_write_arb.io.in(1) <> mainPipe.io.tag_write
   tagArray.io.write <> tag_write_arb.io.out
 
-  //----------------------------------------
-  // data array
-
   val dataWriteArb = Module(new Arbiter(new L1BankedDataWriteReq, 2))
   dataWriteArb.io.in(0) <> refillPipe.io.data_write
   dataWriteArb.io.in(1) <> mainPipe.io.data_write
@@ -571,7 +566,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
     bankedDataArray.io.read(i) <> ldu(i).io.banked_data_read
     bankedDataArray.io.read_error_delayed(i) <> ldu(i).io.read_error_delayed
 
-//    ldu(i).io.banked_data_resp := bankedDataArray.io.resp(i)
     ldu(i).io.bank_conflict_fast := bankedDataArray.io.bank_conflict_fast(i)
     ldu(i).io.bank_conflict_slow := bankedDataArray.io.bank_conflict_slow(i)
   })
@@ -598,24 +592,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   //todo
   ldu.head.io.lsu <> io.lsu.load.head
   ldu(1).io.lsu <> io.lsu.load(1)
-
-//  val choose_n = RegInit(0.U(1.W))  //default connect loadUnit
-//  ldu(1).io.lsu <> io.lsu.load(1)
-//
-//  when(io.lsu.load(2).req.valid && !io.lsu.load(1).req.valid){
-//    choose_n := 1.U
-//    ldu(1).io.lsu := DontCare
-//    ldu(1).io.lsu.req <> io.lsu.load(2).req
-//  }
-//
-//  when(io.lsu.load(1).req.valid){
-//    choose_n := 0.U
-//  }
-//
-//  when(choose_n === 1.U){
-//    ldu(1).io.lsu.resp <> io.lsu.load(2).resp
-//  }
-
 
   //----------------------------------------
   // atomics

@@ -547,10 +547,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val backendTriggerTimingVec = tdata.map(_.timing)
   val backendTriggerChainVec  = tdata.map(_.chain)
 
-  //  val lTriggerMapping = Map(0 -> 2, 1 -> 3, 2 -> 5)
-//  val sTriggerMapping = Map(0 -> 0, 1 -> 1, 2 -> 4)
-//  val lChainMapping = Map(0 -> 2)
-//  val sChainMapping = Map(0 -> 1)
   XSDebug(tEnable.asUInt.orR, "Debug Mode: At least one store trigger is enabled\n")
 
   def PrintTriggerInfo(enable: Bool, trigger: MatchTriggerIO)(implicit p: Parameters) = {
@@ -573,7 +569,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val slduValid = slduIssues(i).issue.valid && !slduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
     val lduValid = lduIssues(i).issue.valid && !lduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
     loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
-    loadUnits(i).io.isFirstIssue := Mux(selSldu, slduIssues(i).rsFeedback.isFirstIssue, lduIssues(i).rsFeedback.isFirstIssue)
     // get input form dispatch
     loadUnits(i).io.ldin.valid := Mux(selSldu, slduValid, lduValid)
     loadUnits(i).io.ldin.bits := Mux(selSldu,slduIssues(i).issue.bits, lduIssues(i).issue.bits)
@@ -608,24 +603,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
         loadUnits(i).io.prefetch_train.valid && loadUnits(i).io.prefetch_train.bits.miss
       )
       pf.io.ld_in(i).bits := loadUnits(i).io.prefetch_train.bits
-      pf.io.ld_in(i).bits.uop.cf.pc := Mux(loadUnits(i).io.s2IsPointerChasing,
-        pcDelay1Bits,
-        pcDelay2Bits)
+      pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
-
-    // load to load fast forward: load(i) prefers data(i)
-    val fastPriority = (i until exuParameters.LduCnt) ++ (0 until i)
-    val fastValidVec = fastPriority.map(j => loadUnits(j).io.fastpathOut.valid)
-    val fastDataVec = fastPriority.map(j => loadUnits(j).io.fastpathOut.data)
-    val fastMatchVec = fastPriority.map(j => false.B)
-    loadUnits(i).io.fastpathIn.valid := VecInit(fastValidVec).asUInt.orR
-    loadUnits(i).io.fastpathIn.data := ParallelPriorityMux(fastValidVec, fastDataVec)
-    val fastMatch = ParallelPriorityMux(fastValidVec, fastMatchVec)
-    loadUnits(i).io.loadFastMatch := fastMatch
-    loadUnits(i).io.loadFastImm := DontCare
-
-    // Lsq to load unit's rs
-
     // passdown to lsq (load s1)
     lsq.io.loadPaddrIn(i) <> loadUnits(i).io.lsq.loadPaddrIn
 
@@ -644,8 +623,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     // alter writeback exception info
     io.s3_delayed_load_error(i) := loadUnits(i).io.lsq.s3_delayed_load_error
 
-    // update mem dependency predictor
-    // io.memPredUpdate(i) := DontCare
 
     // --------------------------------
     // Load Triggers
@@ -692,7 +669,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     staIssues(i).rsFeedback.feedbackSlowStore := stu.io.feedbackSlow
     stu.io.rsIdx        :=  staIssues(i).rsIdx
     // NOTE: just for dtlb's perf cnt
-    stu.io.isFirstIssue := staIssues(i).rsFeedback.isFirstIssue
     stu.io.vmEnable := RegNext(vmEnable, false.B)
     stu.io.stin         <> staIssues(i).issue
     stu.io.lsq          <> lsq.io.storeIn(i)
@@ -744,7 +720,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       stOut(i).bits.uop.cf.trigger.backendHit := triggerHitVec
       stOut(i).bits.uop.cf.trigger.backendCanFire := triggerCanFireVec
     }
-    // store data
   }
 
   // mmio store writeback will use store writeback port 0
@@ -769,13 +744,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     e.bits.redirectValid := false.B
     e.bits.redirect := DontCare
   })
-  // lsq.io.uncache        <> uncache.io.lsq
   AddPipelineReg(lsq.io.uncache.req, uncache.io.lsq.req, false.B)
   AddPipelineReg(uncache.io.lsq.resp, lsq.io.uncache.resp, false.B)
   // delay dcache refill for 1 cycle for better timing
   // TODO: remove RegNext after fixing refill paddr timing
-  // lsq.io.dcache         <> dcache.io.lsu.lsq
-//  lsq.io.dcache         := RegNext(dcache.io.lsu.lsq)
   lsq.io.dcache.valid := RegNext(dcache.io.lsu.lsq.valid)
   lsq.io.dcache.bits := RegEnable(dcache.io.lsu.lsq.bits,dcache.io.lsu.lsq.valid)
   lsq.io.release        := dcache.io.lsu.release

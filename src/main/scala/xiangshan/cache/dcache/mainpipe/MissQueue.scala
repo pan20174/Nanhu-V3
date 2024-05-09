@@ -392,10 +392,6 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
     req_valid &&
       Mux(
-
-
-
-
         block_match,
         !before_read_sent_can_merge(new_req) &&
           !before_data_refill_can_merge(new_req) || !alias_match,

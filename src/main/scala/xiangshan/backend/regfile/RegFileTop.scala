@@ -311,7 +311,6 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
         bi.rsFeedback.feedbackFastLoad := bo.rsFeedback.feedbackFastLoad
         bi.rsFeedback.feedbackSlowLoad := bo.rsFeedback.feedbackSlowLoad
         bi.rsFeedback.feedbackSlowStore := bo.rsFeedback.feedbackSlowStore
-        bo.rsFeedback.isFirstIssue := RegNext(bi.rsFeedback.isFirstIssue)
         bo.hold := false.B
       }
     }

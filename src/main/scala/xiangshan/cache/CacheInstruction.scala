@@ -173,7 +173,6 @@ class CSRCacheOpDecoder(decoder_name: String, id: Int)(implicit p: Parameters) e
   }
 
   def update_cache_req_when_write(csr_name: String, req_field: Data) = {
-    println("csr_name = " + csr_name)
     when(
       cacheop_csr_is_being_write(csr_name)
     ){
