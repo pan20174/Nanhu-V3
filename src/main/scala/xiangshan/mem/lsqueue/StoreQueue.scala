@@ -81,7 +81,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val storeMaskIn = Vec(StorePipelineWidth, Flipped(Valid(new StoreMaskBundle))) // store mask, send to sq from rs
     val sbuffer = Vec(StorePipelineWidth, Decoupled(new DCacheWordReqWithVaddr)) // write committed store to sbuffer
     val mmioStout = DecoupledIO(new ExuOutput) // writeback uncached store
-    val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardQueryIO))
+    val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ))
     val rob = Input(new RobPtr)
     val uncache = new UncacheWordIO
     // val refill = Flipped(Valid(new DCacheLineReq ))
@@ -449,7 +449,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     XSPerfAccumulate("vaddr_match_really_failed", vaddrMatchFailed)
 
     // Fast forward mask will be generated immediately (load_s1)
-    io.forward(i).forwardMaskFast := dataModule.io.forwardMaskFast(i)
+//    io.forward(i).forwardMaskFast := dataModule.io.forwardMaskFast(i)
 
     // Forward result will be generated 1 cycle later (load_s2)
     io.forward(i).forwardMask := dataModule.io.forwardMask(i)
@@ -460,15 +460,16 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val sqForwardMaskFast = dataModule.io.forwardMaskFast(i).asUInt
     val loadMask = io.forward(i).mask
     val dataInvalidMask = addrValidVec.asUInt & (~dataValidVec).asUInt & v_pAddrModule.io.forwardMmask_v(i).asUInt & needForward
-    io.forward(i).dataInvalidFast := dataInvalidMask.orR && (sqForwardMaskFast & loadMask).orR
+//    io.forward(i).dataInvalidFast := dataInvalidMask.orR && (sqForwardMaskFast & loadMask).orR
+    val dataInvalidFast = dataInvalidMask.orR && (sqForwardMaskFast & loadMask).orR
     val dataInvalidMaskReg = RegEnable(dataInvalidMask, io.forward(i).valid)
     // load_s2
-    io.forward(i).dataInvalid := RegEnable(io.forward(i).dataInvalidFast, false.B, io.forward(i).valid)
+    io.forward(i).dataInvalid := RegEnable(dataInvalidFast, false.B, io.forward(i).valid)
     // check if vaddr forward mismatched
     io.forward(i).matchInvalid := vaddrMatchFailed
     val dataInvalidMaskRegWire = Wire(UInt(StoreQueueSize.W))
     dataInvalidMaskRegWire := dataInvalidMaskReg // make chisel happy
-    io.forward(i).dataInvalidSqIdx := PriorityEncoder(dataInvalidMaskRegWire)
+//    io.forward(i).dataInvalidSqIdx := PriorityEncoder(dataInvalidMaskRegWire)
   }
 
   /**

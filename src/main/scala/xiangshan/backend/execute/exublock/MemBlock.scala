@@ -556,10 +556,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   }
   for(j <- 0 until TriggerNum)
     PrintTriggerInfo(tEnable(j), tdata(j))
-  // LoadUnit
 
   for (i <- 0 until exuParameters.LduCnt) {
-    loadUnits(i).io.bankConflictAvoidIn := (i % 2).U
     loadUnits(i).io.redirect := Pipe(redirectIn)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
@@ -580,8 +578,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     loadUnits(i).io.dcache <> dcache.io.lsu.load(i)
     dcache.io.lsu.load(i).req.valid := loadUnits(i).io.dcache.req.valid && !loadUnits(i).io.dcache.req.bits.robIdx.needFlush(Pipe(redirectIn))
     // forward
-    loadUnits(i).io.lsq.forward <> lsq.io.forward(i)
-    loadUnits(i).io.sbuffer <> sbuffer.io.forward(i)
+    loadUnits(i).io.lsq.forwardFromSQ <> lsq.io.forward(i)
+    loadUnits(i).io.forwardFromSBuffer <> sbuffer.io.forward(i)
     // ld-ld violation check
     loadUnits(i).io.lsq.loadViolationQuery <> lsq.io.loadViolationQuery(i)
     loadUnits(i).io.csrCtrl       <> csrCtrl
@@ -606,12 +604,12 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
     // passdown to lsq (load s1)
-    lsq.io.loadPaddrIn(i) <> loadUnits(i).io.lsq.loadPaddrIn
+    lsq.io.loadPaddrIn(i) <> loadUnits(i).io.lsq.s1_lduUpdateLQ
 
     // passdown to lsq (load s2)
-    lsq.io.loadIn(i) <> loadUnits(i).io.lsq.loadIn
-    lsq.io.ldout(i) <> loadUnits(i).io.lsq.ldout
-    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.ldRawData
+    lsq.io.loadIn(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
+    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb
+    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.s3_lq_wbLdRawData
     lsq.io.s2_load_data_forwarded(i) <> loadUnits(i).io.lsq.s2_load_data_forwarded
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 
