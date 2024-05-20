@@ -247,10 +247,10 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule with HasPerfLogging{
     !io.loadViolationQueryReq.ready &&
     RegNext(io.csrCtrl.ldld_vio_check_enable)
   io.needLdVioCheckRedo := needLdVioCheckRedo
-  io.rsFeedback.valid := io.in.valid && (s1_bank_conflict || needLdVioCheckRedo || io.s1_cancel) && !io.s1_kill && EnableMem
+  io.rsFeedback.valid := io.in.valid && (needLdVioCheckRedo || io.s1_cancel) && !io.s1_kill && EnableMem
   io.rsFeedback.bits.rsIdx := io.in.bits.rsIdx
   io.rsFeedback.bits.flushState := io.in.bits.ptwBack
-  io.rsFeedback.bits.sourceType := Mux(s1_bank_conflict, RSFeedbackType.bankConflict, RSFeedbackType.ldVioCheckRedo)
+  io.rsFeedback.bits.sourceType := RSFeedbackType.ldVioCheckRedo
 
   // if replay is detected in load_s1,
   // load inst will be canceled immediately
