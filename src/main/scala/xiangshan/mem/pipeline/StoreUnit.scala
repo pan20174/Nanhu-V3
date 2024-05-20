@@ -230,25 +230,75 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
     val fdiResp = Flipped(new FDIRespBundle())
   })
   io.tlb := DontCare
-  val store_s0 = Module(new StoreUnit_S0)
+//  val store_s0 = Module(new StoreUnit_S0)
+  val s0_in = io.stin
+  val s0_out = Wire(Decoupled(new LsPipelineBundle))
+
+//  val s0_dtlbReq = io.tlb.req
+
+//  s0_in := io.stin
+  val s0_imm12 = WireInit(s0_in.bits.uop.ctrl.imm(11,0))
+  val s0_saddr_lo = s0_in.bits.src(0)(11,0) + Cat(0.U(1.W), s0_imm12)
+  val s0_saddr_hi = Mux(s0_saddr_lo(12),
+    Mux(s0_imm12(11), s0_in.bits.src(0)(VAddrBits - 1, 12), s0_in.bits.src(0)(VAddrBits - 1, 12) + 1.U),
+    Mux(s0_imm12(11), s0_in.bits.src(0)(VAddrBits - 1, 12) + SignExt(1.U, VAddrBits - 12), s0_in.bits.src(0)(VAddrBits - 1, 12)),
+  )
+  val s0_saddr = Cat(s0_saddr_hi, s0_saddr_lo(11, 0))
+
+  io.tlb.req := DontCare
+  io.tlb.req.bits.vaddr := s0_saddr
+  io.tlb.req.valid := s0_in.valid
+  io.tlb.req.bits.cmd := TlbCmd.write
+  io.tlb.req.bits.size := LSUOpType.size(s0_in.bits.uop.ctrl.fuOpType)
+  io.tlb.req.bits.robIdx := s0_in.bits.uop.robIdx
+  io.tlb.req.bits.debug.pc := s0_in.bits.uop.cf.pc
+
+  s0_out.bits := DontCare
+  s0_out.bits.vaddr := s0_saddr
+
+  // Now data use its own io
+  // io.out.bits.data := genWdata(io.in.bits.src(1), io.in.bits.uop.ctrl.fuOpType(1,0))
+  s0_out.bits.data := s0_in.bits.src(1) // FIXME: remove data from pipeline
+  s0_out.bits.uop := s0_in.bits.uop
+  s0_out.bits.miss := DontCare
+  s0_out.bits.rsIdx := io.rsIdx
+  s0_out.bits.mask := genWmask(s0_out.bits.vaddr, s0_in.bits.uop.ctrl.fuOpType(1, 0))
+  s0_out.bits.wlineflag := s0_in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_zero
+  s0_out.valid := s0_in.valid
+  s0_in.ready := s0_out.ready
+
+  // exception check
+  val s0_addrAligned = LookupTree(s0_in.bits.uop.ctrl.fuOpType(1, 0), List(
+    "b00".U -> true.B, //b
+    "b01".U -> (s0_out.bits.vaddr(0) === 0.U), //h
+    "b10".U -> (s0_out.bits.vaddr(1, 0) === 0.U), //w
+    "b11".U -> (s0_out.bits.vaddr(2, 0) === 0.U) //d
+  ))
+  private val s0_vaddr_inner = s0_in.bits.src(0) + SignExt(s0_in.bits.uop.ctrl.imm(11, 0), XLEN)
+  dontTouch(s0_vaddr_inner)
+  private val illegalAddr = s0_vaddr_inner(XLEN - 1, VAddrBits - 1) =/= 0.U && s0_vaddr_inner(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
+  s0_out.bits.uop.cf.exceptionVec(storeAddrMisaligned) := !s0_addrAligned && s0_in.bits.uop.loadStoreEnable
+  s0_out.bits.uop.cf.exceptionVec(storePageFault) := Mux(s0_in.bits.uop.loadStoreEnable & io.vmEnable, illegalAddr, false.B)
+
+
   val store_s1 = Module(new StoreUnit_S1)
   val store_s2 = Module(new StoreUnit_S2)
   val store_s3 = Module(new StoreUnit_S3)
 
-  store_s0.io.in <> io.stin
-  store_s0.io.dtlbReq <> io.tlb.req
+//  store_s0.io.in <> io.stin
+//  store_s0.io.dtlbReq <> io.tlb.req
   io.tlb.req_kill := false.B
-  store_s0.io.rsIdx := io.rsIdx
-  store_s0.io.vmEnable := io.vmEnable
+//  store_s0.io.rsIdx := io.rsIdx
+//  store_s0.io.vmEnable := io.vmEnable
 
   io.fdiReq := store_s1.io.fdiReq
   store_s2.io.fdiResp := io.fdiResp
 
-  io.storeMaskOut.valid := store_s0.io.in.valid
-  io.storeMaskOut.bits.mask := store_s0.io.out.bits.mask
-  io.storeMaskOut.bits.sqIdx := store_s0.io.out.bits.uop.sqIdx
+  io.storeMaskOut.valid := s0_in.valid
+  io.storeMaskOut.bits.mask := s0_out.bits.mask
+  io.storeMaskOut.bits.sqIdx := s0_out.bits.uop.sqIdx
 
-  PipelineConnect(store_s0.io.out, store_s1.io.in, true.B, store_s0.io.out.bits.uop.robIdx.needFlush(io.redirect_dup(0)))
+  PipelineConnect(s0_out, store_s1.io.in, true.B, s0_out.bits.uop.robIdx.needFlush(io.redirect_dup(0)))
 
 
   store_s1.io.dtlbResp <> io.tlb.resp
@@ -278,6 +328,6 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
     )
   }
 
-  printPipeLine(store_s0.io.out.bits, store_s0.io.out.valid, "S0")
+  printPipeLine(s0_out.bits, s0_out.valid, "S0")
   printPipeLine(store_s1.io.out.bits, store_s1.io.out.valid, "S1")
 }
