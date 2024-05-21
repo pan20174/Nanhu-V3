@@ -108,6 +108,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     val integerAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val floatingAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val vectorAllocPregs = Vec(coreParams.vectorParameters.vRenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
+    val ldStopMemRS = Input(Bool())
   })
   require(outer.dispatchNode.in.length == 1)
   private val enq = outer.dispatchNode.in.map(_._1).head
@@ -277,7 +278,8 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       b.io.auxSLoadIssValid := slRes.valid
     })
     val sLoadSelDelay = RegEnable(bankIdxSel, slRes.valid)
-    val specialLoadIssueDriver = Module(new MemoryIssuePipeline(param.bankNum, entriesNumPerBank))
+    val specialLoadIssueDriver = Module(new MemoryIssuePipelineBlock(param.bankNum, entriesNumPerBank))
+    specialLoadIssueDriver.io.ldStop := io.ldStopMemRS
     specialLoadIssueDriver.io.redirect := io.redirect
     specialLoadIssueDriver.io.earlyWakeUpCancel := io.earlyWakeUpCancel
     specialLoadIssueDriver.io.enq.valid := slRes.valid
@@ -301,11 +303,12 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
 
   for((iss, issuePortIdx) <- issue.zipWithIndex) {
     prefix(iss._2.name + "_" + iss._2.id) {
-      val issueDriver = Module(new MemoryIssuePipeline(param.bankNum, entriesNumPerBank))
+      val issueDriver = Module(new MemoryIssuePipelineBlock(param.bankNum, entriesNumPerBank))
       issueDriver.io.redirect := io.redirect
       issueDriver.io.earlyWakeUpCancel := io.earlyWakeUpCancel
 
       val respArbiter = Module(new SelectRespArbiter(param.bankNum, entriesNumPerBank, 3, true))
+//      respArbiter.io.ldStop := io.ldStopMemRS
       respArbiter.io.in(0) <> stdSelectNetwork.io.issueInfo(issuePortIdx)
       respArbiter.io.in(1) <> staSelectNetwork.io.issueInfo(issuePortIdx)
       respArbiter.io.in(2) <> lduSelectNetwork.io.issueInfo(issuePortIdx)
@@ -373,7 +376,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       earlyWakeupQueue.io.redirect := io.redirect
 
       earlyWakeupQueue.io.in.bits.lpv(issuePortIdx) := lduIssueInfo.bits.info.lpv(issuePortIdx) | (1 << (LpvLength - 1)).U
-      internalEarlyWakeup(issuePortIdx).valid := earlyWakeupQueue.io.out.valid
+      internalEarlyWakeup(issuePortIdx).valid := earlyWakeupQueue.io.out.valid && false.B ///more: tmp
       internalEarlyWakeup(issuePortIdx).bits.robPtr := earlyWakeupQueue.io.out.bits.robPtr
       internalEarlyWakeup(issuePortIdx).bits.pdest := earlyWakeupQueue.io.out.bits.pdest
       internalEarlyWakeup(issuePortIdx).bits.destType := earlyWakeupQueue.io.out.bits.destType
@@ -394,7 +397,8 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       iss._1.specialPsrc := DontCare
       iss._1.specialPsrcType := DontCare
       iss._1.specialPsrcRen := false.B
-      issueDriver.io.deq.ready := iss._1.issue.ready
+      issueDriver.io.deq.ready := iss._1.issue.ready && !io.ldStopMemRS
+      issueDriver.io.ldStop := io.ldStopMemRS
     }
   }
 

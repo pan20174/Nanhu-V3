@@ -55,6 +55,9 @@ class LoadUnitTriggerIO(implicit p: Parameters) extends XSBundle {
   val addrHit = Output(Bool())
   val lastDataHit = Output(Bool())
 }
+class ReplayQueueLoadInBundle(implicit p: Parameters) extends XSBundle{
+  val tmp = Bool()
+}
 
 class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with HasDCacheParameters with SdtrigExt with HasPerfLogging {
   val io = IO(new Bundle() {
@@ -85,6 +88,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
     val cancel = Output(Bool())
+    val ldStop = Input(Bool())
   })
 
 

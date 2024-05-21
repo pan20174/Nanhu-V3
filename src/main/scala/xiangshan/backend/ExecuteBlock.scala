@@ -201,6 +201,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
   memRs.io.floatingAllocPregs := io.floatingAllocPregs
   memRs.io.vectorAllocPregs := io.vectorAllocPregs
   memRs.io.stLastCompelet := memBlk.io.stIssuePtr
+  memRs.io.ldStopMemRS := memBlk.io.ldStopMemBlock
 
   vRs.io.redirect := Pipe(localRedirect)
   vRs.io.intAllocPregs := io.integerAllocPregs
