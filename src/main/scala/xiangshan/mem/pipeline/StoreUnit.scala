@@ -29,187 +29,6 @@ import xiangshan.backend.issue.{RSFeedback, RSFeedbackType, RsIdx}
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
 import xs.utils.perf.HasPerfLogging
 
-// Store Pipeline Stage 0
-// Generate addr, use addr to query DCache and DTLB
-class StoreUnit_S0(implicit p: Parameters) extends XSModule with HasPerfLogging {
-  val io = IO(new Bundle() {
-    val in = Flipped(Decoupled(new ExuInput))
-    val rsIdx = Input(new RsIdx)
-    val out = Decoupled(new LsPipelineBundle)
-    val dtlbReq = DecoupledIO(new TlbReq)
-    val vmEnable = Input(Bool())
-  })
-
-  // send req to dtlb
-  // val saddr = io.in.bits.src(0) + SignExt(io.in.bits.uop.ctrl.imm(11,0), VAddrBits)
-  val imm12 = WireInit(io.in.bits.uop.ctrl.imm(11,0))
-  val saddr_lo = io.in.bits.src(0)(11,0) + Cat(0.U(1.W), imm12)
-  val saddr_hi = Mux(saddr_lo(12),
-    Mux(imm12(11), io.in.bits.src(0)(VAddrBits-1, 12), io.in.bits.src(0)(VAddrBits-1, 12)+1.U),
-    Mux(imm12(11), io.in.bits.src(0)(VAddrBits-1, 12)+SignExt(1.U, VAddrBits-12), io.in.bits.src(0)(VAddrBits-1, 12)),
-  )
-  val saddr = Cat(saddr_hi, saddr_lo(11,0))
-
-  io.dtlbReq := DontCare
-  io.dtlbReq.bits.vaddr := saddr
-  io.dtlbReq.valid := io.in.valid
-  io.dtlbReq.bits.cmd := TlbCmd.write
-  io.dtlbReq.bits.size := LSUOpType.size(io.in.bits.uop.ctrl.fuOpType)
-  io.dtlbReq.bits.robIdx := io.in.bits.uop.robIdx
-  io.dtlbReq.bits.debug.pc := io.in.bits.uop.cf.pc
-
-  io.out.bits := DontCare
-  io.out.bits.vaddr := saddr
-
-  // Now data use its own io
-  // io.out.bits.data := genWdata(io.in.bits.src(1), io.in.bits.uop.ctrl.fuOpType(1,0))
-  io.out.bits.data := io.in.bits.src(1) // FIXME: remove data from pipeline
-  io.out.bits.uop := io.in.bits.uop
-  io.out.bits.miss := DontCare
-  io.out.bits.rsIdx := io.rsIdx
-  io.out.bits.mask := genWmask(io.out.bits.vaddr, io.in.bits.uop.ctrl.fuOpType(1,0))
-  io.out.bits.wlineflag := io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_zero
-  io.out.valid := io.in.valid
-  io.in.ready := io.out.ready
-
-  // exception check
-  val addrAligned = LookupTree(io.in.bits.uop.ctrl.fuOpType(1,0), List(
-    "b00".U   -> true.B,              //b
-    "b01".U   -> (io.out.bits.vaddr(0) === 0.U),   //h
-    "b10".U   -> (io.out.bits.vaddr(1,0) === 0.U), //w
-    "b11".U   -> (io.out.bits.vaddr(2,0) === 0.U)  //d
-  ))
-  private val vaddr = io.in.bits.src(0) + SignExt(io.in.bits.uop.ctrl.imm(11, 0), XLEN)
-  dontTouch(vaddr)
-  private val illegalAddr = vaddr(XLEN - 1, VAddrBits - 1) =/= 0.U && vaddr(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
-  io.out.bits.uop.cf.exceptionVec(storeAddrMisaligned) := !addrAligned && io.in.bits.uop.loadStoreEnable
-  io.out.bits.uop.cf.exceptionVec(storePageFault) := Mux(io.in.bits.uop.loadStoreEnable & io.vmEnable, illegalAddr, false.B)
-
-  XSPerfAccumulate("in_valid", io.in.valid)
-  XSPerfAccumulate("in_fire", io.in.fire)
-  XSPerfAccumulate("addr_spec_success", io.out.fire && saddr(VAddrBits-1, 12) === io.in.bits.src(0)(VAddrBits-1, 12))
-  XSPerfAccumulate("addr_spec_failed", io.out.fire && saddr(VAddrBits-1, 12) =/= io.in.bits.src(0)(VAddrBits-1, 12))
-}
-
-// Store Pipeline Stage 1
-// TLB resp (send paddr to dcache)
-class StoreUnit_S1(implicit p: Parameters) extends XSModule with HasPerfLogging {
-  val io = IO(new Bundle() {
-    val in = Flipped(Decoupled(new LsPipelineBundle))
-    val out = Decoupled(new LsPipelineBundle)
-    val lsq = ValidIO(new LsPipelineBundle())
-    val dtlbResp = Flipped(DecoupledIO(new TlbResp(if(UseOneDtlb) 2 else 1)))
-    val rsFeedback = ValidIO(new RSFeedback)
-    val fdiReq = ValidIO(new FDIReqBundle())
-  })
-
-  val EnableMem = io.in.bits.uop.loadStoreEnable
-  // mmio cbo decoder
-  val is_mmio_cbo = io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_clean ||
-    io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_flush ||
-    io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_inval
-
-  val s1_paddr = io.dtlbResp.bits.paddr(0)
-  val s1_tlb_miss = io.dtlbResp.bits.miss && EnableMem
-  val s1_mmio = is_mmio_cbo
-  val s1_exception = Mux(EnableMem, ExceptionNO.selectByFu(io.out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR, false.B)
-
-  //FDI check
-  io.fdiReq.valid := io.out.fire  //TODO: temporarily assignment
-  io.fdiReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
-  io.fdiReq.bits.inUntrustedZone := io.out.bits.uop.fdiUntrusted
-  io.fdiReq.bits.operation := FDIOp.write
-
-  io.in.ready := true.B
-
-  io.dtlbResp.ready := true.B // TODO: why dtlbResp needs a ready?
-
-  // Send TLB feedback to store issue queue
-  // Store feedback is generated in store_s1, sent to RS in store_s2
-  io.rsFeedback.valid := io.in.valid && s1_tlb_miss
-  io.rsFeedback.bits.flushState := io.dtlbResp.bits.ptwBack
-  io.rsFeedback.bits.rsIdx := io.in.bits.rsIdx
-  io.rsFeedback.bits.sourceType := RSFeedbackType.tlbMiss
-  XSDebug(io.rsFeedback.valid,
-    "S1 Store: tlbHit: %d rsBank: %d rsIdx: %d\n",
-    io.in.valid && !s1_tlb_miss,
-    io.rsFeedback.bits.rsIdx.bankIdxOH,
-    io.rsFeedback.bits.rsIdx.entryIdxOH
-  )
-
-  // get paddr from dtlb, check if rollback is needed
-  // writeback store inst to lsq
-  io.out.valid := io.in.valid && !s1_tlb_miss
-  io.out.bits := io.in.bits
-  io.out.bits.paddr := s1_paddr
-  io.out.bits.miss := false.B
-  io.out.bits.mmio := s1_mmio && EnableMem
-  io.out.bits.uop.cf.exceptionVec(storePageFault) := (io.dtlbResp.bits.excp(0).pf.st || io.in.bits.uop.cf.exceptionVec(storePageFault)) && EnableMem
-  io.out.bits.uop.cf.exceptionVec(storeAccessFault) := io.dtlbResp.bits.excp(0).af.st && EnableMem
-
-  io.lsq.valid := io.in.valid
-  io.lsq.bits := io.out.bits
-  io.lsq.bits.miss := s1_tlb_miss
-
-  // mmio inst with exception will be writebacked immediately
-  // io.out.valid := io.in.valid && (!io.out.bits.mmio || s1_exception) && !s1_tlb_miss
-
-  XSPerfAccumulate("in_valid", io.in.valid)
-  XSPerfAccumulate("in_fire", io.in.fire)
-  XSPerfAccumulate("tlb_miss", io.in.fire && s1_tlb_miss)
-}
-
-class StoreUnit_S2(implicit p: Parameters) extends XSModule {
-  val io = IO(new Bundle() {
-    val in = Flipped(Decoupled(new LsPipelineBundle))
-    val pmpResp = Flipped(new PMPRespBundle)
-    val static_pm = Input(Valid(Bool()))
-    val out = Decoupled(new LsPipelineBundle)
-    val fdiResp = Flipped(new FDIRespBundle)
-  })
-  val EnableMem = io.in.bits.uop.loadStoreEnable
-  val pmp = WireInit(io.pmpResp)
-  when (io.static_pm.valid) {
-    pmp.ld := false.B
-    pmp.st := false.B
-    pmp.instr := false.B
-    pmp.mmio := io.static_pm.bits
-  }
-
-  val s2_exception = ExceptionNO.selectByFu(io.out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR && EnableMem
-  val is_mmio = (io.in.bits.mmio || pmp.mmio) && EnableMem
-
-  io.in.ready := true.B
-  io.out.bits := io.in.bits
-  io.out.bits.mmio := is_mmio && !s2_exception
-  io.out.bits.uop.cf.exceptionVec(storeAccessFault) := (io.in.bits.uop.cf.exceptionVec(storeAccessFault) || pmp.st) && EnableMem
-  io.out.valid := io.in.valid && (!is_mmio || s2_exception)
-
-  //FDI store access fault
-  io.out.bits.uop.cf.exceptionVec(fdiUStoreAccessFault) := io.fdiResp.fdi_fault === FDICheckFault.UWriteFDIFault
-}
-
-class StoreUnit_S3(implicit p: Parameters) extends XSModule {
-  val io = IO(new Bundle() {
-    val redirect = Input(Valid(new Redirect))
-    val in = Flipped(Decoupled(new LsPipelineBundle))
-    val stout = DecoupledIO(new ExuOutput) // writeback store
-  })
-  io.in.ready := true.B
-
-  io.stout := DontCare
-  io.stout.valid := io.in.valid && !io.in.bits.uop.robIdx.needFlush(io.redirect)
-  io.stout.bits.uop := io.in.bits.uop
-  io.stout.bits.data := DontCare
-  io.stout.bits.redirectValid := false.B
-  io.stout.bits.redirect := DontCare
-  io.stout.bits.debug.isMMIO := io.in.bits.mmio
-  io.stout.bits.debug.paddr := io.in.bits.paddr
-  io.stout.bits.debug.vaddr := io.in.bits.vaddr
-  io.stout.bits.debug.isPerfCnt := false.B
-  io.stout.bits.fflags := DontCare
-}
-
 class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   val io = IO(new Bundle() {
     val stin = Flipped(Decoupled(new ExuInput))
@@ -230,13 +49,9 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
     val fdiResp = Flipped(new FDIRespBundle())
   })
   io.tlb := DontCare
-//  val store_s0 = Module(new StoreUnit_S0)
   val s0_in = io.stin
   val s0_out = Wire(Decoupled(new LsPipelineBundle))
 
-//  val s0_dtlbReq = io.tlb.req
-
-//  s0_in := io.stin
   val s0_imm12 = WireInit(s0_in.bits.uop.ctrl.imm(11,0))
   val s0_saddr_lo = s0_in.bits.src(0)(11,0) + Cat(0.U(1.W), s0_imm12)
   val s0_saddr_hi = Mux(s0_saddr_lo(12),
@@ -280,7 +95,6 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   s0_out.bits.uop.cf.exceptionVec(storeAddrMisaligned) := !s0_addrAligned && s0_in.bits.uop.loadStoreEnable
   s0_out.bits.uop.cf.exceptionVec(storePageFault) := Mux(s0_in.bits.uop.loadStoreEnable & io.vmEnable, illegalAddr, false.B)
 
-//  val store_s1 = Module(new StoreUnit_S1)
   val s1_in = Wire(Decoupled(new LsPipelineBundle))
   val s1_out = Wire(Decoupled(new LsPipelineBundle))
   val s1_enableMem = s1_in.bits.uop.loadStoreEnable
@@ -309,6 +123,7 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   s1_rsFeedback.bits.flushState := io.tlb.resp.bits.ptwBack
   s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
   s1_rsFeedback.bits.sourceType := RSFeedbackType.tlbMiss
+  io.feedbackSlow := Pipe(s1_rsFeedback)
   XSDebug(s1_rsFeedback.valid,
     "S1 Store: tlbHit: %d rsBank: %d rsIdx: %d\n",
     s1_in.valid && !s1_tlb_miss,
@@ -330,8 +145,6 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   io.lsq.bits := s1_out.bits
   io.lsq.bits.miss := s1_tlb_miss
 
-
-//  val store_s2 = Module(new StoreUnit_S2)
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
 
@@ -356,35 +169,15 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   //FDI store access fault
   s2_out.bits.uop.cf.exceptionVec(fdiUStoreAccessFault) := io.fdiResp.fdi_fault === FDICheckFault.UWriteFDIFault
 
-//  val store_s3 = Module(new StoreUnit_S3)
-
-//  store_s0.io.in <> io.stin
-//  store_s0.io.dtlbReq <> io.tlb.req
   io.tlb.req_kill := false.B
-//  store_s0.io.rsIdx := io.rsIdx
-//  store_s0.io.vmEnable := io.vmEnable
-
-//  io.fdiReq := store_s1.io.fdiReq
-//  store_s2.io.fdiResp := io.fdiResp
 
   io.storeMaskOut.valid := s0_in.valid
   io.storeMaskOut.bits.mask := s0_out.bits.mask
   io.storeMaskOut.bits.sqIdx := s0_out.bits.uop.sqIdx
 
   PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(io.redirect_dup(0)))
-
-
-//  store_s1.io.dtlbResp <> io.tlb.resp
-//  io.lsq <> store_s1.io.lsq
-
   PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(io.redirect_dup(1)))
 
-  // feedback tlb miss to RS in store_s2
-  io.feedbackSlow := Pipe(s1_rsFeedback)
-
-//  store_s2.io.pmpResp <> io.pmp
-//  store_s2.io.static_pm := RegNext(io.tlb.resp.bits.static_pm)
-//  store_s2.io.static_pm := RegEnable(io.tlb.resp.bits.static_pm,io.tlb.resp.valid)
   io.lsq_replenish := s2_out.bits // mmio and exception
 
   val s3_in = Wire(Decoupled(new LsPipelineBundle))
