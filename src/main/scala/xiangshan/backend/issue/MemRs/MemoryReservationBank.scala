@@ -136,6 +136,7 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
   statusArray.io.enq.valid := io.enq.valid
   statusArray.io.enq.bits.addrOH := io.enq.bits.addrOH
   statusArray.io.enq.bits.data := EnqToEntry(io.enq.bits.data)
+  ///todo
   statusArray.io.staLduIssue.valid := io.loadIssue.valid || io.staIssue.valid || io.specialIssue.valid
   statusArray.io.stdIssue.valid := io.stdIssue.valid
   statusArray.io.staLduIssue.bits := Seq(io.loadIssue, io.staIssue, io.specialIssue).map(e => Mux(e.valid, e.bits, 0.U)).reduce(_|_)

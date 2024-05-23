@@ -273,7 +273,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     val bankIdxSel = slRes.bits.bankIdxOH(i * sludIssBankNum + sludIssBankNum - 1, i * sludIssBankNum)
     val bankSel = rsBankSeq.slice(i * sludIssBankNum,  i * sludIssBankNum + sludIssBankNum)
     bankSel.zip(bankIdxSel.asBools).foreach({ case (b, e) =>
-      b.io.specialIssue.valid := slRes.valid && e
+      b.io.specialIssue.valid := slRes.fire && e ///todo
       b.io.specialIssue.bits := slRes.bits.entryIdxOH
       b.io.auxSLoadIssValid := slRes.valid
     })
@@ -294,7 +294,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     sldu_iss._1.rsIdx.bankIdxOH := specialLoadIssueDriver.io.deq.bits.bankIdxOH
     sldu_iss._1.rsIdx.entryIdxOH := specialLoadIssueDriver.io.deq.bits.entryIdxOH
     sldu_iss._1.auxValid := specialLoadIssueDriver.io.deq.valid && !loadHasIssued
-    specialLoadIssueDriver.io.deq.ready := sldu_iss._1.issue.ready
+    specialLoadIssueDriver.io.deq.ready := sldu_iss._1.issue.ready && !io.ldStopMemRS
     XSPerfAccumulate(s"sldu_${i}_issue", specialLoadIssueDriver.io.enq.fire)
   }
 
@@ -340,14 +340,18 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       val stdSel = getSlice(stdSelectNetwork.io.issueInfo(issuePortIdx).bits.bankIdxOH.asBools)
       val staSel = getSlice(staSelectNetwork.io.issueInfo(issuePortIdx).bits.bankIdxOH.asBools)
       val loadSel = getSlice(lduSelectNetwork.io.issueInfo(issuePortIdx).bits.bankIdxOH.asBools)
-      val stdSelDelay = stdSel.map(s => RegEnable(s, selResp.valid & !issueDriver.io.hold))
-      val staSelDelay = staSel.map(s => RegEnable(s, selResp.valid & !issueDriver.io.hold))
-      val loadSelDelay = loadSel.map(s => RegEnable(s, selResp.valid & !issueDriver.io.hold))
+//      val stdSelDelay = stdSel.map(s => RegEnable(s, selResp.valid & !issueDriver.io.hold))
+//      val staSelDelay = staSel.map(s => RegEnable(s, selResp.valid & !issueDriver.io.hold))
+//      val loadSelDelay = loadSel.map(s => RegEnable(s, selResp.valid & !issueDriver.io.hold))
+      val stdSelDelay = stdSel.map(s => RegEnable(s, selResp.fire & !issueDriver.io.hold))
+      val staSelDelay = staSel.map(s => RegEnable(s, selResp.fire & !issueDriver.io.hold))
+      val loadSelDelay = loadSel.map(s => RegEnable(s, selResp.fire & !issueDriver.io.hold))
       bankPayloads(0) := Mux1H(stdSelDelay, selectedBanks.map(_.io.stdUop))
       bankPayloads(1) := Mux1H(staSelDelay, selectedBanks.map(_.io.staUop))
       bankPayloads(2) := Mux1H(loadSelDelay, selectedBanks.map(_.io.loadUop))
 
-      val chosenDelay = RegEnable(respArbiter.io.chosen, selResp.valid & !issueDriver.io.hold)
+//      val chosenDelay = RegEnable(respArbiter.io.chosen, selResp.valid & !issueDriver.io.hold)
+      val chosenDelay = RegEnable(respArbiter.io.chosen, selResp.fire & !issueDriver.io.hold)
       val selPayload = Mux1H(chosenDelay, bankPayloads)
       stIssuedWires(issuePortIdx).valid := issueDriver.io.deq.fire && issueDriver.io.deq.bits.uop.ctrl.fuType === FuType.stu
       stIssuedWires(issuePortIdx).bits := issueDriver.io.deq.bits.uop.robIdx
@@ -385,7 +389,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
 
       selResp.ready := issueDriver.io.enq.ready
       issueDriver.io.enq.valid := selResp.valid
-      issueDriver.io.enq.bits.uop := selPayload
+      issueDriver.io.enq.bits.uop := selPayload //todo
       issueDriver.io.enq.bits.selectResp := selResp.bits
 
       iss._1.issue.valid := issueDriver.io.deq.valid
