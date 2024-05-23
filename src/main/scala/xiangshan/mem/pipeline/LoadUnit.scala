@@ -560,7 +560,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   io.s3_enq_replqQueue.valid := s2_out.valid
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
+  io.s3_enq_replqQueue.bits.paddr := DontCare
   io.s3_enq_replqQueue.bits.isReplayQReplay := false.B
+  io.s3_enq_replqQueue.bits.replayCause := DontCare
   io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := true.B
   io.s3_enq_replqQueue.bits.schedIndex := 0.U
   io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop

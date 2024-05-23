@@ -590,7 +590,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     // pmp
     loadUnits(i).io.pmp <> pmp_check(i).resp
     //replayQueue
-    loadUnits(i).io.s3_enq_replqQueue <> lsq.io.replayQEnq
+    loadUnits(i).io.s3_enq_replqQueue <> lsq.io.replayQEnq(i)
 
     //cancel
     io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))

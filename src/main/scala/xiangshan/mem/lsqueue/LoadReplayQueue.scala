@@ -118,7 +118,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     numEntries = LoadReplayQueueSize,
     numRead = LoadPipelineWidth,
     numWrite = LoadPipelineWidth))
-    
+  vaddrModule.io := DontCare
   // replayQueue Full Backpressure Logic
   val lqFull = freeList.io.empty
   val lqFreeNums = freeList.io.validCount
@@ -197,19 +197,19 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
       { input(LoadPipelineWidth * i + rem) } )).asUInt
   }
   def getRemUop[T <: Data](input: Vec[T], rem: Int): Vec[T] = {
-    val selectedElements = (0 until input.length).filter(i => (i % rem) == rem).map(input(_))
-    VecInit(selectedElements)
+    VecInit((0 until LoadReplayQueueSize / LoadPipelineWidth).map(i => 
+      input(LoadPipelineWidth * i + rem)
+    ))
   }
   val s1_selResSeq = Wire(Vec(LoadPipelineWidth, Valid(UInt((LoadReplayQueueSize / LoadPipelineWidth).W))))
-  val s1_selRes_Mask = s1_selResSeq.filter(_.valid == true.B).map(_.bits).reduce( _ | _)
   val s0_readyToReplay_mask = VecInit((0 until LoadReplayQueueSize).map(i => {
-    allocatedReg(i) && !scheduledReg(i) && !blockingReg(i) && !s1_selRes_Mask(i)
+    allocatedReg(i) && !scheduledReg(i) && !blockingReg(i)
   }))
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem => 
     val s0_remReadyToReplay_uop = getRemUop(uopReg, rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
     val s0_remReadyToReplay_seq = (0 until LoadReplayQueueSize/LoadPipelineWidth).map{ i =>
-      val valid = s0_remReadyToReplay_mask(i)
+      val valid = s0_remReadyToReplay_mask(i) && !(Mux(s1_selResSeq(rem).valid, s1_selResSeq(rem).bits(i).asBool, false.B))
       val uop = s0_remReadyToReplay_uop(i)
       val validUop = Wire(Valid(new MicroOp))
       validUop.valid := valid
@@ -218,10 +218,11 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     }
     SelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
   }
+  
   for (i <- 0 until LoadPipelineWidth) {
-    for (j <- 0 until LoadReplayQueueSize) {
+    for (j <- 0 until LoadReplayQueueSize/LoadPipelineWidth) {
       when (s1_selResSeq(i).valid && s1_selResSeq(i).bits(j)) {
-        scheduledReg(j) := true.B
+        scheduledReg(j*2+i) := true.B
       }
     }
   }
@@ -232,12 +233,13 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     vaddrModule.io.ren(i) := s1_selResSeq(i).valid
     vaddrModule.io.raddr(i) := sel_idx
     replay_req(i).valid := s1_selResSeq(i).valid
-    replay_req(i).bits.vaddr := vaddrModule.io.raddr(i)
+    replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)
     replay_req(i).bits.isReplayQReplay := true.B
-    replay_req(i).bits.replayCause := causeReg(sel_idx)
     replay_req(i).bits.schedIndex := sel_idx
     replay_req(i).bits.uop := uopReg(sel_idx)
 
+    replay_req(i).bits.paddr := DontCare
+    replay_req(i).bits.replayCause := DontCare
     replay_req(i).bits.mask := 0.U
     replay_req(i).bits.data := 0.U
     replay_req(i).bits.wlineflag := false.B
@@ -250,7 +252,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     replay_req(i).bits.forwardMask := DontCare
     replay_req(i).bits.forwardData := DontCare
 
-    io.replayReq(i) := replay_req(i)
+    io.replayReq(i) <> replay_req(i)
   }
 
   //  perf cnt

@@ -72,7 +72,7 @@ object SelectPolicy {
       a.valid := b.valid
       a.bits := b.bits.robIdx
     })
-    val res = RegInit(Valid(0.U(entryNum.W)))
+    val res = Reg(Valid(UInt(entryNum.W)))
     res.valid := selector.io.out.valid && !redirect.valid
     res.bits := selector.io.out.bits
     res

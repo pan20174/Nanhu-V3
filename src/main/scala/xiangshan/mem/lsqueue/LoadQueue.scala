@@ -123,12 +123,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   val replayQueue = Module(new LoadReplayQueue)
   replayQueue.io.redirect := io.brqRedirect
-  replayQueue.io.replayReq := DontCare
   replayQueue.io.enq <> io.replayQEnq
-
-  val debug_replayReq = Reg(Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle)))
-  debug_replayReq
-
+  replayQueue.io.replayReq(0).ready := true.B
+  replayQueue.io.replayReq(1).ready := true.B
 
   println("LoadQueue: size:" + LoadQueueSize)
 
