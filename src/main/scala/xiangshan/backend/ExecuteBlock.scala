@@ -165,6 +165,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
   rf.io.extraReads.last <> vpBlk.io.rfReadPort.srf
   rf.io.redirect := Pipe(localRedirect)
   rf.io.mmuEnable := intBlk.io.csrio.tlb.priv.dmode < ModeM
+  rf.io.ldStop := memBlk.io.ldStopMemBlock
 
   vrf.io.hartId := io.hartId
   vrf.io.debug_vec_rat := io.debug_vec_rat

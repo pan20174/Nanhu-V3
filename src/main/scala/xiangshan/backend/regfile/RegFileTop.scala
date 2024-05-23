@@ -89,6 +89,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
       val vectorRfMoveReq = Output(Vec(loadUnitNum, Valid(new MoveReq)))
       val debug_int_rat = Input(Vec(32, UInt(PhyRegIdxWidth.W)))
       val debug_fp_rat = Input(Vec(32, UInt(PhyRegIdxWidth.W)))
+      val ldStop = Input(Bool())
       val redirect = Input(Valid(new Redirect))
     })
     require(issueNode.in.count(_._2._1.isIntRs) <= 1)
@@ -244,6 +245,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
               exuInBundle.uop.ctrl.imm := addrGen.io.imm
             }
           }.otherwise {
+            //todo
             issueBundle.src(0) := intRf.io.read(intRfReadIdx).data
             exuInBundle := ImmExtractor(exuComplexParam, issueBundle)
           }
@@ -282,7 +284,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           exuInBundle := DontCare
           require(false, "Unknown Exu Complex Type")
         }
-
+        //todo
         val issueValidReg = RegInit(false.B)
         val auxValidReg = RegInit(false.B)
         val issueExuInReg = Reg(new ExuInput)
@@ -307,7 +309,14 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           bo.issue.bits.uop.loadStoreEnable := exuInBundle.uop.loadStoreEnable // This has been delayed
         }
 
-        bi.issue.ready := allowPipe
+        bi.issue.ready := allowPipe ///todo
+        if(exuComplexParam.isMemType && !exuComplexParam.isSpecialLoad){
+          when(allowPipe && bi.issue.fire){
+            issueValidReg := !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
+            auxValidReg := bi.auxValid && !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
+          }
+          bi.issue.ready := allowPipe && !io.ldStop
+        }
         bi.rsFeedback.feedbackFastLoad := bo.rsFeedback.feedbackFastLoad
         bi.rsFeedback.feedbackSlowLoad := bo.rsFeedback.feedbackSlowLoad
         bi.rsFeedback.feedbackSlowStore := bo.rsFeedback.feedbackSlowStore
