@@ -358,7 +358,8 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
         bankReplays._1.zip(feedbackSeq).foreach({ case (sink, source) =>
           sink.valid := source.valid && source.bits.rsIdx.bankIdxOH(bankIdx)
           sink.bits.entryIdxOH := source.bits.rsIdx.entryIdxOH
-          sink.bits.waitVal := source.bits.sourceType
+          sink.bits.status.waitVal := source.bits.sourceType
+          sink.bits.status.hit := Mux(source.bits.sourceType === RSFeedbackType.success,true.B,false.B)
         })
       })
 
