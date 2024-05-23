@@ -114,7 +114,7 @@ class MemoryIssuePipelineBlock(bankIdxWidth:Int, entryIdxWidth:Int)(implicit p: 
   }
 
   private val timer = GTimer()
-  io.deq.valid := deqValidDriverReg && !shouldBeCanceled
+  io.deq.valid := deqValidDriverReg && !shouldBeCanceled && !io.ldStop
   io.deq.bits.uop := io.enq.bits.uop
   io.deq.bits.uop.debugInfo.selectTime := timer
   io.deq.bits.uop.debugInfo.issueTime := timer + 1.U
