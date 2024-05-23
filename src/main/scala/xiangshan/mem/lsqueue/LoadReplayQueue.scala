@@ -91,6 +91,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     val enq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
     val redirect = Flipped(ValidIO(new Redirect))
     val replayReq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
+    val replayQFull = Output(Bool())
     })
   // replayQueue state signs define
   // allocated: the entry has been enqueued
@@ -121,6 +122,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   // replayQueue Full Backpressure Logic
   val lqFull = freeList.io.empty
   val lqFreeNums = freeList.io.validCount
+  io.replayQFull := lqFull
 
   // enq req control
   val enqReqValid = io.enq.map(_.valid)
@@ -252,4 +254,32 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
 
     io.replayReq(i) := replay_req(i)
   }
+
+  //  perf cnt
+  val enqNumber               = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay))
+  val deqNumber               = PopCount(io.replayReq.map(_.fire))
+  val deqBlockCount           = PopCount(io.replayReq.map(r => r.valid && !r.ready))
+  val replayTlbMissCount      = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_TM)))
+  val replayMemAmbCount       = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_MA)))
+  val replayNukeCount         = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_NK)))
+  val replayRARRejectCount    = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_RAR)))
+  val replayRAWRejectCount    = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_RAW)))
+  val replayBankConflictCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_BC)))
+  val replayDCacheReplayCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DR)))
+  val replayForwardFailCount  = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_FF)))
+  val replayDCacheMissCount   = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DM)))
+  XSPerfAccumulate("enq", enqNumber)
+  XSPerfAccumulate("deq", deqNumber)
+  XSPerfAccumulate("deq_block", deqBlockCount)
+  XSPerfAccumulate("replay_full", io.replayQFull)
+  XSPerfAccumulate("replay_rar_nack", replayRARRejectCount)
+  XSPerfAccumulate("replay_raw_nack", replayRAWRejectCount)
+  XSPerfAccumulate("replay_nuke", replayNukeCount)
+  XSPerfAccumulate("replay_mem_amb", replayMemAmbCount)
+  XSPerfAccumulate("replay_tlb_miss", replayTlbMissCount)
+  XSPerfAccumulate("replay_bank_conflict", replayBankConflictCount)
+  XSPerfAccumulate("replay_dcache_replay", replayDCacheReplayCount)
+  XSPerfAccumulate("replay_forward_fail", replayForwardFailCount)
+  XSPerfAccumulate("replay_dcache_miss", replayDCacheMissCount)
+
 }
