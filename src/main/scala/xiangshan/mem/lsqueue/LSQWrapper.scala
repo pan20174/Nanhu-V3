@@ -99,6 +99,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val trigger = Vec(LoadPipelineWidth, new LqTriggerIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val storeAddrIn = Vec(StorePipelineWidth, Flipped(Decoupled(new ExuOutput)))  // store addr
+    val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
   })
 
   val loadQueue = Module(new LoadQueue)
@@ -160,6 +161,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.trigger <> io.trigger
   loadQueue.io.exceptionAddr.isStore := DontCare
   loadQueue.io.lqCancelCnt <> io.lqCancelCnt
+  loadQueue.io.replayQEnq <> io.replayQEnq
   io.lqDeq := loadQueue.io.lqDeq
 
   // store queue wiring

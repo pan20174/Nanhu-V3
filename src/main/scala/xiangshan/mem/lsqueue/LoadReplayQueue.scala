@@ -88,7 +88,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   with HasPerfLogging
 {
   val io = IO(new Bundle() {
-    val enq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
+    val enq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val redirect = Flipped(ValidIO(new Redirect))
     val replayReq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
     val replayQFull = Output(Bool())
@@ -103,7 +103,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   // replayCause: the reason for replaying, monitor whether the exception is solved
   val causeReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(LoadReplayCauses.allCauses.W))))
   // uop: micro op per entry
-  val uopReg = RegInit(Vec(LoadReplayQueueSize, 0.U.asTypeOf(new MicroOp)))
+  val uopReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U.asTypeOf(new MicroOp))))
 
   // replayQueue enq\deq control
   val freeList = Module(new FreeList(
@@ -203,7 +203,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   val s1_selResSeq = Wire(Vec(LoadPipelineWidth, Valid(UInt((LoadReplayQueueSize / LoadPipelineWidth).W))))
   val s1_selRes_Mask = s1_selResSeq.filter(_.valid == true.B).map(_.bits).reduce( _ | _)
   val s0_readyToReplay_mask = VecInit((0 until LoadReplayQueueSize).map(i => {
-    allocatedReg(i) && !scheduledReg(i) && !blockingReg(i) && ~s1_selRes_Mask(i)
+    allocatedReg(i) && !scheduledReg(i) && !blockingReg(i) && !s1_selRes_Mask(i)
   }))
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem => 
     val s0_remReadyToReplay_uop = getRemUop(uopReg, rem)
@@ -237,9 +237,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     replay_req(i).bits.replayCause := causeReg(sel_idx)
     replay_req(i).bits.schedIndex := sel_idx
     replay_req(i).bits.uop := uopReg(sel_idx)
-    replay_req(i).bits.isFirstIssue := false.B
 
-    replay_req(i).bits.vaddr := 0.U
     replay_req(i).bits.mask := 0.U
     replay_req(i).bits.data := 0.U
     replay_req(i).bits.wlineflag := false.B

@@ -85,6 +85,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
     val cancel = Output(Bool())
+
+    val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
   })
 
 
@@ -555,6 +557,25 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   private val s1_cancel = RegInit(false.B)
   s1_cancel := s1_in.valid && (!s1_out.valid)
   io.cancel := s1_cancel || s2_lpvCancel
+
+  io.s3_enq_replqQueue.valid := s2_out.valid
+  io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
+  io.s3_enq_replqQueue.bits.isReplayQReplay := false.B
+  io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := true.B
+  io.s3_enq_replqQueue.bits.schedIndex := 0.U
+  io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop
+  io.s3_enq_replqQueue.bits.mask := s2_mask
+  io.s3_enq_replqQueue.bits.data := 0.U
+  io.s3_enq_replqQueue.bits.wlineflag := false.B
+  io.s3_enq_replqQueue.bits.miss := false.B
+  io.s3_enq_replqQueue.bits.tlbMiss := false.B
+  io.s3_enq_replqQueue.bits.ptwBack := false.B
+  io.s3_enq_replqQueue.bits.mmio := false.B
+  io.s3_enq_replqQueue.bits.isSoftPrefetch := false.B
+  io.s3_enq_replqQueue.bits.rsIdx := DontCare
+  io.s3_enq_replqQueue.bits.forwardMask := DontCare
+  io.s3_enq_replqQueue.bits.forwardData := DontCare
+
 
   val perfEvents = Seq(
     ("load_s0_in_fire         ", s0_in.fire),

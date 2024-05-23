@@ -589,6 +589,9 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     dtlb_reqs.take(exuParameters.LduCnt)(i).req.valid := loadUnits(i).io.tlb.req.valid && !loadUnits(i).io.tlb.req.bits.robIdx.needFlush(Pipe(redirectIn))
     // pmp
     loadUnits(i).io.pmp <> pmp_check(i).resp
+    //replayQueue
+    loadUnits(i).io.s3_enq_replqQueue <> lsq.io.replayQEnq
+
     //cancel
     io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
     // prefetch

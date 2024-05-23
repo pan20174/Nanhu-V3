@@ -118,7 +118,17 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val lqCancelCnt = Output(UInt(log2Up(LoadQueueSize + 1).W))
     val trigger = Vec(LoadPipelineWidth, new LqTriggerIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
+    val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
   })
+
+  val replayQueue = Module(new LoadReplayQueue)
+  replayQueue.io.redirect := io.brqRedirect
+  replayQueue.io.replayReq := DontCare
+  replayQueue.io.enq <> io.replayQEnq
+
+  val debug_replayReq = Reg(Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle)))
+  debug_replayReq
+
 
   println("LoadQueue: size:" + LoadQueueSize)
 
