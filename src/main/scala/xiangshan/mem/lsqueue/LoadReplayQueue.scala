@@ -88,7 +88,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   with HasPerfLogging
 {
   val io = IO(new Bundle() {
-    val enq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
+    val enq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val redirect = Flipped(ValidIO(new Redirect))
     val replayReq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
     val replayQFull = Output(Bool())
