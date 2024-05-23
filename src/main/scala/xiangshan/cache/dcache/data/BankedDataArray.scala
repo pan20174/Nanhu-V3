@@ -189,6 +189,7 @@ class BankedDataArray(parentName: String = "Unknown")(implicit p: Parameters) ex
         shouldReset = false,
         holdRead = false,
         singlePort = true,
+        hasClkGate = true,
         hasMbist = coreParams.hasMbist,
         hasShareBus = coreParams.hasShareBus,
         parentName = parentName + s"bank${idx}_"

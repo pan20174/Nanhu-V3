@@ -59,7 +59,7 @@ class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DC
   }
 
   val tag_array = Module(new SRAMTemplate(UInt(tagBits.W), set = nSets, way = nWays,
-    shouldReset = false, holdRead = false, singlePort = true,
+    shouldReset = false, holdRead = false, singlePort = true, hasClkGate = true,
     hasMbist = coreParams.hasMbist,
     hasShareBus = coreParams.hasShareBus,
     parentName = parentName

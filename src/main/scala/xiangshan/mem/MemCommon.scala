@@ -68,8 +68,6 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
   //softprefetch
   val isSoftPrefetch = Bool()
 
-  // For debug usage
-  val isFirstIssue = Bool()
 }
 
 class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
@@ -92,7 +90,6 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
     forwardMask := input.forwardMask
     forwardData := input.forwardData
     isSoftPrefetch := input.isSoftPrefetch
-    isFirstIssue := input.isFirstIssue
 
     lq_data_wen_dup := DontCare
   }
@@ -106,11 +103,10 @@ class LoadForwardQueryIO(implicit p: Parameters) extends XSBundle {
   val pc = Output(UInt(VAddrBits.W)) //for debug
   val valid = Output(Bool())
 
-  val forwardMaskFast = Input(Vec(8, Bool())) // resp to load_s1
+//  val forwardMaskFast = Input(Vec(8, Bool()))
   val forwardMask = Input(Vec(8, Bool())) // resp to load_s2
   val forwardData = Input(Vec(8, UInt(8.W))) // resp to load_s2
 
-  // val lqIdx = Output(UInt(LoadQueueIdxWidth.W))
   val sqIdx = Output(new SqPtr)
 
   // dataInvalid suggests store to load forward found forward should happen,
@@ -124,19 +120,9 @@ class LoadForwardQueryIO(implicit p: Parameters) extends XSBundle {
   val matchInvalid = Input(Bool()) // resp to load_s2
 }
 
-// LoadForwardQueryIO used in load pipeline
-//
-// Difference between PipeLoadForwardQueryIO and LoadForwardQueryIO:
-// PipeIO use predecoded sqIdxMask for better forward timing
-class PipeLoadForwardQueryIO(implicit p: Parameters) extends LoadForwardQueryIO {
-  // val sqIdx = Output(new SqPtr) // for debug, should not be used in pipeline for timing reasons
-  // sqIdxMask is calcuated in earlier stage for better timing
+// PipeLoadForwardFromSQ is used in loadUnit stage_1 to require StoreQueue to forward data
+class PipeLoadForwardFromSQ(implicit p: Parameters) extends LoadForwardQueryIO {
   val sqIdxMask = Output(UInt(StoreQueueSize.W))
-
-  // dataInvalid: addr match, but data is not valid for now
-  val dataInvalidFast = Input(Bool()) // resp to load_s1
-  // val dataInvalid = Input(Bool()) // resp to load_s2
-  val dataInvalidSqIdx = Input(UInt(log2Up(StoreQueueSize).W)) // resp to load_s2, sqIdx value
 }
 
 // Query load queue for ld-ld violation
@@ -157,8 +143,8 @@ class LoadViolationQueryResp(implicit p: Parameters) extends XSBundle {
 }
 
 class LoadViolationQueryIO(implicit p: Parameters) extends XSBundle {
-  val req = Decoupled(new LoadViolationQueryReq)
-  val resp = Flipped(Valid(new LoadViolationQueryResp))
+  val s1_req = Decoupled(new LoadViolationQueryReq)
+  val s2_resp = Flipped(Valid(new LoadViolationQueryResp))
 }
 
 // Store byte valid mask write bundle
@@ -171,17 +157,11 @@ class StoreMaskBundle(implicit p: Parameters) extends XSBundle {
 
 class LoadDataFromDcacheBundle(implicit p: Parameters) extends DCacheBundle {
   val load_data = UInt(64.W)
-//  val bankedDcacheData = Vec(DCacheBanks, UInt(64.W))
-//  val bank_oh = UInt(DCacheBanks.W)
+
   val forwardMask = Vec(8, Bool())
   val forwardData = Vec(8, UInt(8.W))
   val uop = new MicroOp // for data selection, only fwen and fuOpType are used
   val addrOffset = UInt(3.W) // for data selection
-
-  // val dcacheData = UInt(64.W)
-//  def dcacheData(): UInt = {
-//    Mux1H(bank_oh, bankedDcacheData)
-//  }
 
   def dcacheData(): UInt = {
     load_data

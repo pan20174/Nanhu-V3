@@ -392,10 +392,6 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
     req_valid &&
       Mux(
-
-
-
-
         block_match,
         !before_read_sent_can_merge(new_req) &&
           !before_data_refill_can_merge(new_req) || !alias_match,
@@ -481,7 +477,7 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   refill.id := req.id
   def missCohGen(cmd: UInt, param: UInt, dirty: Bool) = {
     val c = categorize(cmd)
-    MuxLookup(Cat(c, param, dirty), Nothing, Seq(
+    MuxLookup(Cat(c, param, dirty), Nothing)(Seq(
       //(effect param) -> (next)
       Cat(rd, toB, false.B)  -> Branch,
       Cat(rd, toB, true.B)   -> Branch,

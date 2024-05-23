@@ -86,6 +86,9 @@ class VIWakeQueueEntryUpdateNetwork(implicit p: Parameters) extends XSModule wit
   private val specialLsrc0EncodeSeq = Seq("b01010".U, "b01011".U, "b10000".U, "b10001".U, "b10110".U, "b10111".U)
   private val isSpeicalFp = vctrl.funct6 === "b010010".U && specialLsrc0EncodeSeq.map(_ === ctrl.lsrc(0)).reduce(_ || _)
   private val isFp = vctrl.funct3 === "b101".U || vctrl.funct3 === "b001".U
+  private val isVFMVFS = vctrl.funct6 === "b010000".U && vctrl.funct3 === "b001".U && ctrl.lsrc(0) === 0.U
+  private val isVFMVSF = vctrl.funct6 === "b010000".U && vctrl.funct3 === "b101".U && ctrl.lsrc(1) === 0.U
+  private val isSVFMV = isVFMVFS || isVFMVSF
   private val regularLs = vctrl.isLs && vctrl.eewType(1) === EewType.dc && vctrl.emulType === EmulType.lmul
   private val indexedLs = vctrl.isLs && vctrl.eewType(1) === EewType.const && vctrl.emulType === EmulType.lmul
   private val lmulShift = Wire(UInt(10.W))
@@ -102,7 +105,7 @@ class VIWakeQueueEntryUpdateNetwork(implicit p: Parameters) extends XSModule wit
   private val ilsEmul = (lmulShift << vctrl.eew(1)(1, 0)) >> vcsr.vsew(1, 0)
   private val vg16vs1Emul = (lmulShift << EewVal.hword) >> vcsr.vsew(1, 0)
   private val isVMVnr = vctrl.funct6 === "b1001111".U && vctrl.funct3 === "b011".U
-  private val iiConds = WireInit(VecInit(Seq.fill(13)(false.B)))
+  private val iiConds = WireInit(VecInit(Seq.fill(14)(false.B)))
   dontTouch(iiConds)
 
   private val emuls = Seq.fill(3)(Wire(UInt(3.W)))
@@ -295,6 +298,7 @@ class VIWakeQueueEntryUpdateNetwork(implicit p: Parameters) extends XSModule wit
       (vctrl.eewType(1) === EewType.sewd4) -> (vcsr.vsew <= 1.U),
       (vctrl.eewType(1) === EewType.sewd8) -> (vcsr.vsew =/= 3.U)
     ))
+    iiConds(13) := isSVFMV && (vcsr.vsew === 0.U || vcsr.vsew === 1.U)
 
     entryNext.state := WqState.s_waiting
     entryNext.uop.cf.exceptionVec(illegalInstr) := iiConds.asUInt.orR

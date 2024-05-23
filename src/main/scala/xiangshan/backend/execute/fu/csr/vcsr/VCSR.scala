@@ -97,9 +97,9 @@ class VSetFu(implicit p: Parameters) extends XSModule with HasXSParameter {
   private def GenVtype(in: UInt, isReg: Boolean):VtypeStruct = {
     val res = Wire(new VtypeStruct)
     if(isReg) {
-      res.vill := in(2, 0) === 4.U || in(5).asBool || in(XLEN-1)
+      res.vill := in(2, 0) === 4.U || in(5).asBool || in(XLEN-1) || (in(2, 0) === 7.U && in(5, 3) > 2.U) || (in(2, 0) === 6.U && in(5, 3) > 1.U) || (in(2, 0) === 5.U && in(5, 3) > 0.U)
     } else {
-      res.vill := in(2, 0) === 4.U || in(5).asBool
+      res.vill := in(2, 0) === 4.U || in(5).asBool || (in(2, 0) === 7.U && in(5, 3) > 2.U) || (in(2, 0) === 6.U && in(5, 3) > 1.U) || (in(2, 0) === 5.U && in(5, 3) > 0.U)
     }
     res.reserved := 0.U
     res.vma := Mux(res.vill, 0.U, in(7))

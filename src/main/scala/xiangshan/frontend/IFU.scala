@@ -26,6 +26,7 @@ import xiangshan.frontend.icache._
 import utils._
 import xs.utils._
 import xs.utils.perf.HasPerfLogging
+import xiangshan.backend.execute.fu.{PMPReqBundle, PMPRespBundle, FDICheckFault}
 
 trait HasInstrMMIOConst extends HasXSParameter with HasIFUConst{
   def mmioBusWidth = 64
@@ -57,6 +58,12 @@ class UncacheInterface(implicit p: Parameters) extends XSBundle {
   val toUncache   = DecoupledIO( new InsUncacheReq )
 }
 
+class IFUFDIIO(implicit p: Parameters) extends XSBundle {
+  // for tagger
+  val startAddr: UInt = Output(UInt(VAddrBits.W))
+  val notTrusted: Vec[Bool] = Input(Vec(FetchWidth * 2, Bool()))
+}
+
 class NewIFUIO(implicit p: Parameters) extends XSBundle {
   val ftqInter        = new FtqInterface
   val icacheInter     = Flipped(new IFUICacheIO)
@@ -69,6 +76,7 @@ class NewIFUIO(implicit p: Parameters) extends XSBundle {
   val rob_commits = Flipped(Vec(CommitWidth, Valid(new RobCommitInfo)))
   val iTLBInter       = new BlockTlbRequestIO
   val pmp             =   new ICachePMPBundle
+  val fdi          = new IFUFDIIO
   val mmioCommitRead  = new mmioCommitRead
   val mmioFetchPending = Output(Bool())
 }
@@ -201,6 +209,15 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f1_cut_ptr            = if(HasCExtension)  VecInit((0 until PredictWidth + 1).map(i =>  Cat(0.U(1.W), f1_ftq_req.startAddr(blockOffBits-1, 1)) + i.U ))
                                   else           VecInit((0 until PredictWidth).map(i =>     Cat(0.U(1.W), f1_ftq_req.startAddr(blockOffBits-1, 2)) + i.U ))
 
+  // create DASICS tags at IFU stage 1
+  io.fdi.startAddr := f1_ftq_req.startAddr
+  val f1_fdi_tag: Vec[Bool] = Wire(Vec(PredictWidth, Bool()))
+  if (HasCExtension) {
+    f1_fdi_tag := io.fdi.notTrusted
+  } else {  // not compressed, discard half of the tags
+    f1_fdi_tag.zipWithIndex.foreach { case (tag, i) => tag := io.fdi.notTrusted(i * 2) }
+  }
+
   /**
     ******************************************************************************
     * IFU Stage 2
@@ -254,6 +271,8 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f2_cut_ptr          = RegEnable(f1_cut_ptr, f1_fire)
 
   val f2_resend_vaddr     = RegEnable(f1_ftq_req.startAddr + 2.U, f1_fire)
+
+  val f2_fdi_tag       = RegEnable(f1_fdi_tag, f1_fire)
 
   def isNextLine(pc: UInt, startAddr: UInt) = {
     startAddr(blockOffBits) ^ pc(blockOffBits)
@@ -377,7 +396,8 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f3_except         = VecInit((0 until 2).map{i => f3_except_pf(i) || f3_except_af(i)})
   val f3_has_except     = f3_valid && (f3_except_af.reduce(_||_) || f3_except_pf.reduce(_||_))
   val f3_pAddrs   = RegEnable(f2_paddrs, f2_fire)
-  val f3_resend_vaddr   = RegEnable(f2_resend_vaddr,      f2_fire)
+  val f3_resend_vaddr   = RegEnable(f2_resend_vaddr, f2_fire)
+  val f3_fdi_tag     = RegEnable(f2_fdi_tag, f2_fire)
 
   when(f3_valid && !f3_ftq_req.ftqOffset.valid){
     assert(f3_ftq_req.startAddr + 32.U >= f3_ftq_req.nextStartAddr , "More tha 32 Bytes fetch is not allowed!")
@@ -510,7 +530,8 @@ class NewIFU(implicit p: Parameters) extends XSModule
     }
   }
 
-  //exception or flush by older branch prediction
+  // Exception or flush by older branch prediction
+  // Condition is from RegNext(fromFtq.redirect), 1 cycle after backend rediect
   when(f3_ftq_flush_self || f3_ftq_flush_by_older)  {
     mmio_state := m_idle
     mmio_is_RVC := false.B
@@ -607,6 +628,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.crossPageIPFFix := f3_crossPageFault
   io.toIbuffer.bits.triggered   := f3_triggered
   io.toIbuffer.bits.mmioFetch   := false.B
+  io.toIbuffer.bits.fdiUntrusted := f3_fdi_tag
 
   when(f3_lastHalf.valid){
     io.toIbuffer.bits.enqEnable := checkerOutStage1.fixedRange.asUInt & f3_instr_valid.asUInt & f3_lastHalf_mask
@@ -624,7 +646,12 @@ class NewIFU(implicit p: Parameters) extends XSModule
   f3_mmio_missOffset.valid := f3_req_is_mmio
   f3_mmio_missOffset.bits  := 0.U
   io.mmioFetchPending := RegNext(f3_req_is_mmio && mmio_state === m_waitCommit, false.B)
-  mmioFlushWb.valid           := (f3_req_is_mmio && mmio_state === m_waitCommit && RegNext(fromUncache.fire)  && f3_mmio_use_seq_pc)
+
+  // Send mmioFlushWb back to FTQ 1 cycle after uncache fetch return
+  // When backend redirect, mmio_state reset after 1 cycle.
+  // In this case, mask .valid to avoid overriding backend redirect
+  mmioFlushWb.valid           := (f3_req_is_mmio && mmio_state === m_waitCommit && RegNext(fromUncache.fire) &&
+    f3_mmio_use_seq_pc && !f3_ftq_flush_self && !f3_ftq_flush_by_older)
   mmioFlushWb.bits.pc         := f3_pc
   mmioFlushWb.bits.pd         := f3_pd
   mmioFlushWb.bits.pd.zipWithIndex.map{case(instr,i) => instr.valid :=  f3_mmio_range(i)}

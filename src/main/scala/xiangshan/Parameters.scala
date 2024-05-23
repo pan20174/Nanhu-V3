@@ -47,6 +47,7 @@ case class XSCoreParameters
   XLEN: Int = 64,
   HasMExtension: Boolean = true,
   HasCExtension: Boolean = true,
+  HasFDI: Boolean = true,
   HasDiv: Boolean = true,
   HasICache: Boolean = true,
   HasDCache: Boolean = true,
@@ -153,7 +154,6 @@ case class XSCoreParameters
   StoreBufferSize: Int = 16,
   EnsbufferWidth: Int = 2,
   StoreBufferThreshold: Int = 7,
-  EnableLoadToLoadForward: Boolean = false,
   EnableFastForward: Boolean = false,
   EnableLdVioCheckAfterReset: Boolean = true,
   EnableSoftPrefetchAfterReset: Boolean = true,
@@ -273,6 +273,7 @@ trait HasXSParameter {
 
   val HasMExtension = coreParams.HasMExtension
   val HasCExtension = coreParams.HasCExtension
+  val HasFDI = coreParams.HasFDI
   val HasDiv = coreParams.HasDiv
   val HasIcache = coreParams.HasICache
   val HasDcache = coreParams.HasDCache
@@ -365,7 +366,6 @@ trait HasXSParameter {
   val StoreBufferSize = coreParams.StoreBufferSize
   val StoreBufferThreshold = coreParams.StoreBufferThreshold
   val EnsbufferWidth = coreParams.EnsbufferWidth
-  val EnableLoadToLoadForward = coreParams.EnableLoadToLoadForward
   val EnableFastForward = coreParams.EnableFastForward
   val EnableLdVioCheckAfterReset = coreParams.EnableLdVioCheckAfterReset
   val EnableSoftPrefetchAfterReset = coreParams.EnableSoftPrefetchAfterReset

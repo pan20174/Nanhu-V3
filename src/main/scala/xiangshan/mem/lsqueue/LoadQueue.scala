@@ -105,7 +105,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
     val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
-    val load_s1 = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardQueryIO)) // TODO: to be renamed
+    val load_s1 = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ)) // TODO: to be renamed
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     val lqSafeDeq = Input(new RobPtr)
     val robHead = Input(new RobPtr)
@@ -827,16 +827,16 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   // Load-Load Memory violation query
   val deqRightMask = UIntToMask.rightmask(deqPtr, LoadQueueSize)
   (0 until LoadPipelineWidth).foreach(i => {
-    val ldldViolationReqValid = io.loadViolationQuery(i).req.valid
-    dataModule.io.release_violation(i).paddr := io.loadViolationQuery(i).req.bits.paddr
-    io.loadViolationQuery(i).req.ready := true.B
-    io.loadViolationQuery(i).resp.valid := RegNext(io.loadViolationQuery(i).req.fire)
+    val ldldViolationReqValid = io.loadViolationQuery(i).s1_req.valid
+    dataModule.io.release_violation(i).paddr := io.loadViolationQuery(i).s1_req.bits.paddr
+    io.loadViolationQuery(i).s1_req.ready := true.B
+    io.loadViolationQuery(i).s2_resp.valid := RegNext(io.loadViolationQuery(i).s1_req.fire)
     // Generate real violation mask
     // Note that we use UIntToMask.rightmask here
-    val startIndex = io.loadViolationQuery(i).req.bits.uop.lqIdx.value
+    val startIndex = io.loadViolationQuery(i).s1_req.bits.uop.lqIdx.value
     val lqIdxMask = UIntToMask(startIndex, LoadQueueSize)
     val xorMask = lqIdxMask ^ enqMask
-    val sameFlag = io.loadViolationQuery(i).req.bits.uop.lqIdx.flag === enqPtrExt(0).flag
+    val sameFlag = io.loadViolationQuery(i).s1_req.bits.uop.lqIdx.flag === enqPtrExt(0).flag
     val ldToEnqPtrMask = Mux(sameFlag, xorMask, ~xorMask)
     val ldld_violation_mask_gen_1 = WireInit(VecInit((0 until LoadQueueSize).map(j => {
       ldToEnqPtrMask(j) && // the load is younger than current load
@@ -858,7 +858,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     dontTouch(ldld_violation_mask_gen_1)
     dontTouch(ldld_violation_mask_gen_2)
     llvMask.suggestName("ldldViolationMask_" + i)
-    io.loadViolationQuery(i).resp.bits.have_violation := llvMask.orR
+    io.loadViolationQuery(i).s2_resp.bits.have_violation := llvMask.orR
   })
 
   // "released" flag update
@@ -869,15 +869,15 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   when(release1cycle.valid){
     // Take over ld-ld paddr cam port
     dataModule.io.release_violation.takeRight(1)(0).paddr := release1cycle.bits.paddr
-    io.loadViolationQuery.takeRight(1)(0).req.ready := false.B
+    io.loadViolationQuery.takeRight(1)(0).s1_req.ready := false.B
   }
 
   when(release2cycle_valid){
     // If a load comes in that cycle, we can not judge if it has ld-ld violation
     // We replay that load inst from RS
-    io.loadViolationQuery.map(i => i.req.ready :=
+    io.loadViolationQuery.map(i => i.s1_req.ready :=
       // use lsu side release2cycle_dup_lsu paddr for better timing
-      !(i.req.bits.paddr(PAddrBits-1, DCacheLineOffset) === release2cycle_paddr_dup_lsu(PAddrBits-1, DCacheLineOffset))
+      !(i.s1_req.bits.paddr(PAddrBits-1, DCacheLineOffset) === release2cycle_paddr_dup_lsu(PAddrBits-1, DCacheLineOffset))
     )
     // io.loadViolationQuery.map(i => i.req.ready := false.B) // For better timing
   }

@@ -51,7 +51,7 @@ class XSTileMisc()(implicit p: Parameters) extends LazyModule
     new XSL1BusErrors(), BusErrorUnitParams(0x38010000)
   ))
   val busPMU = BusPerfMonitor(enable = !debugOpts.FPGAPlatform)
-  val l1d_logger = TLLogger(s"L2_L1D_${coreParams.HartId}", !debugOpts.FPGAPlatform)
+  val l1d_logger = TLLogger(s"L2_L1D_${coreParams.HartId}", !debugOpts.FPGAPlatform && debugOpts.EnableChiselDB)
   val l2_binder = coreParams.L2CacheParamsOpt.map(_ => BankBinder(coreParams.L2NBanks, 64))
 
   val i_mmio_port = TLTempNode()
@@ -130,14 +130,14 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
 
   val (l1i_to_l2_buffers, l1i_to_l2_buf_node) = chainBuffer(3, "l1i_to_l2_buffer")
   misc.busPMU :=
-    TLLogger(s"L2_L1I_${coreParams.HartId}", !debugOpts.FPGAPlatform) :=
+    TLLogger(s"L2_L1I_${coreParams.HartId}", !debugOpts.FPGAPlatform && debugOpts.EnableChiselDB) :=
     l1i_to_l2_buf_node :=
     core.frontend.icache.clientNode
 
   val ptw_to_l2_buffers = if (!coreParams.softPTW) {
     val (buffers, buf_node) = chainBuffer(2, "ptw_to_l2_buffer")
     misc.busPMU :=
-      TLLogger(s"L2_PTW_${coreParams.HartId}", !debugOpts.FPGAPlatform) :=
+      TLLogger(s"L2_PTW_${coreParams.HartId}", !debugOpts.FPGAPlatform && debugOpts.EnableChiselDB) :=
       buf_node :=
       core.ptw_to_l2_buffer.node
     buffers
@@ -168,6 +168,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
     val reset_vector = Input(UInt(PAddrBits.W))
     val cpu_halt = Output(Bool())
     val dfx_reset = Input(new DFTResetSignals())
+    val XStileResetGate = Input(Bool())
   })
   val ireset = reset
   dontTouch(io.hartId)
@@ -177,6 +178,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
   outer.core.module.io.hartId := io.hartId
   outer.core.module.io.reset_vector := io.reset_vector
   outer.core.module.io.dfx_reset := io.dfx_reset
+
   outer.l2cache.foreach(_.module.io.dfx_reset := io.dfx_reset)
   io.cpu_halt := outer.core.module.io.cpu_halt
   
@@ -252,5 +254,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
       l2bufs.map(_.module.asInstanceOf[Module]) ++
       outer.l1d_to_l2_bufferOpt.map(_.module)
   )
-  ResetGen(resetChain, reset, Some(io.dfx_reset), !outer.debugOpts.FPGAPlatform)
+  val gatedReset = Wire(Reset())
+  gatedReset := (reset.asBool | io.XStileResetGate).asAsyncReset
+  ResetGen(resetChain, gatedReset, Some(io.dfx_reset), !outer.debugOpts.FPGAPlatform)
 }

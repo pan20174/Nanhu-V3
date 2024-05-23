@@ -81,7 +81,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
     val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
     val mmioStout = DecoupledIO(new ExuOutput) // writeback uncached store
-    val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardQueryIO))
+    val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ))
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     val rob = Flipped(new RobLsqIO)
     val rollback = Output(Valid(new Redirect))

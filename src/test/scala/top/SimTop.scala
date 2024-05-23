@@ -32,9 +32,9 @@ class SimTop(implicit p: Parameters) extends Module {
   val l_soc = LazyModule(new XSTop())
   val soc = Module(l_soc.module)
 
-  l_soc.module.dma <> 0.U.asTypeOf(l_soc.module.dma)
+//  l_soc.module.dma <> 0.U.asTypeOf(l_soc.module.dma)
 
-  val l_simMMIO = LazyModule(new SimMMIO(l_soc.misc.peripheralNode.in.head._2))
+  val l_simMMIO = LazyModule(new SimMMIO(l_soc.misc.peripheralNode.in.head._2, l_soc.misc.l3FrontendAXI4Node.out.head._2))
   val simMMIO = Module(l_simMMIO.module)
   l_simMMIO.io_axi4 <> soc.peripheral
 
@@ -46,6 +46,7 @@ class SimTop(implicit p: Parameters) extends Module {
   )
   val simAXIMem = Module(l_simAXIMem.module)
   l_simAXIMem.io_axi4 <> soc.memory
+  soc.dma <> l_simMMIO.io_dma
 
   val freq = 100
   val cnt = RegInit((freq - 1).U)
@@ -53,13 +54,14 @@ class SimTop(implicit p: Parameters) extends Module {
   cnt := Mux(cnt === 0.U, (freq - 1).U, cnt - 1.U)
 
   soc.rtc_clock := tick
-  soc.io.clock := clock.asBool
+  soc.io.clock := clock
   soc.io.reset := (reset.asBool || soc.io.debug_reset).asAsyncReset
   soc.io.extIntrs := simMMIO.io.interrupt.intrVec
   soc.scan_mode := false.B
   soc.dft_lgc_rst_n := true.B.asAsyncReset
   soc.dft_mode := false.B
   soc.io.riscv_rst_vec.foreach(_ := 0x10000000L.U)
+  soc.bootrom_disable := true.B
   if(soc.dft.isDefined) {
     soc.dft.get.cgen := false.B
     soc.dft.get.l3dataram_clk := false.B
@@ -68,7 +70,7 @@ class SimTop(implicit p: Parameters) extends Module {
     soc.dft.get.ram_bypass := false.B
     soc.dft.get.ram_bp_clken := false.B
   }
-  if(soc.sram.isDefined) {
+  if (soc.sram.isDefined) {
     soc.sram.get.rf2p_ctrl := 0x5832C.U
     soc.sram.get.rmsp_hd_ctrl := 0xB2C.U
     soc.sram.get.rmsp_hs_ctrl := 0x1616.U

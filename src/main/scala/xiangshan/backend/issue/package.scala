@@ -123,7 +123,6 @@ package object issue {
     val feedbackSlowLoad = ValidIO(new RSFeedback) // dcache miss queue full, dtlb miss
     val feedbackFastLoad = ValidIO(new RSFeedback) // bank conflict
     val feedbackSlowStore = ValidIO(new RSFeedback)
-    val isFirstIssue: Bool = Input(Bool())
   }
 
   class IssueBundle(implicit p: Parameters) extends XSBundle {

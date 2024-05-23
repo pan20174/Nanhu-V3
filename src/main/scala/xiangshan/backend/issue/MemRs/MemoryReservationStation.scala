@@ -291,7 +291,6 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     sldu_iss._1.issue.bits.src := DontCare
     sldu_iss._1.rsIdx.bankIdxOH := specialLoadIssueDriver.io.deq.bits.bankIdxOH
     sldu_iss._1.rsIdx.entryIdxOH := specialLoadIssueDriver.io.deq.bits.entryIdxOH
-    sldu_iss._1.rsFeedback.isFirstIssue := false.B
     sldu_iss._1.auxValid := specialLoadIssueDriver.io.deq.valid && !loadHasIssued
     specialLoadIssueDriver.io.deq.ready := sldu_iss._1.issue.ready
     XSPerfAccumulate(s"sldu_${i}_issue", specialLoadIssueDriver.io.enq.fire)
@@ -390,7 +389,6 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       iss._1.issue.bits.src := DontCare
       iss._1.rsIdx.bankIdxOH := issueDriver.io.deq.bits.bankIdxOH
       iss._1.rsIdx.entryIdxOH := issueDriver.io.deq.bits.entryIdxOH
-      iss._1.rsFeedback.isFirstIssue := false.B
       iss._1.hold := issueDriver.io.hold
       iss._1.auxValid := issueDriver.io.deq.valid
       iss._1.specialPsrc := DontCare

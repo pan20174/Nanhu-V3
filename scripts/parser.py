@@ -1,10 +1,12 @@
 #! /usr/bin/env python3
 
 import argparse
+import glob
 import os
 import re
 from datetime import date
 from shutil import copy, move
+import subprocess
 
 import xlsxwriter
 
@@ -40,7 +42,8 @@ class VIO(object):
         return str(self) < str(other)
 
 class VModule(object):
-    module_re = re.compile(r'^\s*module\s*(\w+)\s*(#\(?|)\s*(\(.*|)\s*$')
+    # module_re = re.compile(r'^\s*module\s*(\w+)\s*(#\(?|)\s*(\(.*|)\s*$')
+    module_re = re.compile(r'^\s*module\s+(\w+)\s*(#\s*\(.+\))?\s*(import\s+\w+\s*::\*\s*;)?\s*(#\s*\()?')
     io_re = re.compile(r'^\s*(input|output)\s*(\[\s*\d+\s*:\s*\d+\s*\]|)\s*(\w+),?\s*$')
     submodule_re = re.compile(r'^\s*(\w+)\s*(#\(.*\)|)\s*(\w+)\s*\(\s*(|//.*)\s*$')
     difftest_module_re = re.compile(r'^  \w*Difftest\w+\s+\w+ \( //.*$')
@@ -290,10 +293,10 @@ class VCollection(object):
                     f.writelines(module.get_lines())
         return True
 
-    def dump_negedge_modules_to_file(self, name, output_dir, with_submodule=True, try_prefix=None):
+    def dump_negedge_modules_to_file(self, name, output_dir, with_submodule=True, try_prefix=None, ignore_modules=None):
         print("Dump negedge module {} to {}...".format(name, output_dir))
         negedge_modules = []
-        self.get_module(name, negedge_modules, "NegedgeDataModule_", with_submodule=with_submodule, try_prefix=try_prefix)
+        self.get_module(name, negedge_modules, "NegedgeDataModule_", with_submodule=with_submodule, try_prefix=try_prefix, ignore_modules=ignore_modules)
         negedge_modules_sort = []
         for negedge in negedge_modules:
             re_degits = re.compile(r".*[0-9]$")
@@ -355,7 +358,7 @@ def create_verilog(files, top_module, config, try_prefix=None, ignore_modules=No
     today = date.today()
     directory = f'{top_module}-Release-{config}-{today.strftime("%b-%d-%Y")}'
     success = collection.dump_to_file(top_module, os.path.join(directory, top_module), try_prefix=try_prefix, ignore_modules=ignore_modules)
-    collection.dump_negedge_modules_to_file(top_module, directory, try_prefix=try_prefix)
+    collection.dump_negedge_modules_to_file(top_module, directory, try_prefix=try_prefix, ignore_modules=ignore_modules)
     if not success:
         return None, None
     return collection, os.path.realpath(directory)
@@ -678,6 +681,27 @@ def export_sram_files(release_path, top_module):
     flist_lines.insert(0,"-f cpu_srams.f\n")
     flist_file.writelines(flist_lines)
 
+def process_and_copy_file(file_path, build_path, module_prefix, search_string):
+    file_name = os.path.basename(file_path)
+    # if search_string in file_name:
+    destination_file_path = os.path.join(build_path, file_name)
+    copy(file_path, destination_file_path)
+    if module_prefix is not None:
+        new_file_name = file_name.replace(search_string, f'{module_prefix}{search_string}')
+        new_file_path = os.path.join(build_path, new_file_name)
+        os.rename(destination_file_path, new_file_path)
+        with open(new_file_path, 'r') as file:
+            filedata = file.read()
+
+        filedata = filedata.replace(search_string, f'{module_prefix}{search_string}')
+        with open(new_file_path, 'w') as file:
+            file.write(filedata)
+
+        print(f"Processed and copied {file_name} to {new_file_name} with updated contents.")
+    else:
+        print(f"Copied {file_name} without changes.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Verilog parser for XS')
     parser.add_argument('top', type=str, help='top-level module')
@@ -694,10 +718,9 @@ if __name__ == "__main__":
 
     build_path = args.build_dir
     assert(build_path is not None)
-    files = get_files(build_path)
-    if args.include is not None:
-        for inc_path in args.include.split(","):
-            files += get_files(inc_path)
+
+
+    
 
     top_module = args.top
     module_prefix = args.prefix
@@ -706,6 +729,25 @@ if __name__ == "__main__":
     if module_prefix is not None:
         top_module = f"{module_prefix}{top_module}"
         ignore_modules += list(map(lambda x: module_prefix + x, ignore_modules))
+        ignore_modules.append(f"{module_prefix}TLROT_top")
+    else:  
+        ignore_modules.append("TLROT_top")  
+
+    rot_path = build_path + '/../src/main/resources/TLROT/'
+
+    # copy rot sram files to build dir for parser
+    if os.path.exists(rot_path):
+        verilog_files = glob.glob(os.path.join(rot_path, '**/*.sv'), recursive=True)
+        for file_path in verilog_files:
+            file_name = os.path.basename(file_path)
+            if 'sram_array' in file_name:
+                process_and_copy_file(file_path,build_path,module_prefix,'sram_array')
+    
+    files = get_files(build_path)
+    if args.include is not None:
+        for inc_path in args.include.split(","):
+            files += get_files(inc_path)
+
 
     print(f"Top-level Module: {top_module} with prefix {module_prefix}")
     print(f"Config:           {config}")
@@ -716,6 +758,62 @@ if __name__ == "__main__":
 
     export_sram_files(out_dir,top_module)
 
+    # add rot sram to cpu_sram.f
+    if os.path.exists(rot_path):
+        verilog_files = glob.glob(os.path.join(build_path, '*sram_array*.sv'), recursive=True)
+        with open(os.path.join(out_dir,"cpu_srams.f"),'a') as sram_file:        
+            for file_path in verilog_files:
+                file_name = os.path.basename(file_path)
+                sram_file.write(f"SRAM/{file_name}\n")
+
+    
+    # copy rot files to out_dir/TLROT and out_dir/SRAM
+    if os.path.exists(rot_path):
+        rot_rtl_dir = os.path.join(out_dir, "TLROT")
+        if not (os.path.isdir(rot_rtl_dir)):
+            os.makedirs(rot_rtl_dir)
+        verilog_files = glob.glob(os.path.join(rot_path, '**/*.sv'), recursive=True) + \
+                glob.glob(os.path.join(rot_path, '**/*.v'), recursive=True) + \
+                glob.glob(os.path.join(rot_path, '**/*.svh'), recursive=True)
+        for file_path in verilog_files:
+            file_name = os.path.basename(file_path)
+            if 'sram_array' not in file_name:
+                if "TLROT_top" in file_name:
+                    process_and_copy_file(file_path,rot_rtl_dir,module_prefix,'TLROT_top')
+                elif 'prim_generic_ram_1p' in file_name:
+                    process_and_copy_file(file_path,rot_rtl_dir,module_prefix,'sram_array')
+                else:
+                    destination_path = os.path.join(rot_rtl_dir, file_name)
+                    copy(file_path, destination_path)
+            else:
+                process_and_copy_file(file_path,os.path.join(out_dir, "SRAM"),module_prefix,'sram_array')
+
+        print("Copy TLROT files done!")
+
+        # gen a TLROT filelist
+        VCS_filelist = os.path.join(rot_path, "vcs_filelist")
+        TLROT_filelist = os.path.join(out_dir, "TLROT.f")
+
+        rot_basename = [os.path.basename(file_path) for file_path in verilog_files]
+        
+        with open(VCS_filelist, 'r') as file:
+            with open(TLROT_filelist, 'w') as new_file:
+                new_file.write(f'+incdir+$root_data_path_/TLROT\n')
+                for line in file:
+                    line = line.strip()
+                    file_name = line.split('/')[-1]
+                    if 'sram_array' not in file_name:
+                        new_line = f'$root_data_path_/TLROT/{file_name}\n'
+                        new_file.write(new_line)
+                    if file_name not in rot_basename:
+                        print(f'{file_name} in TLROT missed!')
+                if module_prefix is not None:
+                    new_file.write(f'$root_data_path_/TLROT/{module_prefix}TLROT_top.sv\n')
+                else:
+                    new_file.write(f'$root_data_path_/TLROT/TLROT_top.sv\n')
+        
+        print(f'TLROT processed file names have been written to {TLROT_filelist}')
+
     rtl_dirs = [top_module]
     extra_filelist_lines = []
     if not args.no_sram_conf:
@@ -724,3 +822,8 @@ if __name__ == "__main__":
             create_sram_xlsx(out_dir, collection, sram_conf, top_module, try_prefix=module_prefix)
     if not args.no_mbist_files:
         copy_mbist_files(mbist_dir, build_path)
+
+    
+            
+
+

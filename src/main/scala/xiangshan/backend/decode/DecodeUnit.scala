@@ -390,6 +390,15 @@ object BDecode extends DecodeConstants{
 }
 
 /**
+  * FDI custom instructions
+  */
+object FDIDecode extends DecodeConstants {
+  val table: Array[(BitPat, List[BitPat])] = Array(
+    FDICALL_JR-> List(SrcType.reg,  SrcType.imm, SrcType.X,   FuType.jmp, JumpOpType.fdicall_jr,  Y, N, N, N, Y, Y, N, N, VstartType.hold, SelImm.IMM_I)
+  )
+}
+
+/**
  * FP Divide SquareRoot Constants
  */
 object FDivSqrtDecode extends DecodeConstants {
@@ -1036,7 +1045,8 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
     BDecode.table ++
     CBODecode.table ++
     VectorConfDecode.table ++
-    vdecode_table
+    vdecode_table ++
+    FDIDecode.table
 
 //    ++ SvinvalDecode.table
   // assertion for LUI: only LUI should be assigned `selImm === SelImm.IMM_U && fuType === FuType.alu`
@@ -1085,6 +1095,10 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   val illegalVec = (isVector || isVtype) && !extEn.vec
 
+  // fdi decode check
+  val fdiEn = io.csrCtrl.fdi_enable
+  val illegalFDI = FDICALL_JR === ctrl_flow.instr && !fdiEn
+
   // read src1~3 location
   cs.lsrc(0) := ctrl_flow.instr(RS1_MSB, RS1_LSB)
   cs.lsrc(1) := ctrl_flow.instr(RS2_MSB, RS2_LSB)
@@ -1094,7 +1108,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   // fill in exception vector
   cf_ctrl.cf.exceptionVec := io.enq.ctrl_flow.exceptionVec
-  cf_ctrl.cf.exceptionVec(illegalInstr) := illegalInst || illegalFp || illegalVec
+  cf_ctrl.cf.exceptionVec(illegalInstr) := illegalInst || illegalFp || illegalVec || illegalFDI 
 
   // fix frflags
   //                           fflags    zero csrrs rd    csr

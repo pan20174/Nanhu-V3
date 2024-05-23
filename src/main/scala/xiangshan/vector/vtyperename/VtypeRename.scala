@@ -153,6 +153,7 @@ class VtypeRename(implicit p: Parameters) extends VectorBaseModule with HasCircu
   table.io.w.last.data.info.vsew := io.vcsr.vtypeWbToRename.bits.vtype(5, 3)
   table.io.w.last.data.info.vlmul := io.vcsr.vtypeWbToRename.bits.vtype(2, 0)
   table.io.w.last.data.info.vl := io.vcsr.vtypeWbToRename.bits.vl(7, 0)
+  table.io.w.last.data.info.vill := io.vcsr.vtypeWbToRename.bits.vtype(8)
   table.io.w.last.data.vill := io.vcsr.vtypeWbToRename.bits.vtype(8)
   table.io.w.last.data.info.vlmax := table.io.w.last.data.info.VLMAXGen()
   table.io.w.last.data.writebacked := true.B
@@ -221,24 +222,30 @@ class VtypeRename(implicit p: Parameters) extends VectorBaseModule with HasCircu
     res.robEnqueued := false.B
     res.robIdx := in.robIdx
     when(in.ctrl.fuOpType === CSROpType.vsetivli) {
-      res.info.vma := in.ctrl.imm(12)
-      res.info.vta := in.ctrl.imm(11)
-      res.info.vsew := in.ctrl.imm(10, 8)
-      res.info.vlmul := in.ctrl.imm(7, 5)
+      res.vill := in.ctrl.imm(7, 5) === 4.U || in.ctrl.imm(10).asBool || (in.ctrl.imm(7, 5) === 7.U && in.ctrl.imm(10, 8) > 2.U) || (in.ctrl.imm(7, 5) === 6.U && in.ctrl.imm(10, 8) > 1.U) || (in.ctrl.imm(7, 5) === 5.U && in.ctrl.imm(10, 8) > 0.U)
+      res.info.vill := res.vill
+      res.vill := in.ctrl.imm(7, 5) === 4.U || in.ctrl.imm(10).asBool
+      res.info.vma := Mux(res.vill, 0.U, in.ctrl.imm(12))
+      res.info.vta := Mux(res.vill, 0.U, in.ctrl.imm(11))
+      res.info.vsew := Mux(res.vill, 0.U, in.ctrl.imm(10, 8))
+      res.info.vlmul := Mux(res.vill, 0.U, in.ctrl.imm(7, 5))
       res.info.vlmax := res.info.VLMAXGen()
       when(in.ctrl.imm(4, 0) > res.info.vlmax){
-        res.info.vl := res.info.vlmax
+        res.info.vl := Mux(res.vill, 0.U, res.info.vlmax)
       }.otherwise{
-        res.info.vl := in.ctrl.imm(4, 0)
+        res.info.vl := Mux(res.vill, 0.U, in.ctrl.imm(4, 0))
       }
       res.writebacked := true.B
     }.elsewhen(in.ctrl.fuOpType === CSROpType.vsetvli && in.ctrl.lsrc(0) === 0.U && in.ctrl.ldest =/= 0.U){
-      res.info.vma := in.ctrl.imm(7)
-      res.info.vta := in.ctrl.imm(6)
-      res.info.vsew := in.ctrl.imm(5, 3)
-      res.info.vlmul := in.ctrl.imm(2, 0)
+      res.vill := in.ctrl.imm(2, 0) === 4.U || in.ctrl.imm(5).asBool || (in.ctrl.imm(2, 0) === 7.U && in.ctrl.imm(5, 3) > 2.U) || (in.ctrl.imm(2, 0) === 6.U && in.ctrl.imm(5, 3) > 1.U) || (in.ctrl.imm(2, 0) === 5.U && in.ctrl.imm(5, 3) > 0.U)
+      res.info.vill := res.vill
+      res.vill := in.ctrl.imm(2, 0) === 4.U || in.ctrl.imm(5).asBool
+      res.info.vma := Mux(res.vill, 0.U, in.ctrl.imm(7))
+      res.info.vta := Mux(res.vill, 0.U, in.ctrl.imm(6))
+      res.info.vsew := Mux(res.vill, 0.U, in.ctrl.imm(5, 3))
+      res.info.vlmul := Mux(res.vill, 0.U, in.ctrl.imm(2, 0))
       res.info.vlmax := res.info.VLMAXGen()
-      res.info.vl := res.info.vlmax
+      res.info.vl := Mux(res.vill, 0.U, res.info.vlmax)
       res.writebacked := true.B
     }
     res

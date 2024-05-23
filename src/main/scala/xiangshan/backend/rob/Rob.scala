@@ -1040,7 +1040,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       difftestInstCmt.isLoad := io.commits.info(i).commitType === CommitType.LOAD
       difftestInstCmt.isStore := io.commits.info(i).commitType === CommitType.STORE
       difftestInstCmt.nFused := Mux(CommitType.isFused(io.commits.info(i).commitType), 1.U, 0.U)
-      difftestInstCmt.special := 0.U
+      difftestInstCmt.special := 0.U | (uop.cf.pc === "h80000000".U) // first ram instruction do not squash for spike
       // when committing an eliminated move instruction,
       // we must make sure that skip is properly set to false (output from EXU is random value)
 
