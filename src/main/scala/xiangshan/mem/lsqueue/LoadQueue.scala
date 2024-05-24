@@ -121,12 +121,18 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
   })
 
-  val replayQueue = Module(new LoadReplayQueue)
+  val replayQueue = Module(new LoadReplayQueue(enablePerf = true))
   replayQueue.io.redirect := io.brqRedirect
   replayQueue.io.enq <> io.replayQEnq
   replayQueue.io.replayReq(0).ready := true.B
   replayQueue.io.replayReq(1).ready := true.B
 
+  val debugReplayQ = Seq.fill(LoadPipelineWidth)(RegInit(0.U.asTypeOf(new LoadToReplayQueueBundle)))
+  for(i <- 0 until LoadPipelineWidth){
+    debugReplayQ(i) <> replayQueue.io.replayReq(i).bits
+    dontTouch(debugReplayQ(i))
+  }
+  XSPerfAccumulate("replayq", replayQueue.io.replayReq(0).fire || replayQueue.io.replayReq(1).fire)
   println("LoadQueue: size:" + LoadQueueSize)
 
   val uop = Reg(Vec(LoadQueueSize, new MicroOp))

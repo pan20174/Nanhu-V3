@@ -83,7 +83,7 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
   }
 }
 
-class LoadReplayQueue(implicit p: Parameters) extends XSModule 
+class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule 
   with HasLoadHelper
   with HasPerfLogging
 {
@@ -118,7 +118,6 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     numEntries = LoadReplayQueueSize,
     numRead = LoadPipelineWidth,
     numWrite = LoadPipelineWidth))
-  vaddrModule.io := DontCare
   // replayQueue Full Backpressure Logic
   val lqFull = freeList.io.empty
   val lqFreeNums = freeList.io.validCount
@@ -133,12 +132,14 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   val needEnqueue = VecInit((0 until LoadPipelineWidth).map(i => {
     enqReqValid(i) && !cancelEnq(i) && enqReqNeedReplay(i) && !hasExceptions(i)
   }))
-  val enqIndexOH = Wire(Vec(LoadPipelineWidth, UInt(LoadReplayQueueSize.W)))
-
+  val enqIndexOH =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
+  val robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   // freeList enq/deq logic + entry allocate logic
   val freeMaskVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
   for((enq, i) <- io.enq.zipWithIndex){
     vaddrModule.io.wen(i) := false.B
+    vaddrModule.io.waddr(i) := 0.U
+    vaddrModule.io.wdata(i) := 0.U
     freeList.io.doAllocate(i) := false.B
     freeList.io.allocateReq(i) := true.B
 
@@ -165,9 +166,9 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
       vaddrModule.io.wen(i)   := true.B
       vaddrModule.io.waddr(i) := enqIndex
       vaddrModule.io.wdata(i) := enq.bits.vaddr
-      for(i <- 0 until(LoadReplayQueueSize)){
+      if(enablePerf){for(i <- 0 until(LoadReplayQueueSize)){
         XSPerfAccumulate(s"LoadReplayQueue_entry_${i}_used", enqIndex === i.asUInt)
-      }
+      }}
     }
 
     // Upon replay success, need to deallocate the entry; otherwise, need to replay again
@@ -202,12 +203,14 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     ))
   }
   val s1_selResSeq = Wire(Vec(LoadPipelineWidth, Valid(UInt((LoadReplayQueueSize / LoadPipelineWidth).W))))
+  dontTouch(s1_selResSeq)
   val s0_readyToReplay_mask = VecInit((0 until LoadReplayQueueSize).map(i => {
     allocatedReg(i) && !scheduledReg(i) && !blockingReg(i)
   }))
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem => 
     val s0_remReadyToReplay_uop = getRemUop(uopReg, rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
+    dontTouch(s0_remReadyToReplay_mask)
     val s0_remReadyToReplay_seq = (0 until LoadReplayQueueSize/LoadPipelineWidth).map{ i =>
       val valid = s0_remReadyToReplay_mask(i) && !(Mux(s1_selResSeq(rem).valid, s1_selResSeq(rem).bits(i).asBool, false.B))
       val uop = s0_remReadyToReplay_uop(i)
@@ -218,25 +221,34 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     }
     SelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
   }
-  
+  robOldestSelOH := VecInit((0 until LoadPipelineWidth).map(rem => {
+    val oldestBitsVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
+    for (i <- 0 until LoadReplayQueueSize / LoadPipelineWidth) {
+      oldestBitsVec(i * LoadPipelineWidth + rem) := s1_selResSeq(rem).bits(i)
+    }
+    oldestBitsVec.asUInt
+  }))
+
   for (i <- 0 until LoadPipelineWidth) {
-    for (j <- 0 until LoadReplayQueueSize/LoadPipelineWidth) {
-      when (s1_selResSeq(i).valid && s1_selResSeq(i).bits(j)) {
-        scheduledReg(j*2+i) := true.B
+    for (j <- 0 until LoadReplayQueueSize) {
+      when (s1_selResSeq(i).valid && robOldestSelOH(i)(j)) {
+        scheduledReg(j) := true.B
       }
     }
   }
   // replay issue logic
+  val selReplayRegIdxReg = RegInit(VecInit(List.fill(LoadPipelineWidth)(0.U((log2Up(LoadReplayQueueSize)).W))))
   val replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle)))
   for (i <- 0 until LoadPipelineWidth) {
-    val sel_idx = OHToUInt(s1_selResSeq(i).bits)
+    selReplayRegIdxReg(i) := OHToUInt(robOldestSelOH(i))
+    dontTouch(selReplayRegIdxReg)
     vaddrModule.io.ren(i) := s1_selResSeq(i).valid
-    vaddrModule.io.raddr(i) := sel_idx
-    replay_req(i).valid := s1_selResSeq(i).valid
+    vaddrModule.io.raddr(i) := selReplayRegIdxReg(i)
+    replay_req(i).valid := RegNext(s1_selResSeq(i).valid)
     replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)
     replay_req(i).bits.isReplayQReplay := true.B
-    replay_req(i).bits.schedIndex := sel_idx
-    replay_req(i).bits.uop := uopReg(sel_idx)
+    replay_req(i).bits.schedIndex := selReplayRegIdxReg(i)
+    replay_req(i).bits.uop := uopReg(selReplayRegIdxReg(i))
 
     replay_req(i).bits.paddr := DontCare
     replay_req(i).bits.replayCause := DontCare
@@ -253,6 +265,7 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
     replay_req(i).bits.forwardData := DontCare
 
     io.replayReq(i) <> replay_req(i)
+    dontTouch(io.replayReq(i))
   }
 
   //  perf cnt
@@ -268,7 +281,8 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   val replayDCacheReplayCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DR)))
   val replayForwardFailCount  = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_FF)))
   val replayDCacheMissCount   = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DM)))
-  XSPerfAccumulate("enq", enqNumber)
+
+  if(enablePerf){ XSPerfAccumulate("enq", enqNumber)
   XSPerfAccumulate("deq", deqNumber)
   XSPerfAccumulate("deq_block", deqBlockCount)
   XSPerfAccumulate("replay_full", io.replayQFull)
@@ -280,6 +294,6 @@ class LoadReplayQueue(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("replay_bank_conflict", replayBankConflictCount)
   XSPerfAccumulate("replay_dcache_replay", replayDCacheReplayCount)
   XSPerfAccumulate("replay_forward_fail", replayForwardFailCount)
-  XSPerfAccumulate("replay_dcache_miss", replayDCacheMissCount)
+  XSPerfAccumulate("replay_dcache_miss", replayDCacheMissCount)}
 
 }
