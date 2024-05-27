@@ -52,6 +52,11 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
     val stdUop = Output(new MicroOp)
     val specialIssue = Input(Valid(UInt(entryNum.W)))
     val sLoadUop = Output(new MicroOp)
+
+    val stdHasIssue = Input(Vec(2, Valid(UInt(entryNum.W))))
+    val issueRead = Vec(4, Input(UInt(entryNum.W)))
+    val issueResp = Vec(4, Output(new MicroOp))
+
     val auxLoadIssValid = Input(Bool())
     val auxStaIssValid = Input(Bool())
     val auxStdIssValid = Input(Bool())
@@ -69,6 +74,7 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
 
 
   private val statusArray = Module(new MemoryStatusArray(entryNum, stuNum, wakeupWidth, regWkpIdx, fpWkpIdx, vecWkpIdx))
+//  private val payloadArray = Module(new PayloadArray(new MicroOp, entryNum, 4, "MemoryPayloadArray"))
   private val payloadArray = Module(new PayloadArray(new MicroOp, entryNum, 4, "MemoryPayloadArray"))
 
   private def EnqToEntry(in: MicroOp): MemoryStatusArrayEntry = {
@@ -100,6 +106,8 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
     enqEntry.replayPenalty := 0.U
     enqEntry.ftqPtr := in.cf.ftqPtr
     enqEntry.ftqOffset := in.cf.ftqOffset
+    enqEntry.stdIssueState := Mux(FuType.isStore(in.ctrl.fuType), false.B, true.B)
+
     when(!isVector){
       enqEntry.psrc(1) := DontCare
       enqEntry.psrc(2) := in.psrc(1)
@@ -136,8 +144,11 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
   statusArray.io.enq.valid := io.enq.valid
   statusArray.io.enq.bits.addrOH := io.enq.bits.addrOH
   statusArray.io.enq.bits.data := EnqToEntry(io.enq.bits.data)
+  ///todo
   statusArray.io.staLduIssue.valid := io.loadIssue.valid || io.staIssue.valid || io.specialIssue.valid
   statusArray.io.stdIssue.valid := io.stdIssue.valid
+  statusArray.io.stdHasIssue := io.stdHasIssue
+
   statusArray.io.staLduIssue.bits := Seq(io.loadIssue, io.staIssue, io.specialIssue).map(e => Mux(e.valid, e.bits, 0.U)).reduce(_|_)
   statusArray.io.stdIssue.bits := io.stdIssue.bits
   statusArray.io.replay := io.replay
@@ -151,14 +162,24 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
   payloadArray.io.write.addr := io.enq.bits.addrOH
   payloadArray.io.write.data := io.enq.bits.data
 
-  payloadArray.io.read(0).addr := RegEnable(io.loadIssue.bits, io.auxLoadIssValid)
-  payloadArray.io.read(1).addr := RegEnable(io.staIssue.bits, io.auxStaIssValid)
-  payloadArray.io.read(2).addr := RegEnable(io.stdIssue.bits, io.auxStdIssValid)
-  payloadArray.io.read(3).addr := RegEnable(io.specialIssue.bits, io.auxSLoadIssValid)
-  io.loadUop := payloadArray.io.read(0).data
-  io.staUop := payloadArray.io.read(1).data
-  io.stdUop := payloadArray.io.read(2).data
-  io.sLoadUop := payloadArray.io.read(3).data
+//  payloadArray.io.read(0).addr := RegEnable(io.loadIssue.bits, io.auxLoadIssValid)
+//  payloadArray.io.read(1).addr := RegEnable(io.staIssue.bits, io.auxStaIssValid)
+//  payloadArray.io.read(2).addr := RegEnable(io.stdIssue.bits, io.auxStdIssValid)
+//  payloadArray.io.read(3).addr := RegEnable(io.specialIssue.bits, io.auxSLoadIssValid)
+
+//  payloadArray.io.read(0).addr := RegNext(io.loadIssue.bits)
+//  payloadArray.io.read(1).addr := RegNext(io.staIssue.bits)
+//  payloadArray.io.read(2).addr := RegNext(io.stdIssue.bits)
+//  payloadArray.io.read(3).addr := RegNext(io.specialIssue.bits)
+  for(i <- 0 until 4){
+    io.issueResp(i) := payloadArray.io.read(i).data
+    payloadArray.io.read(i).addr := io.issueRead(i)
+  }
+
+  io.loadUop  := DontCare
+  io.staUop   := DontCare
+  io.stdUop   := DontCare
+  io.sLoadUop := DontCare
 
   when(io.loadIssue.valid){assert(PopCount(io.loadIssue.bits) === 1.U)}
   when(io.staIssue.valid){assert(PopCount(io.staIssue.bits) === 1.U)}

@@ -107,6 +107,7 @@ package object issue {
     val dataInvalid: UInt = 3.U(width.W)
     val bankConflict: UInt = 0.U(width.W)
     val ldVioCheckRedo: UInt = 0.U(width.W)
+    val success: UInt = 6.U(width.W)  ///tmp
 
     def apply(): UInt = UInt(width.W)
   }

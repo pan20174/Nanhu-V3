@@ -55,6 +55,9 @@ class LoadUnitTriggerIO(implicit p: Parameters) extends XSBundle {
   val addrHit = Output(Bool())
   val lastDataHit = Output(Bool())
 }
+class ReplayQueueLoadInBundle(implicit p: Parameters) extends XSBundle{
+  val tmp = Bool()
+}
 
 class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with HasDCacheParameters with SdtrigExt with HasPerfLogging {
   val io = IO(new Bundle() {
@@ -87,6 +90,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val cancel = Output(Bool())
 
     val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
+    val ldStop = Input(Bool())
   })
 
 
@@ -505,8 +509,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.ldout.bits.uop.cf.exceptionVec(loadAccessFault) := s3_load_wb_meta_reg.uop.cf.exceptionVec(loadAccessFault) //||
 
   // feedback tlb miss / dcache miss queue full
-  io.feedbackSlow.bits := RegNext(s2_rsFeedback.bits) //remove clock-gating for timing
-  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
+//  io.feedbackSlow.bits := RegNext(s2_rsFeedback.bits) //remove clock-gating for timing
+//  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
+  io.feedbackSlow.valid := RegNext(s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
+  io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
+  io.feedbackSlow.bits.flushState := RegNext(s2_rsFeedback.bits.flushState)
+  io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid,s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
+
   // If replay is reported at load_s1, inst will be canceled (will not enter load_s2),
   // in that case:
   // * replay should not be reported twice
