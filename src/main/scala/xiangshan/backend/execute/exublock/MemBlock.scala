@@ -299,11 +299,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   io.lsqVecDeqCnt := DontCare
 
   val ldStop = RegInit(false.B)
-  val cnt = RegInit(0.U(3.W))
-  cnt := cnt + 1.U
-  when(cnt === 0.U){
-    ldStop := ~ldStop
-  }
   val dcache = outer.dcache.module
   val uncache = outer.uncache.module
 
@@ -374,6 +369,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val sbuffer = Module(new Sbuffer)
 
   io.lqDeq := lsq.io.lqDeq
+  ldStop := lsq.io.ldStop
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
 

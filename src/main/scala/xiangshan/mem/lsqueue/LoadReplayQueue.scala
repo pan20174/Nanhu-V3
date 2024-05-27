@@ -92,6 +92,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val redirect = Flipped(ValidIO(new Redirect))
     val replayReq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
     val replayQFull = Output(Bool())
+    val ldStop = Output(Bool())
     })
   // replayQueue state signs define
   // allocated: the entry has been enqueued
@@ -267,7 +268,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     io.replayReq(i) <> replay_req(i)
     dontTouch(io.replayReq(i))
   }
-
+  io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
   //  perf cnt
   val enqNumber               = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay))
   val deqNumber               = PopCount(io.replayReq.map(_.fire))
