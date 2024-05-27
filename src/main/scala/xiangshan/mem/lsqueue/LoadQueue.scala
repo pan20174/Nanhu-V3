@@ -119,6 +119,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val trigger = Vec(LoadPipelineWidth, new LqTriggerIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
+    val ldStop = Output(Bool())
   })
 
   val replayQueue = Module(new LoadReplayQueue(enablePerf = true))
@@ -126,7 +127,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.enq <> io.replayQEnq
   replayQueue.io.replayReq(0).ready := true.B
   replayQueue.io.replayReq(1).ready := true.B
-
+  io.ldStop := replayQueue.io.ldStop
   val debugReplayQ = Seq.fill(LoadPipelineWidth)(RegInit(0.U.asTypeOf(new LoadToReplayQueueBundle)))
   for(i <- 0 until LoadPipelineWidth){
     debugReplayQ(i) <> replayQueue.io.replayReq(i).bits
