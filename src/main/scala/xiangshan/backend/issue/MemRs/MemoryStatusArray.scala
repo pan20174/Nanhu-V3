@@ -97,7 +97,8 @@ class MemoryStatusArrayEntry(implicit p: Parameters) extends BasicStatusArrayEnt
   val vmState = SrcState()
   val isVector = Bool()
   val staLoadState = EntryState()
-  val stdState = EntryState()
+  val stdState = EntryState() //select state
+  val stdIssueState = Bool()
   val counter = UInt(6.W)
   val replayPenalty = UInt(4.W)
   val isFirstIssue = Bool()
@@ -171,6 +172,7 @@ class MemoryStatusArrayEntryUpdateNetwork(stuNum:Int, wakeupWidth:Int, regWkpIdx
     val stIssued = Input(Vec(stuNum, Valid(new RobPtr)))
 //    val replay = Input(Valid(UInt(3.W)))
     val replay = Input(Valid(new ReplayStatus))
+    val stdHasIssue = Input(Bool())
     val redirect = Input(Valid(new Redirect))
     val stLastCompelet = Input(new SqPtr)
   })
@@ -245,6 +247,12 @@ class MemoryStatusArrayEntryUpdateNetwork(stuNum:Int, wakeupWidth:Int, regWkpIdx
   private val addrShouldBeCancelled = srcShouldBeCancelled(0) | srcShouldBeCancelled(1)
   private val needReplay = io.replay.valid && !io.replay.bits.hit
   private val issueHit = io.replay.valid && io.replay.bits.hit
+  private val stdIssueState = io.entry.bits.stdIssueState
+  private val stdIssueStateNext = io.stdHasIssue
+
+  when(stdIssueStateNext){
+    miscNext.bits.stdIssueState := true.B
+  }
 
   switch(staLoadState) {
     is(s_wait_st) {
@@ -326,8 +334,11 @@ class MemoryStatusArrayEntryUpdateNetwork(stuNum:Int, wakeupWidth:Int, regWkpIdx
 
   //Start of dequeue and redirect
   private val shouldBeFlushed = io.entry.valid & io.entry.bits.robIdx.needFlush(io.redirect)
+  ///todo
+//  private val miscUpdateEnDequeueOrRedirect =
+//    (staLoadStateNext === EntryState.s_issued && stdStateNext === EntryState.s_issued) || shouldBeFlushed
   private val miscUpdateEnDequeueOrRedirect =
-    (staLoadStateNext === EntryState.s_issued && stdStateNext === EntryState.s_issued) || shouldBeFlushed
+    (staLoadStateNext === EntryState.s_issued && (stdIssueState || stdIssueStateNext) ) || shouldBeFlushed
   when(miscUpdateEnDequeueOrRedirect) {
     miscNext.valid := false.B
   }
@@ -366,6 +377,7 @@ class MemoryStatusArray(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx:Seq
     val replay = Input(Vec(3, Valid(new Replay(entryNum))))
     val stIssued = Input(Vec(stuNum, Valid(new RobPtr)))
     val stLastCompelet = Input(new SqPtr)
+    val stdHasIssue = Input(Vec(2, Valid(UInt(entryNum.W))))
   })
 
   private val statusArray = Reg(Vec(entryNum, new MemoryStatusArrayEntry))
@@ -409,6 +421,8 @@ class MemoryStatusArray(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx:Seq
     updateNetwork.io.wakeups := io.wakeups
     updateNetwork.io.loadEarlyWakeup := io.loadEarlyWakeup
     updateNetwork.io.earlyWakeUpCancel := io.earlyWakeUpCancel
+    val stdHasIssueSels = io.stdHasIssue.map(s => s.valid && s.bits(idx))
+    updateNetwork.io.stdHasIssue := stdHasIssueSels.reduce(_|_)
 
     val replaySels = io.replay.map(r => r.valid && r.bits.entryIdxOH(idx))
     val replayVals = io.replay.map(_.bits.status)
