@@ -67,6 +67,9 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   //softprefetch
   val isSoftPrefetch = Bool()
+  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
+  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
+  val isReplayQReplay = Bool()
 
 }
 
@@ -75,7 +78,7 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
   // valid bit in LqWriteBundle will be ignored
   val lq_data_wen_dup = Vec(6, Bool()) // dirty reg dup
 
-  def fromLsPipelineBundle(input: LsPipelineBundle) = {
+  def fromLsPipelineBundle(input: LsPipelineBundle) : Unit = {
     vaddr := input.vaddr
     paddr := input.paddr
     mask := input.mask
@@ -92,6 +95,10 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
     isSoftPrefetch := input.isSoftPrefetch
 
     lq_data_wen_dup := DontCare
+
+    replayCause := DontCare
+    schedIndex := DontCare
+    isReplayQReplay := DontCare
   }
 }
 
@@ -140,45 +147,6 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
     isReplay := true.B
   }
 }
-
-//  +
-//+class LoadPipelineBundle(implicit p: Parameters) extends XSBundle {
-//  +  //EXUInp
-//    +  val uop = new MicroOp
-//  +  val src = Vec(3, UInt(VLEN.W))
-//  +  val vm = UInt(VLEN.W)
-//  +
-//    +  val vaddr = UInt(VAddrBits.W)
-//  +  val rsIdx = new RsIdx
-//  +
-//    +  //replayQ
-//  +  val isReplay = Bool()
-//  +  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
-//  +  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
-//  +
-//    +  val paddr = UInt(PAddrBits.W)
-//  +  val mask = UInt(8.W)
-//  +  val data = UInt((XLEN + 1).W)
-//  +  val isSoftPrefetch = Bool()
-//  +  val wlineflag = Bool() // store write the whole cache line
-//  +
-//    +  val miss = Bool()
-//  +  val tlbMiss = Bool()
-//  +  val ptwBack = Bool()
-//  +  val mmio = Bool()
-//  +
-//    +  val forwardMask = Vec(8, Bool())
-//  +  val forwardData = Vec(8, UInt(8.W))
-//  +
-//    +  def need_replay : Bool = {
-//    +    replayCause.reduce(_|_)
-//    +  }
-//  +
-//    +}
-
-
-
-
 
 
 
