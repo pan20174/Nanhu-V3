@@ -95,6 +95,94 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
   }
 }
 
+
+class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
+  //EXUInput
+  val uop = new MicroOp
+  val src = Vec(3, UInt(VLEN.W))
+  val vm = UInt(VLEN.W)
+
+  //replayQ
+  val isReplay = Bool()
+  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
+  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
+  val vaddr_replay = UInt(VAddrBits.W)
+
+  //Rs
+  val rsIdx = new RsIdx
+
+  def fromRsToS0Bundle(input: ExuInput,inRsIdx: RsIdx): Unit = {
+    //EXUInput
+    uop := input.uop
+    src := input.src
+    vm := input.vm
+
+    //Rs
+    rsIdx := inRsIdx
+
+    vaddr_replay := 0.U
+    replayCause.foreach(_ := false.B)
+    schedIndex := 0.U
+    isReplay := false.B
+  }
+
+  def fromRQToS0Bundle(input: ReplayQueueIssueBundle): Unit = {
+    uop := input.uop
+    src.foreach(_ := 0.U)
+    vm := 0.U
+
+    //Rs
+    rsIdx := DontCare
+
+    replayCause.foreach(_ := false.B)
+    vaddr_replay := input.vaddr
+    schedIndex := input.schedIndex
+    isReplay := true.B
+  }
+}
+
+//  +
+//+class LoadPipelineBundle(implicit p: Parameters) extends XSBundle {
+//  +  //EXUInp
+//    +  val uop = new MicroOp
+//  +  val src = Vec(3, UInt(VLEN.W))
+//  +  val vm = UInt(VLEN.W)
+//  +
+//    +  val vaddr = UInt(VAddrBits.W)
+//  +  val rsIdx = new RsIdx
+//  +
+//    +  //replayQ
+//  +  val isReplay = Bool()
+//  +  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
+//  +  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
+//  +
+//    +  val paddr = UInt(PAddrBits.W)
+//  +  val mask = UInt(8.W)
+//  +  val data = UInt((XLEN + 1).W)
+//  +  val isSoftPrefetch = Bool()
+//  +  val wlineflag = Bool() // store write the whole cache line
+//  +
+//    +  val miss = Bool()
+//  +  val tlbMiss = Bool()
+//  +  val ptwBack = Bool()
+//  +  val mmio = Bool()
+//  +
+//    +  val forwardMask = Vec(8, Bool())
+//  +  val forwardData = Vec(8, UInt(8.W))
+//  +
+//    +  def need_replay : Bool = {
+//    +    replayCause.reduce(_|_)
+//    +  }
+//  +
+//    +}
+
+
+
+
+
+
+
+
 class LoadForwardQueryIO(implicit p: Parameters) extends XSBundle {
   val vaddr = Output(UInt(VAddrBits.W))
   val paddr = Output(UInt(PAddrBits.W))

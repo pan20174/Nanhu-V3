@@ -560,6 +560,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     PrintTriggerInfo(tEnable(j), tdata(j))
 
   for (i <- 0 until exuParameters.LduCnt) {
+    loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
     loadUnits(i).io.ldStop := lsq.io.ldStop
     loadUnits(i).io.redirect := Pipe(redirectIn)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
@@ -571,11 +572,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val lduValid = lduIssues(i).issue.valid && !lduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
     loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
     // get input form dispatch
-    loadUnits(i).io.ldin.valid := Mux(selSldu, slduValid, lduValid)
-    loadUnits(i).io.ldin.bits := Mux(selSldu,slduIssues(i).issue.bits, lduIssues(i).issue.bits)
+    loadUnits(i).io.rsIssueIn.valid := Mux(selSldu, slduValid, lduValid)
+    loadUnits(i).io.rsIssueIn.bits := Mux(selSldu,slduIssues(i).issue.bits, lduIssues(i).issue.bits)
     loadUnits(i).io.auxValid := Mux(selSldu, slduIssues(i).auxValid, lduIssues(i).auxValid)
-    slduIssues(i).issue.ready := loadUnits(i).io.ldin.ready
-    lduIssues(i).issue.ready := loadUnits(i).io.ldin.ready
+    slduIssues(i).issue.ready := loadUnits(i).io.rsIssueIn.ready
+    lduIssues(i).issue.ready := loadUnits(i).io.rsIssueIn.ready
     when(selSldu){assert(lduIssues(i).issue.valid === false.B)}
     // dcache access
     loadUnits(i).io.dcache <> dcache.io.lsu.load(i)
@@ -598,8 +599,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //cancel
     io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
     // prefetch
-    val pcDelay1Valid = RegNext(loadUnits(i).io.ldin.fire, false.B)
-    val pcDelay1Bits = RegEnable(loadUnits(i).io.ldin.bits.uop.cf.pc, loadUnits(i).io.ldin.fire)
+    val pcDelay1Valid = RegNext(loadUnits(i).io.rsIssueIn.fire, false.B)
+    val pcDelay1Bits = RegEnable(loadUnits(i).io.rsIssueIn.bits.uop.cf.pc, loadUnits(i).io.rsIssueIn.fire)
     val pcDelay2Bits = RegEnable(pcDelay1Bits, pcDelay1Valid)
     prefetcherOpt.foreach(pf => {
       pf.io.ld_in(i).valid := Mux(pf_train_on_hit,

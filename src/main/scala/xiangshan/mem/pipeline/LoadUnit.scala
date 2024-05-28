@@ -27,6 +27,7 @@ import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import xiangshan.backend.execute.fu._
 import xiangshan.backend.execute.fu.csr.SdtrigExt
 import xiangshan.backend.issue.{RSFeedback, RSFeedbackType, RsIdx}
+import xiangshan.backend.rob.RobPtr
 import xiangshan.cache._
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
 import xs.utils.perf.HasPerfLogging
@@ -61,7 +62,8 @@ class ReplayQueueLoadInBundle(implicit p: Parameters) extends XSBundle{
 
 class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with HasDCacheParameters with SdtrigExt with HasPerfLogging {
   val io = IO(new Bundle() {
-    val ldin = Flipped(Decoupled(new ExuInput))
+    val rsIssueIn = Flipped(Decoupled(new ExuInput))
+    val replayQIssueIn = Flipped(Decoupled(new ReplayQueueIssueBundle))
     val auxValid = Input(Bool())
     val ldout = Decoupled(new ExuOutput)
     val redirect = Flipped(ValidIO(new Redirect))
@@ -92,11 +94,26 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
     val ldStop = Input(Bool())
   })
+  io.rsIssueIn.ready := true.B
+  io.replayQIssueIn.ready := true.B
+  val rsIssueIn = WireInit(io.rsIssueIn)
+  val replayIssueIn = WireInit(io.replayQIssueIn)
+  assert(!(rsIssueIn.valid && replayIssueIn.valid))
 
+  val s0_in_fromRs = Wire(DecoupledIO(new LoadPipelineBundleS0))
+  val s0_in_fromReplayQ = Wire(DecoupledIO(new LoadPipelineBundleS0))
+  s0_in_fromRs.valid := rsIssueIn.valid
+  s0_in_fromRs.ready := true.B
+
+  s0_in_fromReplayQ.valid := replayIssueIn.valid
+  s0_in_fromReplayQ.ready := true.B
+
+  s0_in_fromRs.bits.fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
+  s0_in_fromReplayQ.bits.fromRQToS0Bundle(replayIssueIn.bits)
 
   val s0_req_tlb = io.tlb.req
   val s0_req_dcache = io.dcache.req
-  val s0_in = io.ldin
+  val s0_in = s0_in_fromRs
   val s0_out = Wire(Decoupled(new LsPipelineBundle))
 
   val s0_imm12 = s0_in.bits.uop.ctrl.imm(11,0)
@@ -422,7 +439,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   // pre-calcuate sqIdx mask in s0, then send it to lsq in s1 for forwarding
   val sqIdxMaskReg = RegEnable(UIntToMask(s0_in.bits.uop.sqIdx.value, StoreQueueSize), s0_in.valid)
-  // to enable load-load, sqIdxMask must be calculated based on ldin.uop
+  // to enable load-load, sqIdxMask must be calculated based on rsIssueIn.uop
   // If the timing here is not OK, load-load forwarding has to be disabled.
   // Or we calculate sqIdxMask at RS??
   io.lsq.forwardFromSQ.sqIdxMask := sqIdxMaskReg
@@ -602,4 +619,34 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   when(io.ldout.fire){
     XSDebug("ldout %x\n", io.ldout.bits.uop.cf.pc)
   }
+
+  val debugModule = Module(new LoadUnitDebugInfo)
+  debugModule.io.infoIn.s0_valid := s0_in.valid
+  debugModule.io.infoIn.s1_valid := s1_in.valid
+  debugModule.io.infoIn.s2_valid := s2_in.valid
+//  debugModule.io.infoIn.s3_valid :=
+  debugModule.io.infoIn.wb_valid := io.ldout.valid
+  debugModule.io.infoIn.rsIdx := io.rsIdx
+  debugModule.io.infoIn.robIdx := s0_in.bits.uop.robIdx
 }
+
+class LdDebugBundle(implicit p: Parameters) extends XSBundle {
+  val s0_valid = Bool()
+  val s1_valid = Bool()
+  val s2_valid = Bool()
+//  val s3_valid = Bool()
+  val wb_valid = Bool()
+  val rsIdx = new RsIdx()
+  val robIdx = new RobPtr()
+}
+
+class LoadUnitDebugInfo(implicit p: Parameters) extends XSModule{
+  val io = IO(new Bundle(){
+    val infoIn = Input(new LdDebugBundle)
+  })
+
+  val debugReg = RegInit(0.U.asTypeOf(new LdDebugBundle))
+  debugReg := io.infoIn
+  dontTouch(debugReg)
+}
+

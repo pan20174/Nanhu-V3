@@ -62,6 +62,16 @@ class LoadToReplayQueueBundle(implicit p: Parameters) extends LsPipelineBundle{
   def need_rep      = replayCause.asUInt.orR
 }
 
+class ReplayQueueIssueBundle(implicit p: Parameters) extends XSBundle {
+  val vaddr = UInt(VAddrBits.W)
+  val mask = UInt(8.W)
+  val uop = new MicroOp
+  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
+}
+
+
+
+
 class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: Int)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle(){
     val wen   = Input(Vec(numWrite, Bool()))
@@ -83,14 +93,14 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
   }
 }
 
-class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule 
+class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule
   with HasLoadHelper
   with HasPerfLogging
 {
   val io = IO(new Bundle() {
     val enq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val redirect = Flipped(ValidIO(new Redirect))
-    val replayReq = Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle))
+    val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
     })
@@ -192,14 +202,14 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
   }
   freeList.io.free := freeMaskVec.asUInt
-  
+
   // replay entry select logic
   def getRemBits(input: UInt, rem: Int): UInt = {
-    VecInit((0 until LoadReplayQueueSize / LoadPipelineWidth).map(i => 
+    VecInit((0 until LoadReplayQueueSize / LoadPipelineWidth).map(i =>
       { input(LoadPipelineWidth * i + rem) } )).asUInt
   }
   def getRemUop[T <: Data](input: Vec[T], rem: Int): Vec[T] = {
-    VecInit((0 until LoadReplayQueueSize / LoadPipelineWidth).map(i => 
+    VecInit((0 until LoadReplayQueueSize / LoadPipelineWidth).map(i =>
       input(LoadPipelineWidth * i + rem)
     ))
   }
@@ -208,7 +218,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val s0_readyToReplay_mask = VecInit((0 until LoadReplayQueueSize).map(i => {
     allocatedReg(i) && !scheduledReg(i) && !blockingReg(i)
   }))
-  s1_selResSeq := (0 until LoadPipelineWidth).map{ rem => 
+  s1_selResSeq := (0 until LoadPipelineWidth).map{ rem =>
     val s0_remReadyToReplay_uop = getRemUop(uopReg, rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
     dontTouch(s0_remReadyToReplay_mask)
@@ -239,7 +249,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }
   // replay issue logic
   val selReplayRegIdxReg = RegInit(VecInit(List.fill(LoadPipelineWidth)(0.U((log2Up(LoadReplayQueueSize)).W))))
-  val replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new LoadToReplayQueueBundle)))
+  val replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle)))
   for (i <- 0 until LoadPipelineWidth) {
     selReplayRegIdxReg(i) := OHToUInt(robOldestSelOH(i))
     dontTouch(selReplayRegIdxReg)
@@ -247,32 +257,19 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     vaddrModule.io.raddr(i) := selReplayRegIdxReg(i)
     replay_req(i).valid := RegNext(s1_selResSeq(i).valid)
     replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)
-    replay_req(i).bits.isReplayQReplay := true.B
     replay_req(i).bits.schedIndex := selReplayRegIdxReg(i)
     replay_req(i).bits.uop := uopReg(selReplayRegIdxReg(i))
 
-    replay_req(i).bits.paddr := DontCare
-    replay_req(i).bits.replayCause := DontCare
     replay_req(i).bits.mask := 0.U
-    replay_req(i).bits.data := 0.U
-    replay_req(i).bits.wlineflag := false.B
-    replay_req(i).bits.miss := false.B
-    replay_req(i).bits.tlbMiss := false.B
-    replay_req(i).bits.ptwBack := false.B
-    replay_req(i).bits.mmio := false.B
-    replay_req(i).bits.isSoftPrefetch := false.B
-    replay_req(i).bits.rsIdx := 0.U.asTypeOf(new RsIdx)
-    replay_req(i).bits.forwardMask := DontCare
-    replay_req(i).bits.forwardData := DontCare
 
-    io.replayReq(i) <> replay_req(i)
-    dontTouch(io.replayReq(i))
+    io.replayQIssue(i) <> replay_req(i)
+    dontTouch(io.replayQIssue(i))
   }
   io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
   //  perf cnt
   val enqNumber               = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay))
-  val deqNumber               = PopCount(io.replayReq.map(_.fire))
-  val deqBlockCount           = PopCount(io.replayReq.map(r => r.valid && !r.ready))
+  val deqNumber               = PopCount(io.replayQIssue.map(_.fire))
+  val deqBlockCount           = PopCount(io.replayQIssue.map(r => r.valid && !r.ready))
   val replayTlbMissCount      = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_TM)))
   val replayMemAmbCount       = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_MA)))
   val replayNukeCount         = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_NK)))
