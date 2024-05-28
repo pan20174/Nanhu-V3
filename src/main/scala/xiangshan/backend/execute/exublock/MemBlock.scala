@@ -289,7 +289,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   })
   io.lsqVecDeqCnt := DontCare
 
-  val ldStop = RegInit(false.B)
   val dcache = outer.dcache.module
   val uncache = outer.uncache.module
 
@@ -561,7 +560,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     PrintTriggerInfo(tEnable(j), tdata(j))
 
   for (i <- 0 until exuParameters.LduCnt) {
-    loadUnits(i).io.ldStop := ldStop
+    loadUnits(i).io.ldStop := lsq.io.ldStop
     loadUnits(i).io.redirect := Pipe(redirectIn)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
