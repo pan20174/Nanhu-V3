@@ -58,21 +58,12 @@ class Std(implicit p: Parameters) extends XSModule {
 class MemIssueRouter(implicit p: Parameters) extends LazyModule{
   val node = new ExuComplexIssueNode
   lazy val module = new LazyModuleImp(this){
-//    val io = IO(new Bundle{
-//      val ldStopRouter = Input(Bool())
-//    })
-    
     require(node.in.length == 1)
     private val ib = node.in.head._1
     for((ob,oe) <- node.out) {
       ob.issue.valid := ib.issue.valid && ib.issue.bits.uop.ctrl.fuType === oe._2.fuConfigs.head.fuType
       ob.issue.bits := ib.issue.bits
       ib.issue.ready := true.B
-//      if(oe._2.fuConfigs.head.name == "ldu"){
-//        ib.issue.ready := !io.ldStopRouter
-//      } else {
-//        ib.issue.ready := true.B
-//      }
       assert(ob.issue.ready === true.B)
       ob.rsIdx := ib.rsIdx
       ob.auxValid := ib.auxValid && ib.issue.bits.uop.ctrl.fuType === oe._2.fuConfigs.head.fuType
@@ -311,7 +302,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     io.error.report_to_beu := false.B
     io.error.valid := false.B
   }
-  io.ldStopMemBlock := ldStop
   private val vmEnable = io.tlbCsr.priv.dmode <= ModeS && io.tlbCsr.satp.mode.orR
 
   private val loadUnits = Seq.fill(exuParameters.LduCnt)(Module(new LoadUnit))
@@ -369,7 +359,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val sbuffer = Module(new Sbuffer)
 
   io.lqDeq := lsq.io.lqDeq
-  ldStop := lsq.io.ldStop
+  io.ldStopMemBlock := lsq.io.ldStop
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
 
