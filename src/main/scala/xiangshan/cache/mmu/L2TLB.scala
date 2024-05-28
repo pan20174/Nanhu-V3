@@ -418,6 +418,7 @@ class PTWImp(outer: PTW)(implicit p: Parameters) extends PtwModule(outer) with H
     ptw_sector_resp.af := pte.entries(OHToUInt(pte.pteidx)).af
     ptw_sector_resp.pf := pte.entries(OHToUInt(pte.pteidx)).pf
     ptw_sector_resp.addr_low := OHToUInt(pte.pteidx)
+    ptw_sector_resp.pteidx := pte.pteidx
     for (i <- 0 until tlbContiguous) {
       val ppn_equal = pte.entries(i).ppn === pte.entries(OHToUInt(pte.pteidx)).ppn
       val perm_equal = pte.entries(i).perm.getOrElse(0.U.asTypeOf(new PtePermBundle)).asUInt === pte.entries(OHToUInt(pte.pteidx)).perm.getOrElse(0.U.asTypeOf(new PtePermBundle)).asUInt
