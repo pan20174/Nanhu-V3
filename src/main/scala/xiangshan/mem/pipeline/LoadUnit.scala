@@ -260,9 +260,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s1_out.bits.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && s1_bank_conflict
   //disable bank_conflict
-  s1_rsFeedback.valid := s1_in.valid && (s1_bank_conflict || s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem
+  s1_rsFeedback.valid := s1_in.valid && (s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem
   s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
-  s1_rsFeedback.bits.sourceType := Mux(s1_bank_conflict, RSFeedbackType.bankConflict, RSFeedbackType.ldVioCheckRedo)
+  s1_rsFeedback.bits.sourceType := RSFeedbackType.ldVioCheckRedo
 
   // if replay is detected in load_s1,
   // load inst will be canceled immediately
