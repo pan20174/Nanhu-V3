@@ -164,7 +164,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.lqCancelCnt <> io.lqCancelCnt
   loadQueue.io.replayQEnq <> io.replayQEnq
   io.lqDeq := loadQueue.io.lqDeq
-  io.ldStop := loadQueue.io.ldout
+  io.ldStop := loadQueue.io.ldStop
 
   // store queue wiring
   // storeQueue.io <> DontCare
