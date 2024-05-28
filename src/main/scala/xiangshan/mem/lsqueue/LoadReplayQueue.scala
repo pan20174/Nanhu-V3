@@ -45,21 +45,21 @@ object LoadReplayCauses {
   val allCauses = 10
 }
 class LoadToReplayQueueBundle(implicit p: Parameters) extends LsPipelineBundle{
-  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
-  val isReplayQReplay = Bool()
-  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
-  // alias
-  def mem_amb       = replayCause(LoadReplayCauses.C_MA)
-  def tlb_miss      = replayCause(LoadReplayCauses.C_TM)
-  def fwd_fail      = replayCause(LoadReplayCauses.C_FF)
-  def dcache_rep    = replayCause(LoadReplayCauses.C_DR)
-  def dcache_miss   = replayCause(LoadReplayCauses.C_DM)
-  def wpu_fail      = replayCause(LoadReplayCauses.C_WF)
-  def bank_conflict = replayCause(LoadReplayCauses.C_BC)
-  def rar_nack      = replayCause(LoadReplayCauses.C_RAR)
-  def raw_nack      = replayCause(LoadReplayCauses.C_RAW)
-  def nuke          = replayCause(LoadReplayCauses.C_NK)
-  def need_rep      = replayCause.asUInt.orR
+  // val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
+  // val isReplayQReplay = Bool()
+  // val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
+  // // alias
+  // def mem_amb       = replayCause(LoadReplayCauses.C_MA)
+  // def tlb_miss      = replayCause(LoadReplayCauses.C_TM)
+  // def fwd_fail      = replayCause(LoadReplayCauses.C_FF)
+  // def dcache_rep    = replayCause(LoadReplayCauses.C_DR)
+  // def dcache_miss   = replayCause(LoadReplayCauses.C_DM)
+  // def wpu_fail      = replayCause(LoadReplayCauses.C_WF)
+  // def bank_conflict = replayCause(LoadReplayCauses.C_BC)
+  // def rar_nack      = replayCause(LoadReplayCauses.C_RAR)
+  // def raw_nack      = replayCause(LoadReplayCauses.C_RAW)
+  // def nuke          = replayCause(LoadReplayCauses.C_NK)
+  // def need_rep      = replayCause.asUInt.orR
 }
 
 class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: Int)(implicit p: Parameters) extends XSModule{
@@ -229,6 +229,12 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     oldestBitsVec.asUInt
   }))
+
+  val debug_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
+  for(i <- 0 until LoadPipelineWidth){
+    debug_robOldestSelOH(i) := OHToUInt(robOldestSelOH(i))
+    dontTouch(debug_robOldestSelOH(i))
+  }
 
   for (i <- 0 until LoadPipelineWidth) {
     for (j <- 0 until LoadReplayQueueSize) {

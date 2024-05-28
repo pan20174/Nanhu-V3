@@ -48,6 +48,9 @@ object genWdata {
 }
 
 class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
+  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
+  val isReplayQReplay = Bool()
+  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
   val vaddr = UInt(VAddrBits.W)
   val paddr = UInt(PAddrBits.W)
   // val func = UInt(6.W)
@@ -67,6 +70,18 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   //softprefetch
   val isSoftPrefetch = Bool()
+    // alias
+  def mem_amb       = replayCause(LoadReplayCauses.C_MA)
+  def tlb_miss      = replayCause(LoadReplayCauses.C_TM)
+  def fwd_fail      = replayCause(LoadReplayCauses.C_FF)
+  def dcache_rep    = replayCause(LoadReplayCauses.C_DR)
+  def dcache_miss   = replayCause(LoadReplayCauses.C_DM)
+  def wpu_fail      = replayCause(LoadReplayCauses.C_WF)
+  def bank_conflict = replayCause(LoadReplayCauses.C_BC)
+  def rar_nack      = replayCause(LoadReplayCauses.C_RAR)
+  def raw_nack      = replayCause(LoadReplayCauses.C_RAW)
+  def nuke          = replayCause(LoadReplayCauses.C_NK)
+  def need_rep      = replayCause.asUInt.orR
 
 }
 
@@ -92,6 +107,9 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
     isSoftPrefetch := input.isSoftPrefetch
 
     lq_data_wen_dup := DontCare
+    schedIndex := DontCare
+    isReplayQReplay := DontCare
+    replayCause := DontCare
   }
 }
 
