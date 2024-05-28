@@ -186,19 +186,6 @@ class LoadDataFromLQBundle(implicit p: Parameters) extends XSBundle {
   }
 }
 
-// def vectorWbMask(uop: MicroOp): UInt = {
-//   val wb_mask_bit = uop.uopIdx / (uop.uopNum >> 3).asUInt + 1.U
-//   val wb_bit_rem = uop.uopIdx + 1.U % (uop.uopNum >> 3).asUInt
-//   val order_wbmask = Mux(wb_bit_rem === 0.U, UIntToMask(wb_mask_bit, 8), 0.U)
-//   order_wbmask
-// }
-
-// Bundle for load / store wait waking up
-class MemWaitUpdateReq(implicit p: Parameters) extends XSBundle {
-  val staIssue = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
-  val stdIssue = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
-}
-
 object AddPipelineReg {
   class PipelineRegModule[T <: Data](gen: T) extends Module {
     val io = IO(new Bundle() {
