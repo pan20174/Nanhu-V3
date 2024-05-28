@@ -120,14 +120,12 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
 
   val s1_rsFeedback = Wire(ValidIO(new RSFeedback))
   s1_rsFeedback.valid := s1_in.valid && s1_tlb_miss
-  s1_rsFeedback.bits.flushState := io.tlb.resp.bits.ptwBack
   s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
   s1_rsFeedback.bits.sourceType := RSFeedbackType.tlbMiss
 //  io.feedbackSlow := Pipe(s1_rsFeedback)
 
   io.feedbackSlow.valid := RegNext(s1_in.valid,false.B)
   io.feedbackSlow.bits.rsIdx := RegNext(s1_rsFeedback.bits.rsIdx)
-  io.feedbackSlow.bits.flushState := RegNext(s1_rsFeedback.bits.flushState)
   io.feedbackSlow.bits.sourceType := RegNext(Mux(s1_rsFeedback.valid,s1_rsFeedback.bits.sourceType,RSFeedbackType.success))
 
   XSDebug(s1_rsFeedback.valid,

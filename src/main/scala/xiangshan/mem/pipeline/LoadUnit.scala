@@ -232,7 +232,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_rsFeedback = Wire(ValidIO(new RSFeedback))
   s1_rsFeedback.valid := s1_in.valid && (s1_bank_conflict || s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem
   s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
-  s1_rsFeedback.bits.flushState := s1_in.bits.ptwBack
   s1_rsFeedback.bits.sourceType := Mux(s1_bank_conflict, RSFeedbackType.bankConflict, RSFeedbackType.ldVioCheckRedo)
 
   // if replay is detected in load_s1,
@@ -381,7 +380,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
   s2_rsFeedback.valid := s2_in.valid && s2_need_replay_from_rs && s2_enableMem
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
-  s2_rsFeedback.bits.flushState := s2_in.bits.ptwBack
   s2_rsFeedback.bits.sourceType := Mux(s2_tlb_miss, RSFeedbackType.tlbMiss,
     Mux(s2_cache_replay,
       RSFeedbackType.mshrFull,
@@ -513,7 +511,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.valid := RegNext(s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
-  io.feedbackSlow.bits.flushState := RegNext(s2_rsFeedback.bits.flushState)
   io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid,s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
 
   // If replay is reported at load_s1, inst will be canceled (will not enter load_s2),

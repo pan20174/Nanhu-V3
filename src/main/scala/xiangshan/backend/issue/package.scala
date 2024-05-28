@@ -114,7 +114,6 @@ package object issue {
 
   class RSFeedback(implicit p: Parameters) extends XSBundle {
     val rsIdx = new RsIdx
-    val flushState: Bool = Bool()
     val sourceType: UInt = RSFeedbackType()
   }
 
