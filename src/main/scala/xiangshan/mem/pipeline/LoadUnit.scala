@@ -121,7 +121,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s0_mask = WireInit(genWmask(s0_vaddr, s0_in.bits.uop.ctrl.fuOpType(1,0)))
   val s0_uop = WireInit(s0_in.bits.uop)
 
-  val s0_auxValid = io.auxValid
+  val s0_auxValid = s0_in.valid
 
   val s0_isSoftPrefetch = LSUOpType.isPrefetch(s0_uop.ctrl.fuOpType)
   val s0_isSoftPrefetchRead = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_r
