@@ -261,7 +261,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s1_out.bits.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && s1_bank_conflict
   //disable bank_conflict
-  s1_rsFeedback.valid := s1_in.valid && (s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem
+  s1_rsFeedback.valid := s1_in.valid && (s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem && (!s1_in.bits.isReplayQReplay)
   s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
   s1_rsFeedback.bits.sourceType := RSFeedbackType.ldVioCheckRedo
 
@@ -409,7 +409,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
       s2_data_invalid && !s2_is_prefetch || // replay if store to load forward data is not ready
       (io.replayQFull && s2_out.bits.replayCause(LoadReplayCauses.C_BC) && !s2_out.bits.isReplayQReplay)
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
-  s2_rsFeedback.valid := s2_in.valid && s2_need_replay_from_rs && s2_enableMem
+  s2_rsFeedback.valid := s2_in.valid && s2_need_replay_from_rs && s2_enableMem && (!s2_in.bits.isReplayQReplay)
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
   s2_rsFeedback.bits.sourceType := Mux(s2_tlb_miss, RSFeedbackType.tlbMiss,
     Mux(s2_cache_replay,
