@@ -308,7 +308,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     replay_req(i).valid := RegNext(s1_selResSeq(i).valid)
     replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)
     replay_req(i).bits.schedIndex :=RegEnable(s1SelReplayIdx(i), s1_selResSeq(i).valid)
-    replay_req(i).bits.uop := RegEnable(uopReg(s1SelReplayIdx(i)), s1_selResSeq(i).valid)
+    replay_req(i).bits.uop := uopReg(RegEnable(s1SelReplayIdx(i), s1_selResSeq(i).valid))
 
     replay_req(i).bits.mask := 0.U
 
