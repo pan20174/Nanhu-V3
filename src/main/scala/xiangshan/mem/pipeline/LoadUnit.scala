@@ -93,6 +93,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
     val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
     val ldStop = Input(Bool())
+    val replayQFull = Input(Bool())
   })
   io.rsIssueIn.ready := true.B
   io.replayQIssueIn.ready := true.B
@@ -405,8 +406,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s2_need_replay_from_rs := s2_tlb_miss || // replay if dtlb miss
       s2_cache_replay && !s2_is_prefetch && !s2_mmio && !s2_exception && !s2_dataForwarded || // replay if dcache miss queue full / busy
-      s2_data_invalid && !s2_is_prefetch // replay if store to load forward data is not ready
-
+      s2_data_invalid && !s2_is_prefetch || // replay if store to load forward data is not ready
+      (io.replayQFull && s2_out.bits.replayCause(LoadReplayCauses.C_BC) && !s2_out.bits.isReplayQReplay)
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
   s2_rsFeedback.valid := s2_in.valid && s2_need_replay_from_rs && s2_enableMem
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
