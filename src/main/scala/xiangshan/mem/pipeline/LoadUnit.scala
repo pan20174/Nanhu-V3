@@ -595,6 +595,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_cancel := s1_in.valid && (!s1_out.valid)
   io.cancel := s1_cancel || s2_lpvCancel
 
+  val temp_replay_record_s1 = s1_rsFeedback.valid && !s1_out.bits.uop.robIdx.needFlush(io.redirect)
+  val temp_replay_record_s1_reg = RegNext(temp_replay_record_s1)
+  val temp_replay_record_s2 = s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
+  val replayHasOtherCause = (temp_replay_record_s2 || temp_replay_record_s1_reg) && s2_out.bits.isReplayQReplay
   //tmp:
   when(s2_out.valid){
     assert(PopCount(s2_out.bits.replayCause.asUInt) <= 1.U)
@@ -605,7 +609,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replqQueue.bits.paddr := DontCare
   io.s3_enq_replqQueue.bits.isReplayQReplay := s2_out.bits.isReplayQReplay
   io.s3_enq_replqQueue.bits.replayCause := DontCare
-  io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := s2_out.bits.replayCause(LoadReplayCauses.C_BC)
+  io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := s2_out.bits.replayCause(LoadReplayCauses.C_BC) || replayHasOtherCause
   io.s3_enq_replqQueue.bits.schedIndex := s2_out.bits.schedIndex
   io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop
   io.s3_enq_replqQueue.bits.mask := s2_mask
