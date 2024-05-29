@@ -405,7 +405,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_need_replay_from_rs = Wire(Bool())
 
   s2_need_replay_from_rs := s2_tlb_miss || // replay if dtlb miss
-      s2_cache_replay && !s2_is_prefetch && !s2_mmio && !s2_exception && !s2_dataForwarded || // replay if dcache miss queue full / busy
+      s2_cache_replay && !(RegNext(s1_bank_conflict)) && !s2_is_prefetch && !s2_mmio && !s2_exception && !s2_dataForwarded || // replay if dcache miss queue full / busy
       s2_data_invalid && !s2_is_prefetch // replay if store to load forward data is not ready
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
