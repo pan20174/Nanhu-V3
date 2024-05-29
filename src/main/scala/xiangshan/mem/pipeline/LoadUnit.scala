@@ -540,7 +540,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   // feedback tlb miss / dcache miss queue full
 //  io.feedbackSlow.bits := RegNext(s2_rsFeedback.bits) //remove clock-gating for timing
 //  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
-  io.feedbackSlow.valid := RegNext(s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
+  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
   io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid,s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
 
