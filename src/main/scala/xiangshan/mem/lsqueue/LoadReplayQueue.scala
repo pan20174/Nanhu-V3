@@ -247,6 +247,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val s0_readyToReplay_mask = VecInit((0 until LoadReplayQueueSize).map(i => {
     allocatedReg(i) && !scheduledReg(i) && !blockingReg(i)
   }))
+  dontTouch(s0_readyToReplay_mask)
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem =>
     val s0_remReadyToReplay_uop = getRemUop(uopReg, rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
@@ -268,7 +269,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     oldestBitsVec.asUInt
   }))
-
+  val debug_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
+  for(i <- 0 until LoadPipelineWidth){
+    debug_robOldestSelOH(i) := OHToUInt(robOldestSelOH(i))
+    dontTouch(debug_robOldestSelOH(i))
+  }
   for (i <- 0 until LoadPipelineWidth) {
     for (j <- 0 until LoadReplayQueueSize) {
       when (s1_selResSeq(i).valid && robOldestSelOH(i)(j)) {

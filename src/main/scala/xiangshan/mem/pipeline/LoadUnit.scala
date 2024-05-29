@@ -598,7 +598,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   when(s2_out.valid){
     assert(PopCount(s2_out.bits.replayCause.asUInt) <= 1.U)
   }
-  val s2_needEnqReplayQ = s2_out.valid && s2_out.bits.replayCause.reduce(_|_)
+  val s2_needEnqReplayQ = s2_out.valid
   io.s3_enq_replqQueue.valid := s2_needEnqReplayQ
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
   io.s3_enq_replqQueue.bits.paddr := DontCare
