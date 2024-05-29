@@ -110,7 +110,7 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
   val vm = UInt(VLEN.W)
 
   //replayQ
-  val isReplay = Bool()
+  val isReplayQReplay = Bool()
   val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
   val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
   val vaddr_replay = UInt(VAddrBits.W)
@@ -130,7 +130,7 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
     vaddr_replay := 0.U
     replayCause.foreach(_ := false.B)
     schedIndex := 0.U
-    isReplay := false.B
+    isReplayQReplay := false.B
   }
 
   def fromRQToS0Bundle(input: ReplayQueueIssueBundle): Unit = {
@@ -144,7 +144,7 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
     replayCause.foreach(_ := false.B)
     vaddr_replay := input.vaddr
     schedIndex := input.schedIndex
-    isReplay := true.B
+    isReplayQReplay := true.B
   }
 }
 

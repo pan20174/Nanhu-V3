@@ -166,7 +166,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s0_out.valid := s0_in.valid
   s0_out.bits := DontCare
-  s0_out.bits.isReplayQReplay := s0_in_fromReplayQ.valid
+  s0_out.bits.isReplayQReplay := s0_in.bits.isReplayQReplay
   s0_out.bits.vaddr := s0_vaddr
   s0_out.bits.mask := s0_mask
   s0_out.bits.uop := s0_uop
