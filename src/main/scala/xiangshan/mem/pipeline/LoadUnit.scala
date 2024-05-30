@@ -363,7 +363,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_fullForward = ((~s2_forwardMask.asUInt).asUInt & s2_mask) === 0.U && !s2_LSQ_LoadForwardQueryIO.dataInvalid
 
   when(s2_enableMem) {
-    s2_out.valid := s2_in.valid && !s2_tlb_miss && !s2_data_invalid
+//    s2_out.valid := s2_in.valid && !s2_tlb_miss && !s2_data_invalid
+    //load must go to S2 to return feedback
+    s2_out.valid := s2_in.valid
   }.otherwise {
     s2_out.valid := s2_in.valid
   }
@@ -409,7 +411,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
       s2_data_invalid && !s2_is_prefetch // replay if store to load forward data is not ready
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
-  s2_rsFeedback.valid := s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.replayQFull && s2_out.bits.replayCause(LoadReplayCauses.C_BC) && !s2_out.bits.isReplayQReplay))) && s2_enableMem
+  s2_rsFeedback.valid := s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.replayQFull && !s2_out.bits.isReplayQReplay))) && s2_enableMem
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
   s2_rsFeedback.bits.sourceType := Mux(s2_tlb_miss, RSFeedbackType.tlbMiss,
     Mux(s2_cache_replay,
@@ -540,7 +542,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   // feedback tlb miss / dcache miss queue full
 //  io.feedbackSlow.bits := RegNext(s2_rsFeedback.bits) //remove clock-gating for timing
 //  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
-  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
+  io.feedbackSlow.valid := RegNext(s2_out.valid &&(!s2_out.bits.isReplayQReplay) && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
   io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid,s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
 
