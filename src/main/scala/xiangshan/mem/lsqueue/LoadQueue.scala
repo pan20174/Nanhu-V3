@@ -110,7 +110,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val lqSafeDeq = Input(new RobPtr)
     val robHead = Input(new RobPtr)
     val rollback = Output(Valid(new Redirect)) // replay now starts from load instead of store
-    val dcache = Flipped(ValidIO(new Refill)) // TODO: to be renamed
+//    val dcache = Flipped(ValidIO(new Refill)) // TODO: to be renamed
     val release = Flipped(ValidIO(new Release))
     val uncache = new UncacheWordIO
     val exceptionAddr = new ExceptionAddrIO
@@ -397,15 +397,18 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     vaddrModule.io.wen(i) := RegNext(io.loadIn(i).fire)
   }
 
-  when(io.dcache.valid) {
-    XSDebug("miss resp: paddr:0x%x data %x\n", io.dcache.bits.addr, io.dcache.bits.data)
-  }
+//  when(io.dcache.valid) {
+//    XSDebug("miss resp: paddr:0x%x data %x\n", io.dcache.bits.addr, io.dcache.bits.data)
+//  }
 
   // Refill 64 bit in a cycle
   // Refill data comes back from io.dcache.resp
-  dataModule.io.refill.valid := io.dcache.valid
-  dataModule.io.refill.paddr := io.dcache.bits.addr
-  dataModule.io.refill.data := io.dcache.bits.data
+//  dataModule.io.refill.valid := io.dcache.valid
+//  dataModule.io.refill.paddr := io.dcache.bits.addr
+//  dataModule.io.refill.data := io.dcache.bits.data
+  dataModule.io.refill.valid := false.B
+  dataModule.io.refill.paddr := DontCare
+  dataModule.io.refill.data := DontCare
 
   val s2_dcache_require_replay = WireInit(VecInit((0 until LoadPipelineWidth).map(i =>{
     RegNext(io.loadIn(i).fire) && RegNext(io.s2_dcache_require_replay(i))
@@ -420,9 +423,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       when(!s2_dcache_require_replay.asUInt.orR){
         refilling(i) := true.B
       }
-      when(io.dcache.bits.error) {
-        error(i) := true.B
-      }
+//      when(io.dcache.bits.error) {
+//        error(i) := true.B
+//      }
     }
   })
 
@@ -995,7 +998,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     dataModule.io.uncacheWrite(deqPtr, io.uncache.resp.bits.data(XLEN-1, 0))
     dataModule.io.uncache.wen := true.B
 
-    XSDebug("uncache resp: data %x\n", io.dcache.bits.data)
+//    XSDebug("uncache resp: data %x\n", io.dcache.bits.data)
   }
 
   // Read vaddr for mem exception
@@ -1101,7 +1104,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("rollback", io.rollback.valid) // rollback redirect generated
   XSPerfAccumulate("mmioCycle", uncache_Order_State =/= s_idle) // lq is busy dealing with uncache req
   XSPerfAccumulate("mmioCnt", io.uncache.req.fire)
-  XSPerfAccumulate("refill", io.dcache.valid)
+//  XSPerfAccumulate("refill", io.dcache.valid)
 //  XSPerfAccumulate("writeback_success", PopCount(VecInit(io.ldout.map(i => i.fire))))
 //  XSPerfAccumulate("writeback_blocked", PopCount(VecInit(io.ldout.map(i => i.valid && !i.ready))))
   XSPerfAccumulate("utilization_miss", PopCount((0 until LoadQueueSize).map(i => allocated(i) && miss(i))))
@@ -1112,7 +1115,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     ("rollback         ", io.rollback.valid),
     ("mmioCycle        ", uncache_Order_State =/= s_idle),
     ("mmio_Cnt         ", io.uncache.req.fire),
-    ("refill           ", io.dcache.valid),
+//    ("refill           ", io.dcache.valid),
 //    ("writeback_success", PopCount(VecInit(io.ldout.map(i => i.fire)))),
 //    ("writeback_blocked", PopCount(VecInit(io.ldout.map(i => i.valid && !i.ready)))),
     ("ltq_1_4_valid    ", (perfValidCount < (LoadQueueSize.U/4.U))),

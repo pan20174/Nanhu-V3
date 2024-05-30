@@ -85,7 +85,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     val rob = Flipped(new RobLsqIO)
     val rollback = Output(Valid(new Redirect))
-    val dcache = Flipped(ValidIO(new Refill))
     val release = Flipped(ValidIO(new Release))
     val uncache = new UncacheWordIO
     val exceptionAddr = new ExceptionAddrIO
@@ -159,7 +158,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.robHead := RegNext(io.rob.pendingInst)
   loadQueue.io.lqSafeDeq := RegNext(io.rob.lqSafeDeq)
   loadQueue.io.rollback <> io.rollback
-  loadQueue.io.dcache <> io.dcache
   loadQueue.io.release <> io.release
   loadQueue.io.trigger <> io.trigger
   loadQueue.io.exceptionAddr.isStore := DontCare
