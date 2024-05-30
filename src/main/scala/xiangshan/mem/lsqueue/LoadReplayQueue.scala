@@ -122,6 +122,13 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
   }
 }
 
+class ReplayQDebugBundle(implicit p: Parameters) extends XSBundle{
+  val validNum = UInt(log2Up(LoadReplayQueueSize).W)
+  val issueNum = UInt(log2Up(LoadReplayQueueSize).W)
+}
+
+
+
 class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule
   with HasLoadHelper
   with HasPerfLogging
@@ -132,6 +139,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
+    val degbugInfo = Output(new ReplayQDebugBundle)
     })
   // replayQueue state signs define
   // allocated: the entry has been enqueued
@@ -313,6 +321,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val replayDCacheReplayCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DR)))
   val replayForwardFailCount  = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_FF)))
   val replayDCacheMissCount   = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DM)))
+
+  val validNum = PopCount(allocatedReg)
+  val issueNum = PopCount(scheduledReg)
+  io.degbugInfo.validNum := validNum
+  io.degbugInfo.issueNum := issueNum
+  dontTouch(io.degbugInfo)
+
 
   if(enablePerf){ XSPerfAccumulate("enq", enqNumber)
   XSPerfAccumulate("deq", deqNumber)

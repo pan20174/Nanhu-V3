@@ -610,7 +610,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
                                           !s2_out.bits.isReplayQReplay && s2_out.bits.replayCause.reduce(_|_))
 
   //tmp: use S2
-  io.s3_enq_replqQueue.valid := s2_needEnqReplayQ
+  io.s3_enq_replqQueue.valid := s2_out.valid
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
   io.s3_enq_replqQueue.bits.paddr := DontCare
   io.s3_enq_replqQueue.bits.isReplayQReplay := s2_out.bits.isReplayQReplay
