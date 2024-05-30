@@ -598,14 +598,17 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.cancel := s1_cancel || s2_lpvCancel
 
   val temp_replay_record_s1 = s1_rsFeedback.valid && !s1_out.bits.uop.robIdx.needFlush(io.redirect)
-  val temp_replay_record_s1_reg = RegNext(temp_replay_record_s1)
+  val temp_replay_record_s1_reg = RegNext(temp_replay_record_s1,false.B)
   val temp_replay_record_s2 = s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
   val replayHasOtherCause = (temp_replay_record_s2 || temp_replay_record_s1_reg) && s2_out.bits.isReplayQReplay
   //tmp:
   when(s2_out.valid){
     assert(PopCount(s2_out.bits.replayCause.asUInt) <= 1.U)
   }
-  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause || s2_out.bits.replayCause.reduce(_|_))
+//  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause || s2_out.bits.replayCause.reduce(_|_))
+  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause ||
+                                          !s2_out.bits.isReplayQReplay && s2_out.bits.replayCause.reduce(_|_))
+
   //tmp: use S2
   io.s3_enq_replqQueue.valid := s2_needEnqReplayQ
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
