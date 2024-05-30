@@ -411,7 +411,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
       s2_data_invalid && !s2_is_prefetch // replay if store to load forward data is not ready
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
-  s2_rsFeedback.valid := s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.replayQFull && !s2_out.bits.isReplayQReplay))) && s2_enableMem
+  s2_rsFeedback.valid := s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.s3_enq_replqQueue.ready && !s2_out.bits.isReplayQReplay))) && s2_enableMem
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
   s2_rsFeedback.bits.sourceType := Mux(s2_tlb_miss, RSFeedbackType.tlbMiss,
     Mux(s2_cache_replay,
