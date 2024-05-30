@@ -523,7 +523,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s3_rdata_dup = WireInit(VecInit(List.fill(8)(0.U(64.W))))
   s3_rdata_dup.zipWithIndex.foreach({case(d,i) => {
 //    d := Mux(hitLoadOutValidReg_dup(i),s3_rdataDcache,s3_rdataLQ)
-    d := hitLoadOutValidReg_dup(i)
+    d := s3_rdataDcache
   }})
 
   val s3_sel_rdata = LookupTree(s3_offset,List(
