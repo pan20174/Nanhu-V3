@@ -407,11 +407,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_need_replay_from_rs = Wire(Bool())
 
   s2_need_replay_from_rs := s2_tlb_miss || // replay if dtlb miss
-      s2_cache_replay && !(RegNext(s1_bank_conflict)) && !s2_is_prefetch && !s2_mmio && !s2_exception && !s2_dataForwarded || // replay if dcache miss queue full / busy
+      s2_cache_replay && !s2_is_prefetch && !s2_mmio && !s2_exception && !s2_dataForwarded || // replay if dcache miss queue full / busy
       s2_data_invalid && !s2_is_prefetch // replay if store to load forward data is not ready
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
-  s2_rsFeedback.valid := s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.s3_enq_replqQueue.ready && !s2_out.bits.isReplayQReplay))) && s2_enableMem
+  s2_rsFeedback.valid := s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.s3_enq_replqQueue.ready && s2_out.bits.replayCause(LoadReplayCauses.C_BC) && !s2_out.bits.isReplayQReplay))) && s2_enableMem
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
   s2_rsFeedback.bits.sourceType := Mux(s2_tlb_miss, RSFeedbackType.tlbMiss,
     Mux(s2_cache_replay,
@@ -544,7 +544,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.valid := RegNext(s2_out.valid &&(!s2_out.bits.isReplayQReplay) && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
-  io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid,s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
+  io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid && !(RegNext(s1_bank_conflict)),s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
 
   // If replay is reported at load_s1, inst will be canceled (will not enter load_s2),
   // in that case:
@@ -610,7 +610,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
                                           !s2_out.bits.isReplayQReplay && s2_out.bits.replayCause.reduce(_|_))
 
   //tmp: use S2
-  io.s3_enq_replqQueue.valid := s2_needEnqReplayQ
+  io.s3_enq_replqQueue.valid := s2_out.valid
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
   io.s3_enq_replqQueue.bits.paddr := DontCare
   io.s3_enq_replqQueue.bits.isReplayQReplay := s2_out.bits.isReplayQReplay
