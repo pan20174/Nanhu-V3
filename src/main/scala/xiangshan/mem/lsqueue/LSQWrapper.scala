@@ -78,8 +78,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
     val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val sbuffer = Vec(StorePipelineWidth, Decoupled(new DCacheWordReqWithVaddr))
-    val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
-    val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
+//    val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
+//    val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
     val mmioStout = DecoupledIO(new ExuOutput) // writeback uncached store
     val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ))
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
@@ -154,8 +154,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.s3_delayed_load_error <> io.s3_delayed_load_error
   loadQueue.io.s2_dcache_require_replay <> io.s2_dcache_require_replay
   loadQueue.io.s3_replay_from_fetch <> io.s3_replay_from_fetch
-  loadQueue.io.ldout <> io.ldout
-  loadQueue.io.ldRawDataOut <> io.ldRawDataOut
+//  loadQueue.io.ldout <> io.ldout
+//  loadQueue.io.ldRawDataOut <> io.ldRawDataOut
   loadQueue.io.robHead := RegNext(io.rob.pendingInst)
   loadQueue.io.lqSafeDeq := RegNext(io.rob.lqSafeDeq)
   loadQueue.io.rollback <> io.rollback

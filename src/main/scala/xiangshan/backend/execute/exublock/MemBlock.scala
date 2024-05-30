@@ -615,8 +615,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
     // passdown to lsq (load s2)
     lsq.io.loadIn(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
-    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb
-    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.s3_lq_wbLdRawData
+//    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb
+//    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.s3_lq_wbLdRawData
     lsq.io.s2_load_data_forwarded(i) <> loadUnits(i).io.lsq.s2_load_data_forwarded
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 

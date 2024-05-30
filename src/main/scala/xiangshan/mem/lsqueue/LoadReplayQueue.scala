@@ -10,6 +10,7 @@ import xs.utils.perf.HasPerfLogging
 import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.backend.issue.RsIdx
+import xiangshan.backend.rob.RobPtr
 
 object LoadReplayCauses {
   /*
@@ -59,6 +60,12 @@ object LoadReplayCauses {
 //  def nuke          = replayCause(LoadReplayCauses.C_NK)
 //  def need_rep      = replayCause.asUInt.orR
 //}
+
+class ReplayQUopInfo(implicit p: Parameters) extends XSBundle{
+  val robIdx = new RobPtr
+  val exceptionVec = ExceptionVec()
+}
+
 
 
 class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle {
