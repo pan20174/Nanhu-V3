@@ -297,17 +297,18 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
   }
   // replay issue logic
-  val selReplayRegIdx = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
+  val s1SelReplayIdx = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
   val replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle)))
   for (i <- 0 until LoadPipelineWidth) {
-    selReplayRegIdx(i) := OHToUInt(robOldestSelOH(i))
-    dontTouch(selReplayRegIdx)
+    s1SelReplayIdx(i) := OHToUInt(robOldestSelOH(i))
+    dontTouch(s1SelReplayIdx)
     vaddrModule.io.ren(i) := s1_selResSeq(i).valid
-    vaddrModule.io.raddr(i) := selReplayRegIdx(i)
+    vaddrModule.io.raddr(i) := s1SelReplayIdx(i)
+
     replay_req(i).valid := RegNext(s1_selResSeq(i).valid)
     replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)
-    replay_req(i).bits.schedIndex := selReplayRegIdx(i)
-    replay_req(i).bits.uop := uopReg(selReplayRegIdx(i))
+    replay_req(i).bits.schedIndex :=RegEnable(s1SelReplayIdx(i), s1_selResSeq(i).valid)
+    replay_req(i).bits.uop := RegEnable(uopReg(s1SelReplayIdx(i)), s1_selResSeq(i).valid)
 
     replay_req(i).bits.mask := 0.U
 
