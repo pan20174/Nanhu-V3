@@ -194,6 +194,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     enqReqValid(i) && !cancelEnq(i) && enqReqNeedReplay(i) && !hasExceptions(i)
   }))
   val enqIndexOH =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
+  val s1_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   val robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   // Allocate logic
   val newEnqueue = (0 until LoadPipelineWidth).map(i => {
@@ -301,7 +302,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     SelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
   }
-  robOldestSelOH := VecInit((0 until LoadPipelineWidth).map(rem => {
+  s1_robOldestSelOH := VecInit((0 until LoadPipelineWidth).map(rem => {
     val oldestBitsVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
     for (i <- 0 until LoadReplayQueueSize / LoadPipelineWidth) {
       oldestBitsVec(i * LoadPipelineWidth + rem) := s1_selResSeq(rem).bits(i)
@@ -310,33 +311,33 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }))
   val debug_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
   for(i <- 0 until LoadPipelineWidth){
-    debug_robOldestSelOH(i) := OHToUInt(robOldestSelOH(i))
+    debug_robOldestSelOH(i) := OHToUInt(s1_robOldestSelOH(i))
     dontTouch(debug_robOldestSelOH(i))
   }
   for (i <- 0 until LoadPipelineWidth) {
     for (j <- 0 until LoadReplayQueueSize) {
-      when (s1_selResSeq(i).valid && robOldestSelOH(i)(j)) {
+      when (s1_selResSeq(i).valid && s1_robOldestSelOH(i)(j)) {
         scheduledReg(j) := true.B
       }
     }
   }
   // replay issue logic
-  val s1SelReplayIdx = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
-  val replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle)))
+  val s1_SelReplayIdx = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
+  val s2_replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle)))
   for (i <- 0 until LoadPipelineWidth) {
-    s1SelReplayIdx(i) := OHToUInt(robOldestSelOH(i))
-    dontTouch(s1SelReplayIdx)
+    s1_SelReplayIdx(i) := OHToUInt(s1_robOldestSelOH(i))
+    dontTouch(s1_SelReplayIdx)
     vaddrModule.io.ren(i) := s1_selResSeq(i).valid
-    vaddrModule.io.raddr(i) := s1SelReplayIdx(i)
+    vaddrModule.io.raddr(i) := s1_SelReplayIdx(i)
 
-    replay_req(i).valid := RegNext(s1_selResSeq(i).valid,false.B)
-    replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)
-    replay_req(i).bits.schedIndex :=RegEnable(s1SelReplayIdx(i), s1_selResSeq(i).valid)
-    replay_req(i).bits.uop := uopReg(RegEnable(s1SelReplayIdx(i), s1_selResSeq(i).valid))
+    s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid) // s2 out valid
+    s2_replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)   // s2 read vaddr
+    s2_replay_req(i).bits.schedIndex :=RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid)   // s2 out idx
+    s2_replay_req(i).bits.uop := uopReg(RegEnable((s1_SelReplayIdx(i)), s1_selResSeq(i).valid)) // s2 read uop reg
 
-    replay_req(i).bits.mask := 0.U
+    s2_replay_req(i).bits.mask := 0.U
 
-    io.replayQIssue(i) <> replay_req(i)
+    io.replayQIssue(i) <> s2_replay_req(i)
     dontTouch(io.replayQIssue(i))
   }
   io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
