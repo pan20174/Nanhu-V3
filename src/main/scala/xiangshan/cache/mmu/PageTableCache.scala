@@ -452,7 +452,7 @@ class PtwCache(parentName:String = "Unknown")(implicit p: Parameters) extends XS
     io.resp.bits.toTlb.entries(i).ppn_low := Mux(resp_res.l3.hit, resp_res.l3.ppn(i)(sectorTlbWidth - 1, 0), resp_res.sp.ppn(sectorTlbWidth - 1, 0))
     io.resp.bits.toTlb.entries(i).perm.map(_ := Mux(resp_res.l3.hit, resp_res.l3.perm(i), resp_res.sp.perm))
     io.resp.bits.toTlb.entries(i).v := Mux(resp_res.l3.hit, resp_res.l3.v(i), resp_res.sp.v)
-    io.resp.bits.toTlb.entries(i).pf := io.resp.bits.toTlb.entries(i).v
+    io.resp.bits.toTlb.entries(i).pf := !io.resp.bits.toTlb.entries(i).v
     io.resp.bits.toTlb.entries(i).af := false.B
   }
   io.resp.bits.toTlb.pteidx := UIntToOH(stageResp.bits.req_info.vpn(sectorTlbWidth - 1, 0)).asBools

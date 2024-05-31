@@ -804,7 +804,7 @@ class PtwMergeResp(implicit p: Parameters) extends PtwBundle {
     
     val ptw_resp = Wire(new PtwMergeEntry(tagLen = sectorVpnLen, hasPerm = true, hasLevel = true))
     ptw_resp.ppn := pte.ppn(ppnLen - 1, sectorTlbWidth)
-    ptw_resp.ppn_low := pte.ppn(sectorTlbWidth, 0)
+    ptw_resp.ppn_low := pte.ppn(sectorTlbWidth - 1, 0)
     ptw_resp.level.map(_ := level)
     ptw_resp.perm.map(_ := pte.getPerm())
     require(vpn.getWidth == vpnLen, "require vpenLen not sectorVpnLen")

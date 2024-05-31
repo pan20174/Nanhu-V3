@@ -78,7 +78,7 @@ class PTWRepeater(Width: Int = 1)(implicit p: Parameters) extends XSModule with 
   XSDebug(io.ptw.req(0).valid || io.ptw.resp.valid, p"ptw: ${ptw}\n")
   assert(!RegNext(recv && io.ptw.resp.valid, init = false.B), "re-receive ptw.resp")
   XSError(io.ptw.req(0).valid && io.ptw.resp.valid && !flush, "ptw repeater recv resp when sending")
-  XSError(io.ptw.resp.valid && (req.vpn =/= io.ptw.resp.bits.entry.tag), "ptw repeater recv resp with wrong tag")
+  XSError(io.ptw.resp.valid && (req.vpn(req.vpn.getWidth - 1, sectorTlbWidth) =/= io.ptw.resp.bits.entry.tag), "ptw repeater recv resp with wrong tag")
   XSError(io.ptw.resp.valid && !io.ptw.resp.ready, "ptw repeater's ptw resp back, but not ready")
   TimeOutAssert(sent && !recv, timeOutThreshold, "Repeater doesn't recv resp in time")
 }
