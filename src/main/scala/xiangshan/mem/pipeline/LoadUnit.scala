@@ -262,7 +262,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
 //  s1_rsFeedback.bits.sourceType := Mux(s1_bank_conflict, RSFeedbackType.bankConflict, RSFeedbackType.ldVioCheckRedo)
 
-  s1_out.bits.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && (s1_bank_conflict || s1_needLdVioCheckRedo) //todo: for debug
+  s1_out.bits.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && (s1_cancel_inner || s1_bank_conflict || s1_needLdVioCheckRedo) //todo: for debug
   //disable bank_conflict
 //  s1_rsFeedback.valid := s1_in.valid && (s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem && (!s1_in.bits.isReplayQReplay)
 //  s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
@@ -289,6 +289,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
+
+  val s2_cancel_inner = RegEnable(s1_cancel_inner,s1_out.fire)
 
   val s2_pmp = WireInit(io.pmp)
   val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm,io.tlb.resp.valid)
@@ -353,7 +355,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   ///more output info:
   val s2_dcache_kill = s2_pmp.ld || s2_pmp.mmio // move pmp resp kill to outside
   val s2_dcacheShouldResp = !(s2_tlb_miss || s2_exception || s2_mmio || s2_is_prefetch)
-  assert(!(s2_enableMem && (s2_dcacheShouldResp && !s2_dcacheResp.valid)), "DCache response got lost")
+  assert(!(s2_enableMem && (!s2_cancel_inner && s2_dcacheShouldResp && !s2_dcacheResp.valid)), "DCache response got lost")
 
   // merge forward result
   // lsq has higher priority than sbuffer
