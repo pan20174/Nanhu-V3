@@ -94,6 +94,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
     val ldStop = Input(Bool())
     val replayQFull = Input(Bool())
+    val mmioWb = Flipped(DecoupledIO(new ExuOutput))
   })
   io.rsIssueIn.ready := true.B
   io.replayQIssueIn.ready := true.B
@@ -519,18 +520,21 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   // load s3
 //  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid, hitLoadOut.bits, io.lsq.s3_lq_wb.bits), hitLoadOut.valid | io.lsq.s3_lq_wb.valid)
-  val s3_load_wb_meta_reg = RegEnable(hitLoadOut.bits, hitLoadOut.valid)
+//  val s3_load_wb_meta_reg = RegEnable(hitLoadOut.bits, hitLoadOut.valid)
+  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
 
   // data from load queue refill
 //  val s3_loadDataFromLQ = RegEnable(io.lsq.s3_lq_wbLdRawData, io.lsq.s3_lq_wb.valid)
 //  val s3_rdataLQ = s3_loadDataFromLQ.mergedData()
+  val s3_mmioDataFromLq = RegEnable(io.mmioWb.bits.data, io.mmioWb.valid)
+//  val s3_mmioData = LookupTree()
 
   // data from dcache hit
   val s3_loadDataFromDcache = RegEnable(s2_loadDataFromDcache, s2_in.valid)
   val s3_rdataDcache = s3_loadDataFromDcache.mergedData()
 
   private val hitLoadOutValidReg = RegNext(hitLoadOut.valid, false.B)
-  val hitLoadOutValidReg_dup = Seq.fill(8)(RegNext(hitLoadOut.valid, false.B))
+//  val hitLoadOutValidReg_dup = Seq.fill(8)(RegNext(hitLoadOut.valid, false.B))
 
 //  val s3_uop = Mux(hitLoadOutValidReg,s3_loadDataFromDcache.uop,s3_loadDataFromLQ.uop)
 //  val s3_offset = Mux(hitLoadOutValidReg,s3_loadDataFromDcache.addrOffset,s3_loadDataFromLQ.addrOffset)
@@ -555,11 +559,15 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   ))
   val s3_rdataPartialLoad = rdataHelper(s3_uop,s3_sel_rdata)
 
-  io.ldout.bits := s3_load_wb_meta_reg
-  io.ldout.bits.data := s3_rdataPartialLoad
+
 //  private val lsqOutputValidReg = RegNext(io.lsq.s3_lq_wb.valid && (!io.lsq.s3_lq_wb.bits.uop.robIdx.needFlush(io.redirect)),false.B)
+  private val s3_lsqMMIOOutputValid = RegNext(io.mmioWb.valid && (!io.mmioWb.bits.uop.robIdx.needFlush(io.redirect)),false.B)
 //  io.ldout.valid := hitLoadOutValidReg || lsqOutputValidReg
-  io.ldout.valid := hitLoadOutValidReg
+  io.ldout.valid := hitLoadOutValidReg || s3_lsqMMIOOutputValid
+  io.ldout.bits := s3_load_wb_meta_reg
+  when(hitLoadOutValidReg) {
+    io.ldout.bits.data := s3_rdataPartialLoad
+  }
   io.ldout.bits.uop.cf.exceptionVec(loadAccessFault) := s3_load_wb_meta_reg.uop.cf.exceptionVec(loadAccessFault) //||
 
   // feedback tlb miss / dcache miss queue full
@@ -605,6 +613,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.lsq.s3_delayed_load_error := false.B //load_s2.io.s3_delayed_load_error
 
 //  io.lsq.s3_lq_wb.ready := !hitLoadOut.valid
+  io.mmioWb.ready := !hitLoadOut.valid
 
   val lastValidData = RegEnable(io.ldout.bits.data, io.ldout.fire)
   val hitLoadAddrTriggerHitVec = Wire(Vec(TriggerNum, Bool()))

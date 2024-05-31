@@ -102,13 +102,14 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val ldStop = Output(Bool())
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
+    val mmioWb = DecoupledIO(new ExuOutput)
   })
 
   val loadQueue = Module(new LoadQueue)
   val storeQueue = Module(new StoreQueue)
 
   storeQueue.io.hartId := io.hartId
-
+  io.mmioWb <> loadQueue.io.mmioWb
   // io.enq logic
   // LSQ: send out canAccept when both load queue and store queue are ready
   // Dispatch: send instructions to LSQ only when they are ready

@@ -657,6 +657,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     XSDebug(lduWritebacks(i).bits.uop.cf.trigger.getBackendCanFire && lduWritebacks(i).valid, p"Debug Mode: Load Inst No.${i}" +
     p"has trigger fire vec ${lduWritebacks(i).bits.uop.cf.trigger.backendCanFire}\n")
   }
+
+  //todo: mmio writeback
+  loadUnits.foreach(_.io.mmioWb := DontCare)
+  loadUnits.head.io.mmioWb <> lsq.io.mmioWb
+
   // Prefetcher
   prefetcherOpt.foreach(pf => {
     dtlb_reqs(ld_tlb_ports - 1) <> pf.io.tlb_req

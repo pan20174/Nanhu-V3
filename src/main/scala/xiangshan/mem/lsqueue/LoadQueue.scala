@@ -103,8 +103,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val s3_delayed_load_error = Vec(LoadPipelineWidth, Input(Bool()))
     val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
     val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
-//    val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
-//    val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
     val load_s1 = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ)) // TODO: to be renamed
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     val lqSafeDeq = Input(new RobPtr)
@@ -122,6 +120,8 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val ldStop = Output(Bool())
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
+    val mmioWb = DecoupledIO(new ExuOutput)
+//    val mmioRawDataOut = Output(new LoadDataFromLQBundle)
   })
 
   val replayQueue = Module(new LoadReplayQueue(enablePerf = true))
@@ -942,6 +942,10 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   private val pendingHead = uop(deqPtrExt.value).robIdx === io.robHead
   val s_idle :: s_req :: s_resp :: s_wait :: Nil = Enum(4)
   private val uncache_Order_State = RegInit(s_idle)
+
+//  io.mmioWb.valid := false.B
+//  io.mmioWb.bits := DontCare
+
   switch(uncache_Order_State) {
     is(s_idle) {
       when(RegNext(ldTailReadyToLeave && lqTailMmioPending && lqTailAllocated && pendingHead)) {
@@ -960,11 +964,85 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       }
     }
     is(s_wait) {
+//      dataModule.io.uncache.ren := true.B
+//      dataModule.io.uncache.raddr := deqPtrExt.value
+//      dataModule.io.wb.raddr := deqPtrExt.value
+
+//      io.mmioWb.valid := !writebacked(deqPtrExt.value) && !uop(deqPtrExt.value).robIdx.needFlush(lastCycleRedirect)
+//      io.mmioWb.bits := DontCare
+//      io.mmioWb.bits.uop := uop(deqPtrExt.value)
+//      io.mmioWb.bits.uop.cf.exceptionVec := exceptionInfo.bits.eVec
+////      io.mmioWb.bits.data := dataModule.io.uncache.rdata
+//      io.mmioWb.bits.data := 0.U //todo
+//
+//      when(io.mmioWb.fire){
+//        writebacked(deqPtrExt.value) := true.B
+//      }
+
       when(RegNext(ldTailWritebacked)) {
         uncache_Order_State := s_idle // ready for next mmio
       }
     }
   }
+
+  //S0
+  val mmioLdWbSel = Wire(UInt(log2Up(LoadQueueSize).W))
+  val mmioLdWbSelV = Wire(Bool())
+  mmioLdWbSel := deqPtrExt.value
+  mmioLdWbSelV := !writebacked(mmioLdWbSel) && pending(mmioLdWbSel)
+  dataModule.io.wb.raddr(0) := mmioLdWbSel
+
+
+  //S1
+  val s1_mmioLdWbSel = RegNext(mmioLdWbSel)
+  val s1_mmioLdWbSelV = RegNext(mmioLdWbSelV, false.B) && (!io.mmioWb.fire)
+  val s1_mmioData = dataModule.io.wb.rdata(0).data
+//  val s1_mmioMask = dataModule.io.wb.rdata(0).mask
+  val s1_mmioPaddr = dataModule.io.wb.rdata(0).paddr
+  val s1_mmioUop = uop(s1_mmioLdWbSel)
+
+  val s1_mmioDataSel = LookupTree(s1_mmioPaddr(2,0), List(
+    "b000".U -> s1_mmioData(63, 0),
+    "b001".U -> s1_mmioData(63, 8),
+    "b010".U -> s1_mmioData(63, 16),
+    "b011".U -> s1_mmioData(63, 24),
+    "b100".U -> s1_mmioData(63, 32),
+    "b101".U -> s1_mmioData(63, 40),
+    "b110".U -> s1_mmioData(63, 48),
+    "b111".U -> s1_mmioData(63, 56)
+  ))
+
+  val s1_mmioDataPartialLoad = rdataHelper(s1_mmioUop, s1_mmioDataSel)
+
+  io.mmioWb.valid := s1_mmioLdWbSelV && !uop(deqPtrExt.value).robIdx.needFlush(lastCycleRedirect)
+  io.mmioWb.bits := DontCare
+  io.mmioWb.bits.uop := s1_mmioUop
+  io.mmioWb.bits.uop.cf.exceptionVec := exceptionInfo.bits.eVec
+  io.mmioWb.bits.data := s1_mmioDataPartialLoad
+  io.mmioWb.bits.redirectValid := false.B
+  io.mmioWb.bits.debug.isMMIO := debug_mmio(s1_mmioLdWbSel)
+  io.mmioWb.bits.debug.paddr := debug_paddr(s1_mmioLdWbSel)
+
+  when(io.mmioWb.fire){
+    writebacked(s1_mmioLdWbSel) := false.B
+  }
+
+  //only mmio load need to write back from loadQueue
+  //    io.ldout(i) := DontCare
+  //    io.ldout(i).bits.uop := seluop
+  //    io.ldout(i).bits.uop.cf.exceptionVec := Mux(excptCond, exceptionInfo.bits.eVec, defaultEVec)
+  //    io.ldout(i).bits.uop.lqIdx := loadWbSel(i).asTypeOf(new LqPtr)
+  //    io.ldout(i).bits.data := rdataPartialLoad // not used
+  //    io.ldout(i).bits.redirectValid := false.B
+  //    io.ldout(i).bits.redirect := DontCare
+  //    io.ldout(i).bits.debug.isMMIO := debug_mmio(loadWbSel(i))
+  //    io.ldout(i).bits.debug.isPerfCnt := false.B
+  //    io.ldout(i).bits.debug.paddr := debug_paddr(loadWbSel(i))
+  //    io.ldout(i).bits.debug.vaddr := vaddrModule.io.rdata(i)
+  //    io.ldout(i).bits.fflags := DontCare
+  //    io.ldout(i).valid := loadWbSelV(i) && !io.ldout(i).bits.uop.robIdx.needFlush(lastCycleRedirect)
+  //io.ldout(i).bits.wbmask := DontCare
+
   io.uncache.req.valid := uncache_Order_State === s_req
 
   dataModule.io.uncache.raddr := deqPtrExtNext.value  //todo
