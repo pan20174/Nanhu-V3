@@ -1020,7 +1020,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   io.mmioWb.bits.debug.paddr := debug_paddr(s1_mmioLdWbSel)
 
   when(io.mmioWb.fire){
-    writebacked(s1_mmioLdWbSel) := false.B
+    writebacked(s1_mmioLdWbSel) := true.B
   }
 
   //only mmio load need to write back from loadQueue
