@@ -942,10 +942,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   private val pendingHead = uop(deqPtrExt.value).robIdx === io.robHead
   val s_idle :: s_req :: s_resp :: s_wait :: Nil = Enum(4)
   private val uncache_Order_State = RegInit(s_idle)
-
-//  io.mmioWb.valid := false.B
-//  io.mmioWb.bits := DontCare
-
   switch(uncache_Order_State) {
     is(s_idle) {
       when(RegNext(ldTailReadyToLeave && lqTailMmioPending && lqTailAllocated && pendingHead)) {
@@ -989,13 +985,13 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val mmioLdWbSel = Wire(UInt(log2Up(LoadQueueSize).W))
   val mmioLdWbSelV = Wire(Bool())
   mmioLdWbSel := deqPtrExt.value
-  mmioLdWbSelV := !writebacked(mmioLdWbSel) && pending(mmioLdWbSel)
+  mmioLdWbSelV := !writebacked(mmioLdWbSel) && pending(mmioLdWbSel) && !(io.mmioWb.fire)
   dataModule.io.wb.raddr(0) := mmioLdWbSel
 
 
   //S1
   val s1_mmioLdWbSel = RegNext(mmioLdWbSel)
-  val s1_mmioLdWbSelV = RegNext(mmioLdWbSelV, false.B) && (!io.mmioWb.fire)
+  val s1_mmioLdWbSelV = RegNext(mmioLdWbSelV, false.B)
   val s1_mmioData = dataModule.io.wb.rdata(0).data
 //  val s1_mmioMask = dataModule.io.wb.rdata(0).mask
   val s1_mmioPaddr = dataModule.io.wb.rdata(0).paddr
