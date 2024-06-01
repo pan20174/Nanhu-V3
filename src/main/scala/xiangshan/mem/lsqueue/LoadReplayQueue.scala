@@ -133,6 +133,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
     })
+
+  val counterRegMax = 64
+  val penaltyRegWidth = log2Up(counterRegMax)
+
   // replayQueue state signs define
   // allocated: the entry has been enqueued
   val allocatedReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(false.B)))
@@ -144,6 +148,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val causeReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(LoadReplayCauses.allCauses.W))))
   // uop: micro op per entry
   val uopReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U.asTypeOf(new MicroOp))))
+  val penaltyReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(penaltyRegWidth.W))))
+  val counterReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(log2Up(counterRegMax).W))))
 
   // replayQueue enq\deq control
   val freeList = Module(new FreeList(
@@ -201,9 +207,12 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       scheduledReg(enqIndex) := false.B
       uopReg(enqIndex)       := enq.bits.uop
       causeReg(enqIndex)     := enq.bits.replayCause.asUInt
+      penaltyReg(enqIndex)   := 0.U
       blockingReg(enqIndex)  := true.B
       when(enq.bits.replayCause(LoadReplayCauses.C_BC)){
-        blockingReg(enqIndex) := false.B
+        counterReg(enqIndex) := 1.U << penaltyReg(enqIndex)
+        penaltyReg(enqIndex)  := penaltyReg(enqIndex) + 1.U
+        blockingReg(enqIndex) := true.B
       }.otherwise(
         XSError(false.B, p"cause ${enq.bits.replayCause.asUInt} not implemented other replay cause yet")
       )
@@ -225,6 +234,16 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       }
     }
   }
+
+  allocatedReg.zipWithIndex.foreach({case(valid,idx) => {
+    when(valid && !blockingReg(idx)){
+      counterReg(idx) := counterReg(idx) - 1.U
+      when(counterReg(idx) === 0.U){
+        blockingReg(idx) := false.B
+      }
+    }
+  }})
+
   // misprediction recovery / exception redirect
   val needCancel = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
   for (i <- 0 until LoadReplayQueueSize) {
