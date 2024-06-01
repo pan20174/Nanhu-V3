@@ -149,7 +149,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val degbugInfo = Output(new ReplayQDebugBundle)
     })
 
-  val counterRegMax = 64
+  val counterRegMax = 16
   val penaltyRegWidth = log2Up(counterRegMax)
 
   // replayQueue state signs define
@@ -252,9 +252,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }
 
   allocatedReg.zipWithIndex.foreach({case(valid,idx) => {
-    when(valid && !blockingReg(idx)){
+    when(valid){
       counterReg(idx) := counterReg(idx) - 1.U
-      when(counterReg(idx) === 0.U){
+      when(counterReg(idx) === 0.U && blockingReg(idx)){
         blockingReg(idx) := false.B
       }
     }
