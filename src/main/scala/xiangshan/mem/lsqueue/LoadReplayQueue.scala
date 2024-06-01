@@ -229,6 +229,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       when(!enqReqNeedReplay(i) || hasExceptions(i)){
         allocatedReg(enq.bits.schedIndex) := false.B
         freeMaskVec(enq.bits.schedIndex) := true.B
+        penaltyReg(enq.bits.schedIndex) := 0.U
       }.otherwise{
         scheduledReg(enq.bits.schedIndex) := false.B
       }
