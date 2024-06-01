@@ -985,7 +985,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val mmioLdWbSel = Wire(UInt(log2Up(LoadQueueSize).W))
   val mmioLdWbSelV = Wire(Bool())
   mmioLdWbSel := deqPtrExt.value
-  mmioLdWbSelV := !writebacked(mmioLdWbSel) && pending(mmioLdWbSel) && !(io.mmioWb.fire) && pendingHead && uncache_Order_State === s_wait
+  mmioLdWbSelV := !writebacked(mmioLdWbSel) && !(io.mmioWb.fire) && uncache_Order_State === s_wait
   dataModule.io.wb.raddr(0) := mmioLdWbSel
 
 
