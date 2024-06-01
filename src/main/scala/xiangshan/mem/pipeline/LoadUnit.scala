@@ -381,6 +381,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   //EnableFastForward is false
   s2_out.bits.miss := s2_cache_miss &&
     !s2_exception &&
+    !s2_fullForward
     !s2_ldld_violation &&
     !s2_is_prefetch && s2_enableMem
 
