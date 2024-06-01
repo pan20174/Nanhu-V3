@@ -600,7 +600,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   val temp_replay_record_s1 = s1_rsFeedback.valid && !s1_out.bits.uop.robIdx.needFlush(io.redirect)
   val temp_replay_record_s1_reg = RegNext(temp_replay_record_s1,false.B)
-  val temp_replay_record_s2 = s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
+  val temp_replay_record_s2 = s2_in.valid && s2_need_replay_from_rs && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
   val replayHasOtherCause = (temp_replay_record_s2 || temp_replay_record_s1_reg) && s2_out.bits.isReplayQReplay
   //tmp:
   when(s2_out.valid){
