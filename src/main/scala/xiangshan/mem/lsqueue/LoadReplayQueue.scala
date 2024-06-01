@@ -174,6 +174,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }))
   val enqIndexOH =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   val s1_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
+  // Allocate logic
+  val newEnqueue = (0 until LoadPipelineWidth).map(i => {
+    needEnqueue(i) && !io.enq(i).bits.isReplayQReplay
+  })
   // freeList enq/deq logic + entry allocate logic
   val freeMaskVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
   for((enq, i) <- io.enq.zipWithIndex){
@@ -183,7 +187,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     freeList.io.doAllocate(i) := false.B
     freeList.io.allocateReq(i) := true.B
 
-    val offset = PopCount(enqReqValid.take(i))
+    val offset = PopCount(newEnqueue.take(i))
     // freeList allocated ready
     val canAccept = Mux(enq.bits.isReplayQReplay, true.B, freeList.io.canAllocate(offset))
     val enqIndex = Mux(enq.bits.isReplayQReplay, enq.bits.schedIndex, freeList.io.allocateSlot(offset))
