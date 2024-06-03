@@ -314,10 +314,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     vaddrModule.io.ren(i) := s1_selResSeq(i).valid
     vaddrModule.io.raddr(i) := s1_SelReplayIdx(i)
 
-    s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid) // s2 out valid
-    s2_replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)   // s2 read vaddr 
-    s2_replay_req(i).bits.schedIndex :=RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid)   // s2 out idx
-    s2_replay_req(i).bits.uop := uopReg(RegEnable((s1_SelReplayIdx(i)), s1_selResSeq(i).valid)) // s2 read uop reg
+    val s2_replay_req_schedIndex = RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid)
+    val s2_replay_req_uop = uopReg(s2_replay_req_schedIndex)
+
+    s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid) && !s2_replay_req_uop.robIdx.needFlush(io.redirect) // s2 out valid
+    s2_replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)   // s2 read vaddr
+    s2_replay_req(i).bits.schedIndex := s2_replay_req_schedIndex   // s2 out idx
+    s2_replay_req(i).bits.uop := s2_replay_req_uop // s2 read uop reg
 
     s2_replay_req(i).bits.mask := 0.U
 
