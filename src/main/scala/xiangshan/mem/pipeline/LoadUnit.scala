@@ -500,7 +500,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
 
   // write to rob and writeback bus
-  val s2_wb_valid = s2_out.valid && !s2_tlb_miss && !s2_data_invalid &&
+  val s2_wb_valid = s2_out.valid && !s2_tlb_miss && !s2_data_invalid && !s2_cancel_inner
     (!s2_out.bits.miss &&
       !s2_out.bits.mmio &&
       !s2_out.bits.uop.robIdx.needFlush(io.redirect))
