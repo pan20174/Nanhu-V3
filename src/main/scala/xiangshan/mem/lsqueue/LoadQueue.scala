@@ -960,21 +960,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       }
     }
     is(s_wait) {
-//      dataModule.io.uncache.ren := true.B
-//      dataModule.io.uncache.raddr := deqPtrExt.value
-//      dataModule.io.wb.raddr := deqPtrExt.value
-
-//      io.mmioWb.valid := !writebacked(deqPtrExt.value) && !uop(deqPtrExt.value).robIdx.needFlush(lastCycleRedirect)
-//      io.mmioWb.bits := DontCare
-//      io.mmioWb.bits.uop := uop(deqPtrExt.value)
-//      io.mmioWb.bits.uop.cf.exceptionVec := exceptionInfo.bits.eVec
-////      io.mmioWb.bits.data := dataModule.io.uncache.rdata
-//      io.mmioWb.bits.data := 0.U //todo
-//
-//      when(io.mmioWb.fire){
-//        writebacked(deqPtrExt.value) := true.B
-//      }
-
       when(RegNext(ldTailWritebacked)) {
         uncache_Order_State := s_idle // ready for next mmio
       }
@@ -1010,10 +995,14 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   val s1_mmioDataPartialLoad = rdataHelper(s1_mmioUop, s1_mmioDataSel)
 
+  val defaultEVec = Wire(ExceptionVec())
+  defaultEVec.foreach(_ := false.B)
+  val excptCond = exceptionInfo.valid && s1_mmioUop.robIdx === exceptionInfo.bits.robIdx && s1_mmioUop.uopIdx === exceptionInfo.bits.uopIdx
+
   io.mmioWb.valid := s1_mmioLdWbSelV && !uop(deqPtrExt.value).robIdx.needFlush(lastCycleRedirect)
   io.mmioWb.bits := DontCare
   io.mmioWb.bits.uop := s1_mmioUop
-  io.mmioWb.bits.uop.cf.exceptionVec := exceptionInfo.bits.eVec
+  io.mmioWb.bits.uop.cf.exceptionVec := Mux(excptCond, exceptionInfo.bits.eVec, defaultEVec)
   io.mmioWb.bits.data := s1_mmioDataPartialLoad
   io.mmioWb.bits.redirectValid := false.B
   io.mmioWb.bits.debug.isMMIO := debug_mmio(s1_mmioLdWbSel)
