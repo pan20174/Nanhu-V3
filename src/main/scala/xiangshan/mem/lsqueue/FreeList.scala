@@ -76,7 +76,8 @@ class FreeList(size: Int, allocWidth: Int, freeWidth: Int, enablePreAlloc: Boole
   require((size % freeWidth) == 0)
   freeSelMask := freeSelMaskVec.reduce(_|_)
   freeMask := (io.free | freeMask) & ~freeSelMask
-
+  val debugFreeMask = OHToUInt(freeMask)
+  dontTouch(debugFreeMask)
   val remFreeSelMaskVec = VecInit(Seq.tabulate(freeWidth)(rem => getRemBits((freeMask & ~freeSelMask))(rem)))
   val remFreeSelIndexOHVec = VecInit(Seq.tabulate(freeWidth)(fport => {
     val highIndexOH = PriorityEncoderOH(remFreeSelMaskVec(fport))
