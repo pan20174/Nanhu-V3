@@ -132,6 +132,8 @@ class FreeList(size: Int, allocWidth: Int, freeWidth: Int, enablePreAlloc: Boole
 
   io.empty := freeSlotCnt === 0.U
   io.validCount := size.U - freeSlotCnt
+  dontTouch(io.validCount)
+  dontTouch(io.empty)
 
   XSPerfAccumulate("empty", io.empty)
   val perfEvents: Seq[(String, UInt)] = Seq(

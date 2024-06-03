@@ -166,7 +166,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     "b11".U   -> (s0_vaddr(2, 0) === 0.U)  //d
   ))
 
-  s0_out.valid := s0_in.valid
+  s0_out.valid := s0_in.valid && !s0_out.bits.uop.robIdx.needFlush(io.redirect)
   s0_out.bits := DontCare
   s0_out.bits.isReplayQReplay := s0_in.bits.isReplayQReplay
   s0_out.bits.schedIndex := s0_in.bits.schedIndex
@@ -271,7 +271,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   // if replay is detected in load_s1,
   // load inst will be canceled immediately
 //  s1_out.valid := s1_in.valid && (!s1_rsFeedback.valid || !s1_enableMem)
-  s1_out.valid := s1_in.valid && s1_enableMem
+  s1_out.valid := s1_in.valid && s1_enableMem && !s1_out.bits.uop.robIdx.needFlush(io.redirect)
   s1_out.bits.paddr := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
 
@@ -371,9 +371,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   when(s2_enableMem) {
 //    s2_out.valid := s2_in.valid && !s2_tlb_miss && !s2_data_invalid
     //load must go to S2 to return feedback
-    s2_out.valid := s2_in.valid
+    s2_out.valid := s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
   }.otherwise {
-    s2_out.valid := s2_in.valid
+    s2_out.valid := s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
   }
   s2_out.bits := s2_in.bits
   s2_out.bits.data := 0.U
