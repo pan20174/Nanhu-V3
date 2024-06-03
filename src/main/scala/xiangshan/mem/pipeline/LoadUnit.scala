@@ -660,6 +660,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop
   io.s3_enq_replqQueue.bits.mask := s2_mask
   io.s3_enq_replqQueue.bits.tlbMiss := false.B
+  assert(!(hitLoadOut.valid && io.s3_enq_replqQueue.bits.replayCause.reduce(_|_)),"when load wb,replayCause must be 0!!")
 
 
   val perfEvents = Seq(
