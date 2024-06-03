@@ -165,7 +165,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     "b11".U   -> (s0_vaddr(2, 0) === 0.U)  //d
   ))
 
-  s0_out.valid := s0_in.valid
+  s0_out.valid := s0_in.valid && !s0_out.bits.uop.robIdx.needFlush(io.redirect)
   s0_out.bits := DontCare
   s0_out.bits.schedIndex := s0_in.bits.schedIndex
   s0_out.bits.isReplayQReplay := s0_in.bits.isReplayQReplay
@@ -268,7 +268,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   // if replay is detected in load_s1,
   // load inst will be canceled immediately
-  s1_out.valid := s1_in.valid && (!s1_rsFeedback.valid || !s1_enableMem)
+  s1_out.valid := s1_in.valid && (!s1_rsFeedback.valid || !s1_enableMem) && !s1_out.bits.uop.robIdx.needFlush(io.redirect)
   s1_out.bits.paddr := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
 
