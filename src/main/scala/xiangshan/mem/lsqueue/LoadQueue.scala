@@ -944,7 +944,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   private val uncache_Order_State = RegInit(s_idle)
   switch(uncache_Order_State) {
     is(s_idle) {
-      when(RegNext(ldTailReadyToLeave && lqTailMmioPending && lqTailAllocated && pendingHead)) {
+      when(RegNext(ldTailReadyToLeave && lqTailMmioPending && lqTailAllocated && pendingHead && !ldTailWritebacked)) {
         dataModule.io.uncache.ren := true.B
         uncache_Order_State := s_req
       }
