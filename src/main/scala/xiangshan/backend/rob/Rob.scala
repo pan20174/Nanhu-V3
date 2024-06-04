@@ -562,6 +562,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.lsq.pendingOrdered := RegNext(io.commits.isCommit && io.commits.info(0).isOrder && valid(deqPtr.value))
   io.lsq.pendingInst := RegNext(deqPtr)
   io.lsq.lqSafeDeq := RegNext(lqSafeDeqPtr)
+  io.lsq.debug_deqPtr := RegNext(deqPtr)
+  io.lsq.debug_enqPtr := RegNext(enqPtr)
 
   private val lqSafeDeqPtrNext = WireInit(lqSafeDeqPtr)
   private val lqSafeWindow = Wire(Vec(CommitWidth, new RobPtr))

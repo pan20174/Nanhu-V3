@@ -130,8 +130,10 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
 }
 
 class ReplayQDebugBundle(implicit p: Parameters) extends XSBundle{
-  val validNum = UInt(log2Up(LoadReplayQueueSize).W)
-  val issueNum = UInt(log2Up(LoadReplayQueueSize).W)
+  val validNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+  val issueNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+  val debug_deqPtr = Input(new RobPtr)
+  val debug_enqPtr = Input(new RobPtr)
 }
 
 
@@ -146,7 +148,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
-    val degbugInfo = Output(new ReplayQDebugBundle)
+    val degbugInfo = new ReplayQDebugBundle
     })
 
   val counterRegMax = 16
@@ -363,6 +365,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   io.degbugInfo.validNum := validNum
   io.degbugInfo.issueNum := issueNum
   dontTouch(io.degbugInfo)
+
+  io.enq.foreach({ case enq =>
+    when(enq.valid) {
+      assert(enq.bits.uop.robIdx >= io.degbugInfo.debug_deqPtr &&
+              enq.bits.uop.robIdx < io.degbugInfo.debug_enqPtr,"illegal rob enqueue replay Queue!!!")
+    }
+  })
 
 
   if(enablePerf){ XSPerfAccumulate("enq", enqNumber)

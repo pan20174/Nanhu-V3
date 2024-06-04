@@ -79,6 +79,8 @@ class RobLsqIO(implicit p: Parameters) extends XSBundle {
   val pendingOrdered = Output(Bool())
   val pendingInst = Output(new RobPtr)
   val lqSafeDeq = Output(new RobPtr)
+  val debug_deqPtr = Output(new RobPtr)
+  val debug_enqPtr = Output(new RobPtr)
 }
 
 class RobEnqIO(implicit p: Parameters) extends XSBundle {

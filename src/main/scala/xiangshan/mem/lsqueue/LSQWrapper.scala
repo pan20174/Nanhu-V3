@@ -158,6 +158,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 //  loadQueue.io.ldRawDataOut <> io.ldRawDataOut
   loadQueue.io.robHead := RegNext(io.rob.pendingInst)
   loadQueue.io.lqSafeDeq := RegNext(io.rob.lqSafeDeq)
+  loadQueue.io.debug_deqPtr := RegNext(io.rob.debug_deqPtr)
+  loadQueue.io.debug_enqPtr := RegNext(io.rob.debug_enqPtr)
   loadQueue.io.rollback <> io.rollback
   loadQueue.io.release <> io.release
   loadQueue.io.trigger <> io.trigger
