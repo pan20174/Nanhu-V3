@@ -86,7 +86,7 @@ class IntegerStatusArrayEntryUpdateNetwork(issueWidth:Int, wakeupWidth:Int)(impl
       n := SrcState.rdy
     }
   }
-  // pregMatch.foreach(hv => when(io.entry.valid){assert(PopCount(hv) <= 1.U)})
+  pregMatch.foreach(hv => when(io.entry.valid){assert(PopCount(hv) <= 1.U)})
   when(io.entry.bits.fuType === FuType.jmp && io.entry.bits.ftqPtr < io.safeTargetPtr) {
     miscNext.bits.srcState(1) := SrcState.rdy
   }
@@ -144,7 +144,7 @@ class IntegerStatusArrayEntryUpdateNetwork(issueWidth:Int, wakeupWidth:Int)(impl
       val wakeupLpvSelected = Mux1H(lpvUpdateHitsVec, lpvUpdateDataVec)
       nl := Mux(wakeupLpvValid, wakeupLpvSelected, LogicShiftRight(ol,1))
       m := wakeupLpvValid | ol.orR
-      // when(io.entry.valid){assert(PopCount(lpvUpdateHitsVec) === 1.U || PopCount(lpvUpdateHitsVec) === 0.U)}
+      when(io.entry.valid){assert(PopCount(lpvUpdateHitsVec) === 1.U || PopCount(lpvUpdateHitsVec) === 0.U)}
     }
   }
   private val miscUpdateEnLpvUpdate = lpvModified.map(_.reduce(_|_)).reduce(_|_)
