@@ -78,14 +78,13 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
     val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val sbuffer = Vec(StorePipelineWidth, Decoupled(new DCacheWordReqWithVaddr))
-    val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
-    val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
+//    val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
+//    val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
     val mmioStout = DecoupledIO(new ExuOutput) // writeback uncached store
     val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ))
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     val rob = Flipped(new RobLsqIO)
     val rollback = Output(Valid(new Redirect))
-    val dcache = Flipped(ValidIO(new Refill))
     val release = Flipped(ValidIO(new Release))
     val uncache = new UncacheWordIO
     val exceptionAddr = new ExceptionAddrIO
@@ -103,13 +102,14 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val ldStop = Output(Bool())
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
+    val mmioWb = DecoupledIO(new ExuOutput)
   })
 
   val loadQueue = Module(new LoadQueue)
   val storeQueue = Module(new StoreQueue)
 
   storeQueue.io.hartId := io.hartId
-
+  io.mmioWb <> loadQueue.io.mmioWb
   // io.enq logic
   // LSQ: send out canAccept when both load queue and store queue are ready
   // Dispatch: send instructions to LSQ only when they are ready
@@ -154,12 +154,11 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.s3_delayed_load_error <> io.s3_delayed_load_error
   loadQueue.io.s2_dcache_require_replay <> io.s2_dcache_require_replay
   loadQueue.io.s3_replay_from_fetch <> io.s3_replay_from_fetch
-  loadQueue.io.ldout <> io.ldout
-  loadQueue.io.ldRawDataOut <> io.ldRawDataOut
+//  loadQueue.io.ldout <> io.ldout
+//  loadQueue.io.ldRawDataOut <> io.ldRawDataOut
   loadQueue.io.robHead := RegNext(io.rob.pendingInst)
   loadQueue.io.lqSafeDeq := RegNext(io.rob.lqSafeDeq)
   loadQueue.io.rollback <> io.rollback
-  loadQueue.io.dcache <> io.dcache
   loadQueue.io.release <> io.release
   loadQueue.io.trigger <> io.trigger
   loadQueue.io.exceptionAddr.isStore := DontCare
@@ -235,7 +234,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   assert(!(loadQueue.io.uncache.req.valid && storeQueue.io.uncache.req.valid))
   assert(!(loadQueue.io.uncache.resp.valid && storeQueue.io.uncache.resp.valid))
-  assert(!((loadQueue.io.uncache.resp.valid || storeQueue.io.uncache.resp.valid) && pendingstate === s_idle))
+  assert(!((loadQueue.io.uncache.resp.valid || storeQueue.io.uncache.resp.valid) && pendingstate === s_idle)) //todo ????
 
   io.lqFull := loadQueue.io.lqFull
   io.sqFull := storeQueue.io.sqFull

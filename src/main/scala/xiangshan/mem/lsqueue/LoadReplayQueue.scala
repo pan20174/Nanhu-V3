@@ -10,6 +10,7 @@ import xs.utils.perf.HasPerfLogging
 import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.backend.issue.RsIdx
+import xiangshan.backend.rob.RobPtr
 
 object LoadReplayCauses {
   /*
@@ -59,6 +60,12 @@ object LoadReplayCauses {
 //  def nuke          = replayCause(LoadReplayCauses.C_NK)
 //  def need_rep      = replayCause.asUInt.orR
 //}
+
+class ReplayQUopInfo(implicit p: Parameters) extends XSBundle{
+  val robIdx = new RobPtr
+  val exceptionVec = ExceptionVec()
+}
+
 
 
 class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle {
@@ -122,6 +129,13 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
   }
 }
 
+class ReplayQDebugBundle(implicit p: Parameters) extends XSBundle{
+  val validNum = UInt(log2Up(LoadReplayQueueSize).W)
+  val issueNum = UInt(log2Up(LoadReplayQueueSize).W)
+}
+
+
+
 class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule
   with HasLoadHelper
   with HasPerfLogging
@@ -132,6 +146,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
+    val degbugInfo = Output(new ReplayQDebugBundle)
     })
 
   val counterRegMax = 16
@@ -180,13 +195,14 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }))
   val enqIndexOH =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   val s1_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
+  val robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   // Allocate logic
   val newEnqueue = (0 until LoadPipelineWidth).map(i => {
     needEnqueue(i) && !io.enq(i).bits.isReplayQReplay
   })
   // freeList enq/deq logic + entry allocate logic
   val freeMaskVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
-  for((enq, i) <- io.enq.zipWithIndex){
+  for ((enq, i) <- io.enq.zipWithIndex) {
     vaddrModule.io.wen(i) := false.B
     vaddrModule.io.waddr(i) := 0.U
     vaddrModule.io.wdata(i) := 0.U
@@ -280,7 +296,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       val valid = s0_remReadyToReplay_mask(i) && !(Mux(s1_selResSeq(rem).valid, s1_selResSeq(rem).bits(i).asBool, false.B))
       val uop = s0_remReadyToReplay_uop(i)
       val validUop = Wire(Valid(new MicroOp))
-      validUop.valid := valid
+      validUop.valid := valid && !uop.robIdx.needFlush(io.redirect)
       validUop.bits := uop
       validUop
     }
@@ -341,6 +357,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val replayDCacheReplayCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DR)))
   val replayForwardFailCount  = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_FF)))
   val replayDCacheMissCount   = PopCount(io.enq.map(enq => enq.fire && !enq.bits.isReplayQReplay && enq.bits.replayCause(LoadReplayCauses.C_DM)))
+
+  val validNum = PopCount(allocatedReg)
+  val issueNum = PopCount(scheduledReg)
+  io.degbugInfo.validNum := validNum
+  io.degbugInfo.issueNum := issueNum
+  dontTouch(io.degbugInfo)
+
 
   if(enablePerf){ XSPerfAccumulate("enq", enqNumber)
   XSPerfAccumulate("deq", deqNumber)

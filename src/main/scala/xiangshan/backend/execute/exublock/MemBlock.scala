@@ -615,8 +615,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
     // passdown to lsq (load s2)
     lsq.io.loadIn(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
-    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb
-    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.s3_lq_wbLdRawData
+//    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb
+//    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.s3_lq_wbLdRawData
     lsq.io.s2_load_data_forwarded(i) <> loadUnits(i).io.lsq.s2_load_data_forwarded
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 
@@ -657,6 +657,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     XSDebug(lduWritebacks(i).bits.uop.cf.trigger.getBackendCanFire && lduWritebacks(i).valid, p"Debug Mode: Load Inst No.${i}" +
     p"has trigger fire vec ${lduWritebacks(i).bits.uop.cf.trigger.backendCanFire}\n")
   }
+
+  //todo: mmio writeback
+  loadUnits.foreach(_.io.mmioWb := DontCare)
+  loadUnits.head.io.mmioWb <> lsq.io.mmioWb
+
   // Prefetcher
   prefetcherOpt.foreach(pf => {
     dtlb_reqs(ld_tlb_ports - 1) <> pf.io.tlb_req
@@ -753,8 +758,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   AddPipelineReg(uncache.io.lsq.resp, lsq.io.uncache.resp, false.B)
   // delay dcache refill for 1 cycle for better timing
   // TODO: remove RegNext after fixing refill paddr timing
-  lsq.io.dcache.valid := RegNext(dcache.io.lsu.lsq.valid)
-  lsq.io.dcache.bits := RegEnable(dcache.io.lsu.lsq.bits,dcache.io.lsu.lsq.valid)
+//  lsq.io.dcache.valid := RegNext(dcache.io.lsu.lsq.valid)
+//  lsq.io.dcache.bits := RegEnable(dcache.io.lsu.lsq.bits,dcache.io.lsu.lsq.valid)
   lsq.io.release        := dcache.io.lsu.release
   lsq.io.lqCancelCnt <> io.lqCancelCnt
   lsq.io.sqCancelCnt <> io.sqCancelCnt
