@@ -56,9 +56,6 @@ class LoadUnitTriggerIO(implicit p: Parameters) extends XSBundle {
   val addrHit = Output(Bool())
   val lastDataHit = Output(Bool())
 }
-class ReplayQueueLoadInBundle(implicit p: Parameters) extends XSBundle{
-  val tmp = Bool()
-}
 
 class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with HasDCacheParameters with SdtrigExt with HasPerfLogging {
   val io = IO(new Bundle() {
@@ -110,45 +107,59 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
     val s3_delayed_load_error = Output(Bool()) // load ecc error // Note that io.s3_delayed_load_error and io.lsq.s3_delayed_load_error is different
   })
-  io.rsIssueIn.ready := true.B
-  io.replayQIssueIn.ready := true.B
+
   val rsIssueIn = WireInit(io.rsIssueIn)
   val replayIssueIn = WireInit(io.replayQIssueIn)
+  io.rsIssueIn.ready := true.B
+  io.replayQIssueIn.ready := true.B
   assert(!(rsIssueIn.valid && replayIssueIn.valid))
+  def fromRsToS0Bundle(input: ExuInput,inRsIdx: RsIdx): LoadPipelineBundleS0 = {
+    val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
+    out.uop := input.uop
+    out.src := input.src
+    out.vm := input.vm
+    out.rsIdx := inRsIdx
+    out.vaddr := input.src(0) + SignExt(input.uop.ctrl.imm(11,0), VAddrBits)
+    out.replayCause.foreach(_ := false.B)
+    out.schedIndex := 0.U
+    out.isReplayQReplay := false.B
+    out
+  }
+  def fromRQToS0Bundle(input: ReplayQueueIssueBundle): LoadPipelineBundleS0 = {
+    val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
+    out.uop := input.uop
+    out.src.foreach(_ := 0.U)
+    out.vm := 0.U
+    out.rsIdx := DontCare
+    out.replayCause.foreach(_ := false.B)
+    out.vaddr := input.vaddr
+    out.schedIndex := input.schedIndex
+    out.isReplayQReplay := true.B
+    out
+  }
 
-  val s0_in_fromRs = Wire(DecoupledIO(new LoadPipelineBundleS0))
-  val s0_in_fromReplayQ = Wire(DecoupledIO(new LoadPipelineBundleS0))
-  s0_in_fromRs.valid := rsIssueIn.valid
-  s0_in_fromRs.ready := true.B
+  val s0_src_selector = Seq(
+    replayIssueIn.valid,
+    rsIssueIn.valid)
+  val s0_src = Seq(
+    fromRQToS0Bundle(replayIssueIn.bits),
+    fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
+  )
+  val s0_sel_src = Wire(new LoadPipelineBundleS0)
+  s0_sel_src := ParallelPriorityMux(s0_src_selector, s0_src)
 
-  s0_in_fromReplayQ.valid := replayIssueIn.valid
-  s0_in_fromReplayQ.ready := true.B
-
-  s0_in_fromRs.bits.fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
-  s0_in_fromReplayQ.bits.fromRQToS0Bundle(replayIssueIn.bits)
-
-  val s0_req_tlb = io.tlb.req
-  val s0_req_dcache = io.dcache.req
-  //  val s0_in = s0_in_fromRs
-  val s0_in = Wire(DecoupledIO(new LoadPipelineBundleS0))
-  val s0_out = Wire(Decoupled(new LsPipelineBundle))
-
-  s0_in.valid := s0_in_fromRs.valid || s0_in_fromReplayQ.valid
-  s0_in.bits := Mux(s0_in_fromReplayQ.valid, s0_in_fromReplayQ.bits, s0_in_fromRs.bits)
-
-  val s0_imm12 = s0_in.bits.uop.ctrl.imm(11,0)
-  val s0_vaddr = Mux(s0_in_fromReplayQ.valid,s0_in.bits.vaddr_replay,
-                WireInit(s0_in.bits.src(0) + SignExt(s0_imm12, VAddrBits)))
-  val s0_mask = WireInit(genWmask(s0_vaddr, s0_in.bits.uop.ctrl.fuOpType(1,0)))
-  val s0_uop = WireInit(s0_in.bits.uop)
-
-  val s0_auxValid = s0_in.valid
-
-  val s0_isSoftPrefetch = Mux(s0_in_fromReplayQ.valid,false.B,LSUOpType.isPrefetch(s0_uop.ctrl.fuOpType))
+  val s0_imm12 = s0_sel_src.uop.ctrl.imm(11,0)
+  val s0_vaddr = s0_sel_src.vaddr
+  val s0_mask  = WireInit(genWmask(s0_vaddr, s0_sel_src.uop.ctrl.fuOpType(1,0)))
+  val s0_uop   = WireInit(s0_sel_src.uop)
+  val s0_auxValid = s0_src_selector.reduce(_ || _)
+  val s0_valid = s0_src_selector.reduce(_ || _)
+  val s0_isSoftPrefetch = Mux(replayIssueIn.valid,false.B,LSUOpType.isPrefetch(s0_uop.ctrl.fuOpType))
   val s0_isSoftPrefetchRead = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_r
   val s0_isSoftPrefetchWrite = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_w
-  val s0_EnableMem = s0_in.bits.uop.loadStoreEnable
+  val s0_EnableMem = s0_sel_src.uop.loadStoreEnable
 
+  val s0_req_tlb = io.tlb.req
   s0_req_tlb := DontCare
   s0_req_tlb.valid := s0_auxValid
   s0_req_tlb.bits.vaddr := s0_vaddr
@@ -157,6 +168,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s0_req_tlb.bits.robIdx := s0_uop.robIdx
   s0_req_tlb.bits.debug.pc := s0_uop.cf.pc
 
+  val s0_req_dcache = io.dcache.req
   s0_req_dcache.valid := s0_auxValid
   when (s0_isSoftPrefetchRead) {
     s0_req_dcache.bits.cmd  := MemoryOpConstants.M_PFR
@@ -165,8 +177,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   }.otherwise {
     s0_req_dcache.bits.cmd  := MemoryOpConstants.M_XRD
   }
-
-  s0_req_dcache.bits.robIdx := s0_in.bits.uop.robIdx
+  s0_req_dcache.bits.robIdx := s0_sel_src.uop.robIdx
   s0_req_dcache.bits.addr := s0_vaddr
   s0_req_dcache.bits.mask := s0_mask
   s0_req_dcache.bits.data := DontCare
@@ -180,26 +191,24 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     "b11".U   -> (s0_vaddr(2, 0) === 0.U)  //d
   ))
 
-  s0_out.valid := s0_in.valid
+  val s0_out = Wire(Decoupled(new LsPipelineBundle))
+  s0_out.valid := s0_valid
   s0_out.bits := DontCare
-  s0_out.bits.schedIndex := s0_in.bits.schedIndex
-  s0_out.bits.isReplayQReplay := s0_in.bits.isReplayQReplay
-  s0_out.bits.schedIndex := s0_in.bits.schedIndex
+  s0_out.bits.schedIndex := s0_sel_src.schedIndex
+  s0_out.bits.isReplayQReplay := s0_sel_src.isReplayQReplay
+  s0_out.bits.schedIndex := s0_sel_src.schedIndex
   s0_out.bits.vaddr := s0_vaddr
   s0_out.bits.mask := s0_mask
   s0_out.bits.uop := s0_uop
 
-  private val s0_vaddr2 = s0_in.bits.src(0) + SignExt(s0_imm12, XLEN)
+  private val s0_vaddr2 = SignExt(s0_sel_src.vaddr, XLEN)
   dontTouch(s0_vaddr)
   private val illegalAddr = s0_vaddr2(XLEN - 1, VAddrBits - 1) =/= 0.U && s0_vaddr2(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
   s0_out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := Mux(s0_EnableMem, !s0_addrAligned, false.B)
   s0_out.bits.uop.cf.exceptionVec(loadPageFault) := Mux(s0_EnableMem & io.vmEnable, illegalAddr, false.B)
-
   s0_out.bits.rsIdx := io.rsIdx
   s0_out.bits.replayCause.foreach(_ := false.B)
   s0_out.bits.isSoftPrefetch := s0_isSoftPrefetch
-
-  s0_in.ready := !s0_in.valid || s0_out.ready
 
   val s0_cancel = !s0_req_dcache.ready
 
@@ -299,8 +308,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_out.bits.isSoftPrefetch := s1_in.bits.isSoftPrefetch
 
   s1_in.ready := !s1_in.valid || s1_out.ready
-
-  assert(s0_in.ready)
 
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
@@ -490,7 +497,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
 
   // pre-calcuate sqIdx mask in s0, then send it to lsq in s1 for forwarding
-  val sqIdxMaskReg = RegEnable(UIntToMask(s0_in.bits.uop.sqIdx.value, StoreQueueSize), s0_in.valid)
+  val sqIdxMaskReg = RegEnable(UIntToMask(s0_sel_src.uop.sqIdx.value, StoreQueueSize), s0_valid)
   // to enable load-load, sqIdxMask must be calculated based on rsIssueIn.uop
   // If the timing here is not OK, load-load forwarding has to be disabled.
   // Or we calculate sqIdxMask at RS??
@@ -680,7 +687,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
 
   val perfEvents = Seq(
-    ("load_s0_in_fire         ", s0_in.fire),
+    ("load_s0_in_fire         ", s0_valid),
     ("load_to_load_forward    ", s1_out.valid),
     ("stall_dcache            ", s0_out.valid && s0_out.ready && !s0_req_dcache.ready),
     ("load_s1_in_fire         ", s1_in.fire),
@@ -698,13 +705,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   }
 
   val debugModule = Module(new LoadUnitDebugInfo)
-  debugModule.io.infoIn.s0_valid := s0_in.valid
+  debugModule.io.infoIn.s0_valid := s0_valid
   debugModule.io.infoIn.s1_valid := s1_in.valid
   debugModule.io.infoIn.s2_valid := s2_in.valid
 //  debugModule.io.infoIn.s3_valid :=
   debugModule.io.infoIn.wb_valid := io.ldout.valid
   debugModule.io.infoIn.rsIdx := io.rsIdx
-  debugModule.io.infoIn.robIdx := s0_in.bits.uop.robIdx
+  debugModule.io.infoIn.robIdx := s0_sel_src.uop.robIdx
 }
 
 class LdDebugBundle(implicit p: Parameters) extends XSBundle {
