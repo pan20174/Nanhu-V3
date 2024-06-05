@@ -67,10 +67,9 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   //softprefetch
   val isSoftPrefetch = Bool()
-  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
-  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
-  val isReplayQReplay = Bool()
 
+  // replayInfo
+  val replay = new ReplayInfo
 }
 
 class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
@@ -96,9 +95,9 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
 
     lq_data_wen_dup := DontCare
 
-    replayCause := DontCare
-    schedIndex := DontCare
-    isReplayQReplay := DontCare
+    replay.replayCause := DontCare
+    replay.schedIndex := DontCare
+    replay.isReplayQReplay := DontCare
   }
 }
 

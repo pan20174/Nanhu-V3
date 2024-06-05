@@ -154,9 +154,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s0_uop   = WireInit(s0_sel_src.uop)
   val s0_auxValid = s0_src_selector.reduce(_ || _)
   val s0_valid = s0_src_selector.reduce(_ || _)
-  val s0_isSoftPrefetch = Mux(replayIssueIn.valid,false.B,LSUOpType.isPrefetch(s0_uop.ctrl.fuOpType))
-  val s0_isSoftPrefetchRead = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_r
-  val s0_isSoftPrefetchWrite = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_w
   val s0_EnableMem = s0_sel_src.uop.loadStoreEnable
 
   val s0_req_tlb = io.tlb.req
@@ -169,6 +166,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s0_req_tlb.bits.debug.pc := s0_uop.cf.pc
 
   val s0_req_dcache = io.dcache.req
+  val s0_isSoftPrefetch = Mux(replayIssueIn.valid,false.B,LSUOpType.isPrefetch(s0_uop.ctrl.fuOpType))
+  val s0_isSoftPrefetchRead = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_r
+  val s0_isSoftPrefetchWrite = s0_uop.ctrl.fuOpType === LSUOpType.prefetch_w
   s0_req_dcache.valid := s0_auxValid
   when (s0_isSoftPrefetchRead) {
     s0_req_dcache.bits.cmd  := MemoryOpConstants.M_PFR
@@ -183,6 +183,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s0_req_dcache.bits.data := DontCare
   s0_req_dcache.bits.instrtype := Mux(s0_isSoftPrefetch,SOFT_PREFETCH.U,LOAD_SOURCE.U)
   s0_req_dcache.bits.id := DontCare
+  val s0_cancel = !s0_req_dcache.ready
 
   val s0_addrAligned = LookupTree(s0_uop.ctrl.fuOpType(1, 0), List(
     "b00".U   -> true.B,                   //b
@@ -194,9 +195,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s0_out = Wire(Decoupled(new LsPipelineBundle))
   s0_out.valid := s0_valid
   s0_out.bits := DontCare
-  s0_out.bits.schedIndex := s0_sel_src.schedIndex
-  s0_out.bits.isReplayQReplay := s0_sel_src.isReplayQReplay
-  s0_out.bits.schedIndex := s0_sel_src.schedIndex
+  s0_out.bits.replay.schedIndex := s0_sel_src.schedIndex
+  s0_out.bits.replay.isReplayQReplay := s0_sel_src.isReplayQReplay
+  s0_out.bits.replay.schedIndex := s0_sel_src.schedIndex
   s0_out.bits.vaddr := s0_vaddr
   s0_out.bits.mask := s0_mask
   s0_out.bits.uop := s0_uop
@@ -207,10 +208,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s0_out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := Mux(s0_EnableMem, !s0_addrAligned, false.B)
   s0_out.bits.uop.cf.exceptionVec(loadPageFault) := Mux(s0_EnableMem & io.vmEnable, illegalAddr, false.B)
   s0_out.bits.rsIdx := io.rsIdx
-  s0_out.bits.replayCause.foreach(_ := false.B)
+  s0_out.bits.replay.replayCause.foreach(_ := false.B)
   s0_out.bits.isSoftPrefetch := s0_isSoftPrefetch
-
-  val s0_cancel = !s0_req_dcache.ready
 
 
   val s1_in = Wire(Decoupled(new LsPipelineBundle))
@@ -286,7 +285,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
 //  s1_rsFeedback.bits.sourceType := Mux(s1_bank_conflict, RSFeedbackType.bankConflict, RSFeedbackType.ldVioCheckRedo)
 
-  s1_out.bits.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && (s1_cancel_inner ||  s1_bank_conflict || s1_needLdVioCheckRedo)
+  s1_out.bits.replay.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && (s1_cancel_inner ||  s1_bank_conflict || s1_needLdVioCheckRedo)
   //disable bank_conflict
 //  s1_rsFeedback.valid := s1_in.valid && (s1_needLdVioCheckRedo || s1_cancel_inner) && s1_enableMem && (!s1_in.bits.isReplayQReplay)
 //  s1_rsFeedback.bits.rsIdx := s1_in.bits.rsIdx
@@ -308,6 +307,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_out.bits.isSoftPrefetch := s1_in.bits.isSoftPrefetch
 
   s1_in.ready := !s1_in.valid || s1_out.ready
+
+  val debug_s1_casue = WireInit(VecInit(Seq.fill(LoadReplayCauses.allCauses)(false.B)))
+  
 
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
@@ -450,7 +452,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //                                            Mux(RegNext(s1_bank_conflict,false.B),false.B,
 //                                                s2_need_replay_from_rs || !io.s3_enq_replqQueue.ready))
 
-  s2_rsFeedback.valid := s2_in.valid && Mux(s2_in.bits.isReplayQReplay, false.B, true.B)
+  s2_rsFeedback.valid := s2_in.valid && Mux(s2_in.bits.replay.isReplayQReplay, false.B, true.B)
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
 //  s2_rsFeedback.bits.sourceType := Mux(s2_tlb_miss, RSFeedbackType.tlbMiss,
 //    Mux(s2_cache_replay,
@@ -665,7 +667,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val hasOtherCause = s2_out.valid && (s2_need_replay_from_rs)
   //tmp:
   when(s2_out.valid){
-    assert(PopCount(s2_out.bits.replayCause.asUInt) <= 1.U)
+    assert(PopCount(s2_out.bits.replay.replayCause.asUInt) <= 1.U)
   }
 //  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause || s2_out.bits.replayCause.reduce(_|_))
 //  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause ||
@@ -675,15 +677,15 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replqQueue.valid := s2_out.valid && !(s2_out.bits.uop.robIdx.needFlush(io.redirect))
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
   io.s3_enq_replqQueue.bits.paddr := DontCare
-  io.s3_enq_replqQueue.bits.isReplayQReplay := s2_out.bits.isReplayQReplay
-  io.s3_enq_replqQueue.bits.replayCause := DontCare
+  io.s3_enq_replqQueue.bits.replay.isReplayQReplay := s2_out.bits.replay.isReplayQReplay
+  io.s3_enq_replqQueue.bits.replay.replayCause := DontCare
 //  io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := s2_out.bits.replayCause(LoadReplayCauses.C_BC) || hasOtherCause
-  io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := Mux(s2_wb_valid,false.B,Mux(s2_out.bits.mmio,false.B,true.B))
-  io.s3_enq_replqQueue.bits.schedIndex := s2_out.bits.schedIndex
+  io.s3_enq_replqQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := Mux(s2_wb_valid,false.B,Mux(s2_out.bits.mmio,false.B,true.B))
+  io.s3_enq_replqQueue.bits.replay.schedIndex := s2_out.bits.replay.schedIndex
   io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop
   io.s3_enq_replqQueue.bits.mask := s2_mask
   io.s3_enq_replqQueue.bits.tlbMiss := false.B
-  assert(!(hitLoadOut.valid && io.s3_enq_replqQueue.bits.replayCause.reduce(_|_)),"when load wb,replayCause must be 0!!")
+  assert(!(hitLoadOut.valid && io.s3_enq_replqQueue.bits.replay.replayCause.reduce(_|_)),"when load wb,replayCause must be 0!!")
 
 
   val perfEvents = Seq(
