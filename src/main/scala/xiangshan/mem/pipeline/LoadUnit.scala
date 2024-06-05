@@ -62,39 +62,53 @@ class ReplayQueueLoadInBundle(implicit p: Parameters) extends XSBundle{
 
 class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with HasDCacheParameters with SdtrigExt with HasPerfLogging {
   val io = IO(new Bundle() {
-    val rsIssueIn = Flipped(Decoupled(new ExuInput))
-    val replayQIssueIn = Flipped(Decoupled(new ReplayQueueIssueBundle))
-    val auxValid = Input(Bool())
-    val ldout = Decoupled(new ExuOutput)
-    val redirect = Flipped(ValidIO(new Redirect))
-    val feedbackSlow = ValidIO(new RSFeedback)
-    val feedbackFast = ValidIO(new RSFeedback)
-    val rsIdx = Input(new RsIdx)
-    val dcache = new DCacheLoadIO
-    val forwardFromSBuffer = new LoadForwardQueryIO
-    val lsq = new LoadToLsqIO
-    val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
-    val vmEnable = Input(Bool())
-    val tlb = new TlbRequestIO(2)
-    val pmp = Flipped(new PMPRespBundle()) // arrive same to tlb now
 
-    //FDI
+    // S0: reservationStation issueIn
+    val rsIssueIn = Flipped(Decoupled(new ExuInput))
+    val rsIdx = Input(new RsIdx)
+    // S0: replayQueue issueIn
+    val replayQIssueIn = Flipped(Decoupled(new ReplayQueueIssueBundle))
+    // S0: specialLoad for timing
+    val auxValid = Input(Bool())
+    val vmEnable = Input(Bool())
+    // S0/S1: tlb query and response in next cycle
+    val tlb = new TlbRequestIO(nRespDups=2)
+
+    // S1/S2: cache query and response in next cycle
+    val dcache = new DCacheLoadIO
+    // S1/S2: forward query to sbuffer and response in next cycle
+    val forwardFromSBuffer = new LoadForwardQueryIO
+    // S1/S2: lpv cancel feedback
+    val cancel = Output(Bool())
+    // S1/S2: FDI req and response in next cycle
     val fdiReq = ValidIO(new  FDIReqBundle())
     val fdiResp = Flipped(new FDIRespBundle())
+    // S1/S2/S3 : forward query to lsq, update lsq, writeback from lsq
+    val lsq = new LoadToLsqIO
 
-    // provide prefetch info
+    // S2: pmp query response
+    val pmp = Flipped(new PMPRespBundle()) // arrive same to tlb now
+    // S2: preftech train output
     val prefetch_train = ValidIO(new LsPipelineBundle())
 
-    val s3_delayed_load_error = Output(Bool()) // load ecc error
-    // Note that io.s3_delayed_load_error and io.lsq.s3_delayed_load_error is different
-
-    val csrCtrl = Flipped(new CustomCSRCtrlIO)
-    val cancel = Output(Bool())
-
+    // S3: feedback reservationStation to replay
+    val feedbackSlow = ValidIO(new RSFeedback)
+    val feedbackFast = ValidIO(new RSFeedback) // todo: will be deleted soon
+    // S3: replay inst enq replayQueue
     val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
-    val ldStop = Input(Bool())
-    val replayQFull = Input(Bool())
+    // S3: load writeback
+    val ldout = Decoupled(new ExuOutput)
+    // S3: mmio writeback
     val mmioWb = Flipped(DecoupledIO(new ExuOutput))
+    
+    // Global: redirect flush all pipeline
+    val redirect = Flipped(ValidIO(new Redirect))
+    // Global: debug trigger
+    val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
+    // Global: csr control
+    val csrCtrl = Flipped(new CustomCSRCtrlIO)
+
+    val s3_delayed_load_error = Output(Bool()) // load ecc error // Note that io.s3_delayed_load_error and io.lsq.s3_delayed_load_error is different
   })
   io.rsIssueIn.ready := true.B
   io.replayQIssueIn.ready := true.B
