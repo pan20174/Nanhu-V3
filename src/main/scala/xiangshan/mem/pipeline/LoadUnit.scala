@@ -235,7 +235,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_enableMem = s1_in.bits.uop.loadStoreEnable
   val s1_exception = Mux(s1_enableMem && s1_in.valid, ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR, false.B)
   val s1_tlb_miss = s1_dtlbResp.bits.miss
-  val s1_mask = s1_in.bits.mask
   val s1_bank_conflict = io.dcache.s1_bank_conflict
   val s1_cancel_inner = RegEnable(s0_cancel,s0_out.fire)  
   val s1_dcacheKill = s1_in.valid && (s1_tlb_miss || s1_exception || s1_cancel_inner || (!s1_enableMem))
@@ -250,7 +249,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_sbufferForwardReq.paddr := s1_paddr_dup_lsu
   s1_sbufferForwardReq.uop := s1_uop
   s1_sbufferForwardReq.sqIdx := s1_uop.sqIdx
-  s1_sbufferForwardReq.mask := s1_mask
+  s1_sbufferForwardReq.mask := s1_in.bits.mask
   s1_sbufferForwardReq.pc := s1_uop.cf.pc
 
   s1_lsqForwardReq.valid := s1_in.valid && !(s1_exception || s1_tlb_miss) && s1_enableMem
@@ -259,7 +258,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_lsqForwardReq.uop := s1_uop
   s1_lsqForwardReq.sqIdx := s1_uop.sqIdx
   s1_lsqForwardReq.sqIdxMask := DontCare
-  s1_lsqForwardReq.mask := s1_mask
+  s1_lsqForwardReq.mask := s1_in.bits.mask
   s1_lsqForwardReq.pc := s1_uop.cf.pc
   io.lsq.forwardFromSQ.sqIdxMask := UIntToMask(s1_uop.sqIdx.value, StoreQueueSize)
 
@@ -274,34 +273,32 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   /* Generate feedback signal caused by:    1.dcache bank conflict    2.need redo ld-ld violation check */
   val s1_csrCtrl_ldld_vio_check_enable = io.csrCtrl.ldld_vio_check_enable
-  val s1_needLdVioCheckRedo = s1_ldViolationQueryReq.valid &&
-    !s1_ldViolationQueryReq.ready &&
+  val s1_needLdVioCheckRedo = s1_ldViolationQueryReq.valid && !s1_ldViolationQueryReq.ready &&
     RegNext(s1_csrCtrl_ldld_vio_check_enable)
 
   s1_out.bits.replay.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && (s1_cancel_inner ||  s1_bank_conflict || s1_needLdVioCheckRedo)
-  s1_out.valid := s1_in.valid && s1_enableMem
-  s1_out.bits.paddr := s1_paddr_dup_lsu
+  s1_out.valid        := s1_in.valid && s1_enableMem
+  s1_out.bits.paddr   := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
-
-  // current ori test will cause the case of ldest == 0, below will be modifeid in the future.
-  // af & pf exception were modified
   s1_out.bits.uop.cf.exceptionVec(loadPageFault) := (s1_dtlbResp.bits.excp(0).pf.ld || s1_in.bits.uop.cf.exceptionVec(loadPageFault)) && s1_enableMem
   s1_out.bits.uop.cf.exceptionVec(loadAccessFault) := s1_dtlbResp.bits.excp(0).af.ld && s1_enableMem
   s1_out.bits.ptwBack := s1_dtlbResp.bits.ptwBack
-  s1_out.bits.rsIdx := s1_in.bits.rsIdx
+  s1_out.bits.rsIdx   := s1_in.bits.rsIdx
   s1_out.bits.isSoftPrefetch := s1_in.bits.isSoftPrefetch
-
   s1_in.ready := !s1_in.valid || s1_out.ready
 
   val debug_s1_casue = WireInit(0.U.asTypeOf(new ReplayInfo))
-  val s1_casue_can_transfer = s1_out.bits.uop.cf.exceptionVec.asUInt.orR && !s1_in.bits.isSoftPrefetch
+  val s1_casue_can_transfer = (!s1_out.bits.uop.cf.exceptionVec.asUInt.orR) && (!s1_in.bits.isSoftPrefetch) && s1_enableMem
   debug_s1_casue.schedIndex := s1_out.bits.replay.schedIndex
   debug_s1_casue.isReplayQReplay := s1_out.bits.replay.isReplayQReplay
-  debug_s1_casue.tlb_miss := s1_tlb_miss
-  debug_s1_casue.rar_nack := s1_needLdVioCheckRedo
-  debug_s1_casue.dcache_rep := s1_cancel_inner
-  debug_s1_casue.bank_conflict := s1_bank_conflict
+  debug_s1_casue.tlb_miss := s1_tlb_miss  // tlb resp miss
+  debug_s1_casue.rar_nack := s1_needLdVioCheckRedo  // rar query fail
+  debug_s1_casue.dcache_rep := s1_cancel_inner  // dcache not ready
+  debug_s1_casue.bank_conflict := s1_bank_conflict  // bank read has conflict
 
+  /*
+    LOAD S2:
+  */
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
   PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(io.redirect))
@@ -510,7 +507,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s2_out.ready := true.B
   val debug_s2_casue = WireInit(0.U.asTypeOf(new ReplayInfo))
   val debugS2CasueReg = RegEnable(debug_s1_casue, s1_casue_can_transfer && s2_in.fire)
-  val s2_casue_can_transfer = s2_out.bits.uop.cf.exceptionVec.asUInt.orR && !s2_in.bits.isSoftPrefetch && !s2_mmio
+  val s2_casue_can_transfer = !s2_out.bits.uop.cf.exceptionVec.asUInt.orR && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
   debug_s2_casue := debugS2CasueReg
   debug_s2_casue.dcache_miss := s2_cache_miss
   debug_s2_casue.fwd_fail    := s2_data_invalid
