@@ -301,7 +301,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s1_cause.bank_conflict := s1_bank_conflict  // bank read has conflict
 
   /*
-    LOAD S2:
+    LOAD S2: cache miss control; forward data merge; mmio check; feedback to reservationStation
   */
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
@@ -453,7 +453,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s2_out.ready := true.B
   val debug_s2_cause = WireInit(0.U.asTypeOf(new ReplayInfo))
-  val debugS2CauseReg = RegEnable(debug_s1_cause, s1_cause_can_transfer && s2_in.fire)
+  val debugS2CauseReg = RegEnable(debug_s1_cause, s1_cause_can_transfer && s1_out.valid)
   val s2_cause_can_transfer = (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
   debug_s2_cause := debugS2CauseReg
   debug_s2_cause.dcache_miss := s2_cache_miss   || debugS2CauseReg.dcache_miss
@@ -461,32 +461,20 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s2_cause.dcache_rep  := s2_dcache_require_replay || debugS2CauseReg.dcache_rep
   dontTouch(debug_s2_cause)
   
-  // load s3
-//  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid, hitLoadOut.bits, io.lsq.s3_lq_wb.bits), hitLoadOut.valid | io.lsq.s3_lq_wb.valid)
-//  val s3_load_wb_meta_reg = RegEnable(hitLoadOut.bits, hitLoadOut.valid)
-  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
-
-  // data from load queue refill
-//  val s3_loadDataFromLQ = RegEnable(io.lsq.s3_lq_wbLdRawData, io.lsq.s3_lq_wb.valid)
-//  val s3_rdataLQ = s3_loadDataFromLQ.mergedData()
+  /*
+    LOAD S3: writeback data merge; writeback control
+  */
+  // mmio data from load queue
   val s3_mmioDataFromLq = RegEnable(io.mmioWb.bits.data, io.mmioWb.valid)
-//  val s3_mmioData = LookupTree()
-
   // data from dcache hit
   val s3_loadDataFromDcache = RegEnable(s2_loadDataFromDcache, s2_in.valid)
   val s3_rdataDcache = s3_loadDataFromDcache.mergedData()
 
   private val hitLoadOutValidReg = RegNext(hitLoadOut.valid, false.B)
-//  val hitLoadOutValidReg_dup = Seq.fill(8)(RegNext(hitLoadOut.valid, false.B))
-
-//  val s3_uop = Mux(hitLoadOutValidReg,s3_loadDataFromDcache.uop,s3_loadDataFromLQ.uop)
-//  val s3_offset = Mux(hitLoadOutValidReg,s3_loadDataFromDcache.addrOffset,s3_loadDataFromLQ.addrOffset)
   val s3_uop = s3_loadDataFromDcache.uop
   val s3_offset = s3_loadDataFromDcache.addrOffset
-
   val s3_rdata_dup = WireInit(VecInit(List.fill(8)(0.U(64.W))))
   s3_rdata_dup.zipWithIndex.foreach({case(d,i) => {
-//    d := Mux(hitLoadOutValidReg_dup(i),s3_rdataDcache,s3_rdataLQ)
     d := s3_rdataDcache
   }})
 
@@ -502,27 +490,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   ))
   val s3_rdataPartialLoad = rdataHelper(s3_uop,s3_sel_rdata)
 
-
-//  private val lsqOutputValidReg = RegNext(io.lsq.s3_lq_wb.valid && (!io.lsq.s3_lq_wb.bits.uop.robIdx.needFlush(io.redirect)),false.B)
   private val s3_lsqMMIOOutputValid = RegNext(io.mmioWb.valid && (!io.mmioWb.bits.uop.robIdx.needFlush(io.redirect)),false.B)
-//  io.ldout.valid := hitLoadOutValidReg || lsqOutputValidReg
   io.ldout.valid := hitLoadOutValidReg || s3_lsqMMIOOutputValid
+  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
   io.ldout.bits := s3_load_wb_meta_reg
-  when(hitLoadOutValidReg) {
-    io.ldout.bits.data := s3_rdataPartialLoad
-  }
-  io.ldout.bits.uop.cf.exceptionVec(loadAccessFault) := s3_load_wb_meta_reg.uop.cf.exceptionVec(loadAccessFault) //||
+  io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
   // feedback tlb miss / dcache miss queue full
-//  io.feedbackSlow.valid := RegNext(s2_out.valid &&(!s2_out.bits.isReplayQReplay) && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
-//  io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
-//  io.feedbackSlow.bits.sourceType := RegNext(Mux(s2_rsFeedback.valid,s2_rsFeedback.bits.sourceType,RSFeedbackType.success))
-
-
   io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
   io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
   io.feedbackSlow.bits.sourceType := RegNext(s2_rsFeedback.bits.sourceType)
-
 
   // If replay is reported at load_s1, inst will be canceled (will not enter load_s2),
   // in that case:
@@ -567,12 +544,14 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   }}
   io.lsq.trigger.hitLoadAddrTriggerHitVec := hitLoadAddrTriggerHitVec
 
+  // lvp cancel feedback to reservationStation
   private val s1_cancel = RegInit(false.B)
   s1_cancel := s1_in.valid && (!s1_out.valid)
   val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss)
-  
   io.cancel := s1_cancel || s2_lpvCancel
 
+  val debugS3CauseReg = RegEnable(debug_s2_cause, s2_cause_can_transfer && s2_out.fire)
+  dontTouch(debugS3CauseReg)
   val hasOtherCause = s2_out.valid && (s2_need_replay_from_rs)
   io.s3_enq_replqQueue.valid := s2_out.valid && !(s2_out.bits.uop.robIdx.needFlush(io.redirect))
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
@@ -585,7 +564,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replqQueue.bits.mask := s2_in.bits.mask
   io.s3_enq_replqQueue.bits.tlbMiss := false.B
   assert(!(hitLoadOut.valid && io.s3_enq_replqQueue.bits.replay.replayCause.reduce(_|_)),"when load wb,replayCause must be 0!!")
-
 
   val perfEvents = Seq(
     ("load_s0_in_fire         ", s0_valid),
