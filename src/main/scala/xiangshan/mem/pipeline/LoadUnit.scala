@@ -323,8 +323,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_isSoftPrefetch = s2_in.bits.isSoftPrefetch
   val s2_exceptionVec = WireInit(s2_in.bits.uop.cf.exceptionVec)
   s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
-  //FDI load access fault
-  s2_out.bits.uop.cf.exceptionVec(fdiULoadAccessFault) := (io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault) && s2_enableMem
+  s2_out.bits.uop.cf.exceptionVec(fdiULoadAccessFault) := (io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault) && s2_enableMem  //FDI load access fault
   val s2_hasException = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_exceptionVec, lduCfg).asUInt.orR,false.B)
 
   val s2_dcacheResp = io.dcache.resp
@@ -426,7 +425,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
   io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
   // generate duplicated load queue data wen
-  val s2_wen_dup = VecInit(Seq.fill(6)(RegInit(false.B)))
+  val s2_wen_dup = RegInit(VecInit(Seq.fill(6)(false.B)))
   s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))
   io.lsq.s2_lduUpdateLQ.bits.lq_data_wen_dup := s2_wen_dup
 
