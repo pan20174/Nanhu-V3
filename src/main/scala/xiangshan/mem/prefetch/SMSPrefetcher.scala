@@ -801,7 +801,6 @@ class PrefetchFilter()(implicit p: Parameters) extends XSModule with HasSMSModul
 
   io.tlb_req.req <> tlb_req_arb.io.out
   io.tlb_req.resp.ready := true.B
-  io.tlb_req.req_kill := false.B
   io.l2_pf_addr.valid := pf_req_arb.io.out.valid
   io.l2_pf_addr.bits := pf_req_arb.io.out.bits
   pf_req_arb.io.out.ready := true.B

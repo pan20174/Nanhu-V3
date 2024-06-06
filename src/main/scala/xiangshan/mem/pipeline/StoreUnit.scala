@@ -173,8 +173,6 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   //FDI store access fault
   s2_out.bits.uop.cf.exceptionVec(fdiUStoreAccessFault) := io.fdiResp.fdi_fault === FDICheckFault.UWriteFDIFault
 
-  io.tlb.req_kill := false.B
-
   io.storeMaskOut.valid := s0_in.valid
   io.storeMaskOut.bits.mask := s0_out.bits.mask
   io.storeMaskOut.bits.sqIdx := s0_out.bits.uop.sqIdx

@@ -237,8 +237,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_tlb_miss = s1_dtlbResp.bits.miss
   val s1_bank_conflict = io.dcache.s1_bank_conflict
   val s1_cancel_inner = RegEnable(s0_cancel,s0_out.fire)  
-  val s1_dcacheKill = s1_in.valid && (s1_tlb_miss || s1_hasException || s1_cancel_inner || (!s1_enableMem))
   val s1_isSoftPrefetch = s1_in.bits.isSoftPrefetch
+  val s1_dcacheKill = s1_in.valid && (s1_tlb_miss || s1_hasException || s1_cancel_inner || (!s1_enableMem))
+  io.dcache.s1_kill := s1_dcacheKill
 
   val s1_sbufferForwardReq = io.forwardFromSBuffer
   val s1_lsqForwardReq = io.lsq.forwardFromSQ
@@ -390,55 +391,40 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   val s2_can_replay_from_fetch = !s2_mmio && !s2_isSoftPrefetch && !s2_tlb_miss
 
-  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss)
   s2_out.bits.mmio := s2_mmio && s2_enableMem
   s2_out.bits.uop.ctrl.flushPipe := false.B ///flushPipe logic is useless
-
-  val s2_dataForwarded = s2_cache_miss && !s2_hasException &&
-    (s2_fullForward || io.csrCtrl.cache_error_enable && s2_cache_tag_error)
   // io.out.bits.forwardX will be send to lq
   s2_out.bits.forwardMask := s2_forwardMask
   // data from dcache is not included in io.out.bits.forwardData
   s2_out.bits.forwardData := s2_forwardData
 
   s2_in.ready := s2_out.ready || !s2_in.valid
-
+  val s2_dataForwarded = s2_cache_miss && !s2_hasException && (s2_fullForward || io.csrCtrl.cache_error_enable && s2_cache_tag_error)
   val s2_need_replay_from_rs = Wire(Bool())
   s2_need_replay_from_rs := s2_tlb_miss || // replay if dtlb miss
     s2_cache_miss && !s2_isSoftPrefetch && !s2_mmio && !s2_hasException && !s2_dataForwarded || // replay if dcache miss queue full / busy
     s2_data_invalid && !s2_isSoftPrefetch // replay if store to load forward data is not ready
 
-
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
-//  s2_rsFeedback.valid := Mux(s2_in.valid && RegNext(s1_bank_conflict,false.B),false.B,s2_in.valid && (s2_need_replay_from_rs && !s2_in.bits.isReplayQReplay || ((io.s3_enq_replqQueue.ready && !s2_out.bits.isReplayQReplay))) && s2_enableMem)
-//  s2_rsFeedback.valid := s2_in.valid && Mux(s2_in.bits.isReplayQReplay,false.B,
-//                                            Mux(RegNext(s1_bank_conflict,false.B),false.B,
-//                                                s2_need_replay_from_rs || !io.s3_enq_replqQueue.ready))
-
   s2_rsFeedback.valid := s2_in.valid && Mux(s2_in.bits.replay.isReplayQReplay, false.B, true.B)
   s2_rsFeedback.bits.rsIdx := s2_in.bits.rsIdx
   s2_rsFeedback.bits.sourceType := Mux(!io.s3_enq_replqQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
 
-  val s2_dcache_require_replay = s2_cache_replay &&
-    s2_rsFeedback.valid &&
-    !s2_dataForwarded &&
-    !s2_isSoftPrefetch &&
-    s2_out.bits.miss
-
-  io.tlb.req_kill := false.B
-  io.dcache.s1_kill := s1_dcacheKill
-  assert(s1_in.ready)
+  val s2_dcache_require_replay = s2_cache_replay && s2_rsFeedback.valid && !s2_dataForwarded && !s2_isSoftPrefetch && s2_out.bits.miss
 
   // provide paddr for lq
   io.lsq.s1_lduUpdateLQ.valid := s1_out.valid
   io.lsq.s1_lduUpdateLQ.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduUpdateLQ.bits.paddr := s1_paddr_dup_lsu
+  io.lsq.s2_load_data_forwarded := s2_dataForwarded
 
+  // provide prefetcher train data
   io.prefetch_train.bits := s2_in.bits
   io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
   io.prefetch_train.valid := s2_in.fire && !s2_out.bits.mmio && !s2_in.bits.tlbMiss
-  io.dcache.s2_kill := s2_dcache_kill // to kill mmio resp which are redirected
-  io.lsq.s2_load_data_forwarded := s2_dataForwarded
+
+  // to kill mmio resp which are redirected
+  io.dcache.s2_kill := s2_dcache_kill 
 
   // feedback bank conflict / ld-vio check struct hazard to rs
 //  io.feedbackFast.valid := RegNext(s1_rsFeedback.valid && !s1_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
@@ -446,9 +432,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.feedbackFast.valid := false.B
   io.feedbackFast.bits := DontCare
 
-  // writeback to LSQ
-  // Current dcache use MSHR
-  // Load queue will be updated at s2 for both hit/miss int/fp load
+  // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
   io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
   // generate LqWriteBundle from LsPipelineBundle
   io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits)
@@ -602,29 +586,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   private val s1_cancel = RegInit(false.B)
   s1_cancel := s1_in.valid && (!s1_out.valid)
+  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss)
+  
   io.cancel := s1_cancel || s2_lpvCancel
 
-//  val temp_replay_record_s1 = s1_rsFeedback.valid && !s1_out.bits.uop.robIdx.needFlush(io.redirect)
-//  val temp_replay_record_s1_reg = RegNext(temp_replay_record_s1,false.B)
-//  val temp_replay_record_s2 = s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
-//  val replayHasOtherCause = (temp_replay_record_s2 || temp_replay_record_s1_reg) && s2_out.bits.isReplayQReplay
-
   val hasOtherCause = s2_out.valid && (s2_need_replay_from_rs)
-  //tmp:
-  when(s2_out.valid){
-    assert(PopCount(s2_out.bits.replay.replayCause.asUInt) <= 1.U)
-  }
-//  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause || s2_out.bits.replayCause.reduce(_|_))
-//  val s2_needEnqReplayQ = s2_out.valid && (replayHasOtherCause ||
-//                                          !s2_out.bits.isReplayQReplay && s2_out.bits.replayCause.reduce(_|_))
-
-  //tmp: use S2
   io.s3_enq_replqQueue.valid := s2_out.valid && !(s2_out.bits.uop.robIdx.needFlush(io.redirect))
   io.s3_enq_replqQueue.bits.vaddr := s2_out.bits.vaddr
   io.s3_enq_replqQueue.bits.paddr := DontCare
   io.s3_enq_replqQueue.bits.replay.isReplayQReplay := s2_out.bits.replay.isReplayQReplay
   io.s3_enq_replqQueue.bits.replay.replayCause := DontCare
-//  io.s3_enq_replqQueue.bits.replayCause(LoadReplayCauses.C_BC) := s2_out.bits.replayCause(LoadReplayCauses.C_BC) || hasOtherCause
   io.s3_enq_replqQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := Mux(s2_wb_valid,false.B,Mux(s2_out.bits.mmio,false.B,true.B))
   io.s3_enq_replqQueue.bits.replay.schedIndex := s2_out.bits.replay.schedIndex
   io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop
