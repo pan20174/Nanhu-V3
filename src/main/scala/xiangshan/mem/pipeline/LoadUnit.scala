@@ -208,8 +208,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   private val s0_vaddr2 = SignExt(s0_sel_src.vaddr, XLEN)
   dontTouch(s0_vaddr)
   private val illegalAddr = s0_vaddr2(XLEN - 1, VAddrBits - 1) =/= 0.U && s0_vaddr2(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
-  s0_out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := Mux(s0_EnableMem, !s0_addrAligned, false.B)
-  s0_out.bits.uop.cf.exceptionVec(loadPageFault) := Mux(s0_EnableMem & io.vmEnable, illegalAddr, false.B)
+  s0_out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := !s0_addrAligned && s0_EnableMem && !s0_isSoftPrefetch
+  s0_out.bits.uop.cf.exceptionVec(loadPageFault) := illegalAddr && s0_EnableMem & io.vmEnable && !s0_isSoftPrefetch
   s0_out.bits.rsIdx := io.rsIdx
   s0_out.bits.replay.replayCause.foreach(_ := false.B)
   s0_out.bits.isSoftPrefetch := s0_isSoftPrefetch
@@ -233,18 +233,19 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.dcache.s1_paddr_dup_dcache := s1_paddr_dup_dcache
   
   val s1_enableMem = s1_in.bits.uop.loadStoreEnable
-  val s1_exception = Mux(s1_enableMem && s1_in.valid, ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR, false.B)
+  val s1_hasException = Mux(s1_enableMem && s1_in.valid, ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR, false.B)
   val s1_tlb_miss = s1_dtlbResp.bits.miss
   val s1_bank_conflict = io.dcache.s1_bank_conflict
   val s1_cancel_inner = RegEnable(s0_cancel,s0_out.fire)  
-  val s1_dcacheKill = s1_in.valid && (s1_tlb_miss || s1_exception || s1_cancel_inner || (!s1_enableMem))
+  val s1_dcacheKill = s1_in.valid && (s1_tlb_miss || s1_hasException || s1_cancel_inner || (!s1_enableMem))
+  val s1_isSoftPrefetch = s1_in.bits.isSoftPrefetch
 
   val s1_sbufferForwardReq = io.forwardFromSBuffer
   val s1_lsqForwardReq = io.lsq.forwardFromSQ
   val s1_ldViolationQueryReq = io.lsq.loadViolationQuery.s1_req
   val s1_fdiReq = io.fdiReq
 
-  s1_sbufferForwardReq.valid := s1_in.valid && !(s1_exception || s1_tlb_miss) && s1_enableMem
+  s1_sbufferForwardReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
   s1_sbufferForwardReq.vaddr := s1_in.bits.vaddr
   s1_sbufferForwardReq.paddr := s1_paddr_dup_lsu
   s1_sbufferForwardReq.uop := s1_uop
@@ -252,7 +253,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_sbufferForwardReq.mask := s1_in.bits.mask
   s1_sbufferForwardReq.pc := s1_uop.cf.pc
 
-  s1_lsqForwardReq.valid := s1_in.valid && !(s1_exception || s1_tlb_miss) && s1_enableMem
+  s1_lsqForwardReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
   s1_lsqForwardReq.vaddr := s1_in.bits.vaddr
   s1_lsqForwardReq.paddr := s1_paddr_dup_lsu
   s1_lsqForwardReq.uop := s1_uop
@@ -262,7 +263,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_lsqForwardReq.pc := s1_uop.cf.pc
   io.lsq.forwardFromSQ.sqIdxMask := UIntToMask(s1_uop.sqIdx.value, StoreQueueSize)
 
-  s1_ldViolationQueryReq.valid := s1_in.valid && !(s1_exception || s1_tlb_miss) && s1_enableMem
+  s1_ldViolationQueryReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
   s1_ldViolationQueryReq.bits.paddr := s1_paddr_dup_lsu
   s1_ldViolationQueryReq.bits.uop := s1_uop
 
@@ -280,21 +281,23 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_out.valid        := s1_in.valid && s1_enableMem
   s1_out.bits.paddr   := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
-  s1_out.bits.uop.cf.exceptionVec(loadPageFault) := (s1_dtlbResp.bits.excp(0).pf.ld || s1_in.bits.uop.cf.exceptionVec(loadPageFault)) && s1_enableMem
-  s1_out.bits.uop.cf.exceptionVec(loadAccessFault) := s1_dtlbResp.bits.excp(0).af.ld && s1_enableMem
+  val s1_exceptionVec = WireInit(s1_in.bits.uop.cf.exceptionVec)
+  s1_out.bits.uop.cf.exceptionVec(loadPageFault)   := (s1_dtlbResp.bits.excp(0).pf.ld || s1_exceptionVec(loadPageFault)) && s1_enableMem && !s1_isSoftPrefetch
+  s1_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s1_dtlbResp.bits.excp(0).af.ld || s1_exceptionVec(loadAccessFault)) && s1_enableMem && !s1_isSoftPrefetch
+  s1_out.bits.uop.cf.exceptionVec := s1_exceptionVec
   s1_out.bits.ptwBack := s1_dtlbResp.bits.ptwBack
   s1_out.bits.rsIdx   := s1_in.bits.rsIdx
-  s1_out.bits.isSoftPrefetch := s1_in.bits.isSoftPrefetch
+  s1_out.bits.isSoftPrefetch := s1_isSoftPrefetch
   s1_in.ready := !s1_in.valid || s1_out.ready
 
-  val debug_s1_casue = WireInit(0.U.asTypeOf(new ReplayInfo))
-  val s1_casue_can_transfer = (!s1_out.bits.uop.cf.exceptionVec.asUInt.orR) && (!s1_in.bits.isSoftPrefetch) && s1_enableMem
-  debug_s1_casue.schedIndex := s1_out.bits.replay.schedIndex
-  debug_s1_casue.isReplayQReplay := s1_out.bits.replay.isReplayQReplay
-  debug_s1_casue.tlb_miss := s1_tlb_miss  // tlb resp miss
-  debug_s1_casue.rar_nack := s1_needLdVioCheckRedo  // rar query fail
-  debug_s1_casue.dcache_rep := s1_cancel_inner  // dcache not ready
-  debug_s1_casue.bank_conflict := s1_bank_conflict  // bank read has conflict
+  val debug_s1_cause = WireInit(0.U.asTypeOf(new ReplayInfo))
+  val s1_cause_can_transfer = !s1_hasException && (!s1_isSoftPrefetch) && s1_enableMem
+  debug_s1_cause.schedIndex := s1_out.bits.replay.schedIndex
+  debug_s1_cause.isReplayQReplay := s1_out.bits.replay.isReplayQReplay
+  debug_s1_cause.tlb_miss := s1_tlb_miss  // tlb resp miss
+  debug_s1_cause.rar_nack := s1_needLdVioCheckRedo  // rar query fail
+  debug_s1_cause.dcache_rep := s1_cancel_inner  // dcache not ready
+  debug_s1_cause.bank_conflict := s1_bank_conflict  // bank read has conflict
 
   /*
     LOAD S2:
@@ -303,8 +306,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
   PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(io.redirect))
 
-  val s2_cancel_inner = RegEnable(s1_cancel_inner,s1_out.fire)
-
+  s2_out.valid := s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
+  s2_out.bits := s2_in.bits
   val s2_pmp = WireInit(io.pmp)
   val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm,io.tlb.resp.valid)
   when(s2_static_pm.valid) {
@@ -314,19 +317,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     s2_pmp.mmio := s2_static_pm.bits
   }
 
+  val s2_cancel_inner = RegEnable(s1_cancel_inner,s1_out.fire)
   val s2_enableMem = s2_in.bits.uop.loadStoreEnable && s2_in.valid
-  val s2_is_prefetch = s2_in.bits.isSoftPrefetch
-
-  val s2_exception_vec = WireInit(s2_in.bits.uop.cf.exceptionVec)
-  s2_exception_vec(loadAccessFault) := (s2_in.bits.uop.cf.exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem
-  when(s2_is_prefetch) {
-    s2_exception_vec := 0.U.asTypeOf(s2_exception_vec.cloneType)
-  }
-  val s2_exception = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_exception_vec, lduCfg).asUInt.orR,false.B)
+  val s2_isSoftPrefetch = s2_in.bits.isSoftPrefetch
+  val s2_exceptionVec = WireInit(s2_in.bits.uop.cf.exceptionVec)
+  s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
   //FDI load access fault
-  s2_exception_vec(fdiULoadAccessFault) := io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault
+  s2_out.bits.uop.cf.exceptionVec(fdiULoadAccessFault) := (s2_exceptionVec(fdiULoadAccessFault) || io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault) &&
+   s2_enableMem && !s2_isSoftPrefetch
+  val s2_hasException = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_exceptionVec, lduCfg).asUInt.orR,false.B)
 
-  ///more resp input:
   val s2_dcacheResp = io.dcache.resp
   val s2_LSQ_LoadForwardQueryIO = Wire(new LoadForwardQueryIO)
   val s2_SB_LoadForwardQueryIO = Wire(new LoadForwardQueryIO)
@@ -338,36 +338,30 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s2_LSQ_LoadForwardQueryIO.forwardData := io.lsq.forwardFromSQ.forwardData
   s2_LSQ_LoadForwardQueryIO.forwardMask := io.lsq.forwardFromSQ.forwardMask
-//  s2_LSQ_LoadForwardQueryIO.forwardMaskFast := io.lsq.forwardFromSQ.forwardMaskFast
   s2_LSQ_LoadForwardQueryIO.dataInvalid := io.lsq.forwardFromSQ.dataInvalid
   s2_LSQ_LoadForwardQueryIO.matchInvalid := io.lsq.forwardFromSQ.matchInvalid
 
   s2_SB_LoadForwardQueryIO.forwardData := io.forwardFromSBuffer.forwardData
   s2_SB_LoadForwardQueryIO.forwardMask := io.forwardFromSBuffer.forwardMask
-//  s2_SB_LoadForwardQueryIO.forwardMaskFast := io.forwardFromSBuffer.forwardMaskFast
   s2_SB_LoadForwardQueryIO.dataInvalid := io.forwardFromSBuffer.dataInvalid // always false
   s2_SB_LoadForwardQueryIO.matchInvalid := io.forwardFromSBuffer.matchInvalid
 
   s2_loadViolationQueryResp := io.lsq.loadViolationQuery.s2_resp
 
-  ///more output: dataForwarded
   val s2_actually_mmio = s2_pmp.mmio
-  val s2_mask = s2_in.bits.mask
-  val s2_paddr = s2_in.bits.paddr
   val s2_tlb_miss = s2_in.bits.tlbMiss
-  val s2_mmio = !s2_is_prefetch && s2_actually_mmio && !s2_exception
+  val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
   val s2_cache_miss = s2_dcacheResp.bits.miss
   val s2_cache_replay = s2_dcacheResp.bits.replay
   val s2_cache_tag_error = 0.U.asTypeOf(s2_dcacheResp.bits.tag_error.cloneType)
-  val s2_ldld_violation = s2_loadViolationQueryResp.valid &&
-    s2_loadViolationQueryResp.bits.have_violation &&
+  val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
     RegNext(io.csrCtrl.ldld_vio_check_enable)
-  val s2_data_invalid = s2_LSQ_LoadForwardQueryIO.dataInvalid && !s2_ldld_violation && !s2_exception
+  val s2_data_invalid = s2_LSQ_LoadForwardQueryIO.dataInvalid && !s2_ldld_violation && !s2_hasException
 
 
   ///more output info:
   val s2_dcache_kill = s2_pmp.ld || s2_pmp.mmio // move pmp resp kill to outside
-  val s2_dcacheShouldResp = !(s2_tlb_miss || s2_exception || s2_mmio || s2_is_prefetch)
+  val s2_dcacheShouldResp = !(s2_tlb_miss || s2_hasException || s2_mmio || s2_isSoftPrefetch)
   assert(!(s2_enableMem && (!s2_cancel_inner && s2_dcacheShouldResp && !s2_dcacheResp.valid)), "DCache response got lost")
 
   // merge forward result
@@ -379,26 +373,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     s2_forwardData(i) := Mux(s2_LSQ_LoadForwardQueryIO.forwardMask(i), s2_LSQ_LoadForwardQueryIO.forwardData(i), s2_SB_LoadForwardQueryIO.forwardData(i))
   }
 
-  val s2_fullForward = ((~s2_forwardMask.asUInt).asUInt & s2_mask) === 0.U && !s2_LSQ_LoadForwardQueryIO.dataInvalid
-
-  when(s2_enableMem) {
-//    s2_out.valid := s2_in.valid && !s2_tlb_miss && !s2_data_invalid
-    //load must go to S2 to return feedback
-    s2_out.valid := s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
-  }.otherwise {
-    s2_out.valid := s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
-  }
-  s2_out.bits := s2_in.bits
-  s2_out.bits.data := 0.U
+  val s2_fullForward = ((~s2_forwardMask.asUInt).asUInt & s2_in.bits.mask) === 0.U && !s2_LSQ_LoadForwardQueryIO.dataInvalid
 
   //EnableFastForward is false
   s2_out.bits.miss := s2_cache_miss &&
-    !s2_exception &&
+    !s2_hasException &&
     !s2_fullForward
     !s2_ldld_violation &&
-    !s2_is_prefetch && s2_enableMem
+    !s2_isSoftPrefetch && s2_enableMem
 
-  s2_out.bits.uop.ctrl.fpWen := s2_in.bits.uop.ctrl.fpWen && !s2_exception
+  s2_out.bits.uop.ctrl.fpWen := s2_in.bits.uop.ctrl.fpWen && !s2_hasException
 
   ///output
   val s2_loadDataFromDcache = Wire(new LoadDataFromDcacheBundle)
@@ -406,16 +390,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s2_loadDataFromDcache.forwardMask := s2_forwardMask
   s2_loadDataFromDcache.forwardData := s2_forwardData
   s2_loadDataFromDcache.uop := s2_out.bits.uop
-  s2_loadDataFromDcache.addrOffset := s2_paddr(2, 0)
+  s2_loadDataFromDcache.addrOffset := s2_in.bits.paddr(2, 0)
 
-  val s2_can_replay_from_fetch = !s2_mmio && !s2_is_prefetch && !s2_tlb_miss
+  val s2_can_replay_from_fetch = !s2_mmio && !s2_isSoftPrefetch && !s2_tlb_miss
 
   val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss)
   s2_out.bits.mmio := s2_mmio && s2_enableMem
   s2_out.bits.uop.ctrl.flushPipe := false.B ///flushPipe logic is useless
-  s2_out.bits.uop.cf.exceptionVec := s2_exception_vec // cache error not included
 
-  val s2_dataForwarded = s2_cache_miss && !s2_exception &&
+
+  val s2_dataForwarded = s2_cache_miss && !s2_hasException &&
     (s2_fullForward || io.csrCtrl.cache_error_enable && s2_cache_tag_error)
   // io.out.bits.forwardX will be send to lq
   s2_out.bits.forwardMask := s2_forwardMask
@@ -426,8 +410,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   val s2_need_replay_from_rs = Wire(Bool())
   s2_need_replay_from_rs := s2_tlb_miss || // replay if dtlb miss
-    s2_cache_miss && !s2_is_prefetch && !s2_mmio && !s2_exception && !s2_dataForwarded || // replay if dcache miss queue full / busy
-    s2_data_invalid && !s2_is_prefetch // replay if store to load forward data is not ready
+    s2_cache_miss && !s2_isSoftPrefetch && !s2_mmio && !s2_hasException && !s2_dataForwarded || // replay if dcache miss queue full / busy
+    s2_data_invalid && !s2_isSoftPrefetch // replay if store to load forward data is not ready
 
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
@@ -443,7 +427,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_dcache_require_replay = s2_cache_replay &&
     s2_rsFeedback.valid &&
     !s2_dataForwarded &&
-    !s2_is_prefetch &&
+    !s2_isSoftPrefetch &&
     s2_out.bits.miss
 
   io.tlb.req_kill := false.B
@@ -505,13 +489,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   hitLoadOut.bits.fflags := DontCare
 
   s2_out.ready := true.B
-  val debug_s2_casue = WireInit(0.U.asTypeOf(new ReplayInfo))
-  val debugS2CasueReg = RegEnable(debug_s1_casue, s1_casue_can_transfer && s2_in.fire)
+  val debug_s2_cause = WireInit(0.U.asTypeOf(new ReplayInfo))
+  val debugS2CasueReg = RegEnable(debug_s1_cause, s1_cause_can_transfer && s2_in.fire)
   val s2_casue_can_transfer = !s2_out.bits.uop.cf.exceptionVec.asUInt.orR && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
-  debug_s2_casue := debugS2CasueReg
-  debug_s2_casue.dcache_miss := s2_cache_miss
-  debug_s2_casue.fwd_fail    := s2_data_invalid
-  dontTouch(debug_s2_casue)
+  debug_s2_cause := debugS2CasueReg
+  debug_s2_cause.dcache_miss := s2_cache_miss
+  debug_s2_cause.fwd_fail    := s2_data_invalid
+  dontTouch(debug_s2_cause)
 
   
   // load s3
@@ -653,7 +637,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replqQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := Mux(s2_wb_valid,false.B,Mux(s2_out.bits.mmio,false.B,true.B))
   io.s3_enq_replqQueue.bits.replay.schedIndex := s2_out.bits.replay.schedIndex
   io.s3_enq_replqQueue.bits.uop := s2_out.bits.uop
-  io.s3_enq_replqQueue.bits.mask := s2_mask
+  io.s3_enq_replqQueue.bits.mask := s2_in.bits.mask
   io.s3_enq_replqQueue.bits.tlbMiss := false.B
   assert(!(hitLoadOut.valid && io.s3_enq_replqQueue.bits.replay.replayCause.reduce(_|_)),"when load wb,replayCause must be 0!!")
 
