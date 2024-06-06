@@ -359,7 +359,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_data_invalid = s2_LSQ_LoadForwardQueryIO.dataInvalid && !s2_ldld_violation && !s2_hasException
 
 
-  ///more output info:
   val s2_dcache_kill = s2_pmp.ld || s2_pmp.mmio // move pmp resp kill to outside
   val s2_dcacheShouldResp = !(s2_tlb_miss || s2_hasException || s2_mmio || s2_isSoftPrefetch)
   assert(!(s2_enableMem && (!s2_cancel_inner && s2_dcacheShouldResp && !s2_dcacheResp.valid)), "DCache response got lost")
@@ -376,10 +375,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_fullForward = ((~s2_forwardMask.asUInt).asUInt & s2_in.bits.mask) === 0.U && !s2_LSQ_LoadForwardQueryIO.dataInvalid
 
   //EnableFastForward is false
-  s2_out.bits.miss := s2_cache_miss &&
-    !s2_hasException &&
-    !s2_fullForward
-    !s2_ldld_violation &&
+  s2_out.bits.miss := s2_cache_miss && !s2_hasException && !s2_fullForward && !s2_ldld_violation &&
     !s2_isSoftPrefetch && s2_enableMem
 
   s2_out.bits.uop.ctrl.fpWen := s2_in.bits.uop.ctrl.fpWen && !s2_hasException
@@ -397,7 +393,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss)
   s2_out.bits.mmio := s2_mmio && s2_enableMem
   s2_out.bits.uop.ctrl.flushPipe := false.B ///flushPipe logic is useless
-
 
   val s2_dataForwarded = s2_cache_miss && !s2_hasException &&
     (s2_fullForward || io.csrCtrl.cache_error_enable && s2_cache_tag_error)
@@ -571,11 +566,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   // load forward_fail/ldld_violation check
   // check for inst in load pipeline
   val s3_forward_fail = RegNext(io.lsq.forwardFromSQ.matchInvalid || io.forwardFromSBuffer.matchInvalid)
-  val s3_ldld_violation = RegNext(
-    io.lsq.loadViolationQuery.s2_resp.valid &&
-    io.lsq.loadViolationQuery.s2_resp.bits.have_violation &&
-    RegNext(io.csrCtrl.ldld_vio_check_enable)
-  )
+  val s3_ldld_violation = RegNext(s2_ldld_violation)
   val s3_need_replay_from_fetch = s3_forward_fail || s3_ldld_violation
   val s3_can_replay_from_fetch = RegEnable(s2_can_replay_from_fetch, s2_out.valid)
 
