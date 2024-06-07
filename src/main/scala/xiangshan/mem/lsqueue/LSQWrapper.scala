@@ -103,6 +103,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val mmioWb = DecoupledIO(new ExuOutput)
+    val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
   })
 
   val loadQueue = Module(new LoadQueue)
@@ -116,6 +117,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   io.enq.canAccept := loadQueue.io.enq.canAccept && storeQueue.io.enq.canAccept
   loadQueue.io.enq.sqCanAccept := storeQueue.io.enq.canAccept
   storeQueue.io.enq.lqCanAccept := loadQueue.io.enq.canAccept
+  loadQueue.io.stAddrReadyPtr := storeQueue.io.stAddrReadyPtr
 
   val loadValid  = Wire(Vec(exuParameters.LsExuCnt,Bool()))
   val storeValid = Wire(Vec(exuParameters.LsExuCnt,Bool()))
@@ -151,6 +153,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     a.valid := b.valid & b.bits.uop.loadStoreEnable
     a.bits := b.bits
   })
+  loadQueue.io.storeViolationQuery := io.storeViolationQuery
   loadQueue.io.s2_load_data_forwarded <> io.s2_load_data_forwarded
 //  loadQueue.io.s2_dcache_require_replay <> io.s2_dcache_require_replay
 //  loadQueue.io.s3_replay_from_fetch <> io.s3_replay_from_fetch

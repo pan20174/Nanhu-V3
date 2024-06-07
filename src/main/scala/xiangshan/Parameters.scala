@@ -137,6 +137,7 @@ case class XSCoreParameters
   LoadQueueSize: Int = 80,
   LoadQueueNWriteBanks: Int = 8,
   LoadReplayQueueSize: Int = 64,
+  LoadRAWQueueSize: Int = 80,
   StoreQueueSize: Int = 64,
   StoreQueueNWriteBanks: Int = 8,
   RobSize: Int = 192,
@@ -358,6 +359,7 @@ trait HasXSParameter {
   val LoadQueueSize = coreParams.LoadQueueSize
   val LoadQueueNWriteBanks = coreParams.LoadQueueNWriteBanks
   val LoadReplayQueueSize = coreParams.LoadReplayQueueSize
+  val LoadRAWQueueSize = coreParams.LoadRAWQueueSize
   val StoreQueueSize = coreParams.StoreQueueSize
   val StoreQueueNWriteBanks = coreParams.StoreQueueNWriteBanks
   val exuParameters = coreParams.exuParameters

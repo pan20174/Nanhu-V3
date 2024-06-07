@@ -47,6 +47,7 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
     //FDI
     val fdiReq = ValidIO(new FDIReqBundle())
     val fdiResp = Flipped(new FDIRespBundle())
+    val storeViolationQuery = ValidIO(new storeRAWQueryBundle)
   })
   io.tlb := DontCare
   val s0_in = io.stin
@@ -145,9 +146,15 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   s1_out.bits.uop.cf.exceptionVec(storePageFault) := (io.tlb.resp.bits.excp(0).pf.st || s1_in.bits.uop.cf.exceptionVec(storePageFault)) && s1_enableMem
   s1_out.bits.uop.cf.exceptionVec(storeAccessFault) := io.tlb.resp.bits.excp(0).af.st && s1_enableMem
 
+  //store load violation query
   io.lsq.valid := s1_in.valid
   io.lsq.bits := s1_out.bits
   io.lsq.bits.miss := s1_tlb_miss
+
+  io.storeViolationQuery.valid := s1_in.valid
+  io.storeViolationQuery.bits.robIdx := s1_out.bits.uop.robIdx
+  io.storeViolationQuery.bits.paddr := s1_out.bits.paddr(PAddrBits - 1,3)
+  io.storeViolationQuery.bits.mask := s1_out.bits.mask
 
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))

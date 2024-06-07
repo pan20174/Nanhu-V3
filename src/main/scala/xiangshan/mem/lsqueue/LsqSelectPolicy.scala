@@ -46,3 +46,44 @@ object ReplayQueueSelectPolicy {
     res
   }
 }
+
+class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p: Parameters) extends XSModule {
+  val io = IO(new Bundle {
+    val in = Input(Vec(inputNum, Valid(new RobPtr)))
+    val out = Output(Valid(UInt(inputNum.W)))
+  })
+  override val desiredName: String = s"RAWQueueSelectPolicy_${idx}"
+  private def ReductionFunc(in: Seq[(Valid[RobPtr], UInt)]):(Valid[RobPtr], UInt) = {
+    val selectPolicy = Module(new SelectPolicy(in.length, true, haveEqual))
+    val interRes = Wire(Valid(new RobPtr))
+    selectPolicy.io.in.zip(in).foreach({case(a, b) =>
+      a.valid := b._1.valid
+      a.bits := b._1.bits
+    })
+    interRes.valid := selectPolicy.io.out.valid
+    interRes.bits := Mux1H(selectPolicy.io.out.bits, in.map(_._1.bits))
+    val idx = Mux1H(selectPolicy.io.out.bits, in.map(_._2))
+    (interRes, idx)
+  }
+
+  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), 8, ReductionFunc)
+  io.out.valid := res._1.valid
+  io.out.bits := res._2
+}
+
+class ViolationSelector(inNum:Int, haveEqual:Boolean)(implicit p: Parameters) extends XSModule{
+  val io = IO(new Bundle{
+    val in = Vec(inNum, ValidIO(new RobPtr))
+    val out = ValidIO(new RobPtr)
+    val chosen = Output(UInt(inNum.W))
+  })
+
+  private val selector = Module(new SelectPolicy(inNum, false, haveEqual))
+  selector.io.in.zip(io.in).foreach({case(si, in) =>
+    si.valid := in.valid
+    si.bits := in.bits
+  })
+  io.out.valid := selector.io.out.valid
+  io.out.bits := Mux1H(selector.io.out.bits, io.in.map(_.bits))
+  io.chosen := selector.io.out.bits
+}

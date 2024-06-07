@@ -66,7 +66,9 @@ class LQPaddrModule(numEntries: Int, numRead: Int, numWrite: Int, numWBanks: Int
 
   val numEntryPerBank = numEntries / numWBanks
 
-  val data = Reg(Vec(numEntries, UInt((PAddrBits).W)))
+  //todo: init is tmp
+//  val data = Reg(Vec(numEntries, UInt((PAddrBits).W)))
+  val data = RegInit(VecInit(List.fill(numEntries)(0.U(PAddrBits.W))))
 
   // read ports
   for (i <- 0 until numRead) {  //todo
@@ -158,7 +160,9 @@ class LQMaskModule(numEntries: Int, numRead: Int, numWrite: Int)(implicit p: Par
     val violationMmask = Output(Vec(StorePipelineWidth, Vec(numEntries, Bool()))) // output wmask overlap vector
   })
 
-  val data = Reg(Vec(numEntries, UInt(8.W)))
+  //todo: init is tmp
+  //  val data = Reg(Vec(numEntries, UInt(8.W)))
+  val data = RegInit(VecInit(List.fill(numEntries)(0.U(8.W))))
 
   // read ports
   for (i <- 0 until numRead) {

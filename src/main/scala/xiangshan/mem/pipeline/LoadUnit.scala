@@ -96,15 +96,20 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val ldout = Decoupled(new ExuOutput)
     // S3: mmio writeback
     val mmioWb = Flipped(DecoupledIO(new ExuOutput))
-    
+
     // Global: redirect flush all pipeline
     val redirect = Flipped(ValidIO(new Redirect))
     // Global: debug trigger
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
     // Global: csr control
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
+
+    val enqRAWQueue = new LoadEnqRAWBundle
+    val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
+    val ldStop = Input(Bool())
+    val replayQFull = Input(Bool())
   })
-  
+
   /*
     LOAD S0: arb 2 input; generate vaddr; req to TLB
   */
@@ -228,7 +233,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_paddr_dup_dcache = s1_dtlbResp.bits.paddr(1)
   io.dcache.s1_paddr_dup_lsu := s1_paddr_dup_lsu
   io.dcache.s1_paddr_dup_dcache := s1_paddr_dup_dcache
-  
+
   val s1_enableMem = s1_in.bits.uop.loadStoreEnable
   val s1_hasException = Mux(s1_enableMem && s1_in.valid, ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR, false.B)
   val s1_tlb_miss = s1_dtlbResp.bits.miss
@@ -405,6 +410,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.lsq.s1_lduUpdateLQ.valid := s1_out.valid
   io.lsq.s1_lduUpdateLQ.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduUpdateLQ.bits.paddr := s1_paddr_dup_lsu
+  io.lsq.s1_lduUpdateLQ.bits.mask := s1_mask
   io.lsq.s2_load_data_forwarded := s2_dataForwarded
 
   // provide prefetcher train data
@@ -460,7 +466,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s2_cause.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   debug_s2_cause.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
   dontTouch(debug_s2_cause)
-  
+
+  io.enqRAWQueue.s2_enq.valid := s2_wb_valid
+  io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr
+  io.enqRAWQueue.s2_enq.bits.mask := s2_out.bits.mask
+  io.enqRAWQueue.s2_enq.bits.sqIdx := s2_out.bits.uop.sqIdx
+
+  // load s3
+//  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid, hitLoadOut.bits, io.lsq.s3_lq_wb.bits), hitLoadOut.valid | io.lsq.s3_lq_wb.valid)
+//  val s3_load_wb_meta_reg = RegEnable(hitLoadOut.bits, hitLoadOut.valid)
+  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
   /*
     LOAD S3: writeback data merge; writeback control
   */

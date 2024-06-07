@@ -29,7 +29,7 @@ import xiangshan.frontend.FtqPtr
 import xiangshan.ExceptionNO._
 import xiangshan.backend.execute.fu.FuConfigs
 import xiangshan.backend.issue.SelectPolicy
-import xiangshan.mem.lsqueue.LSQExceptionGen
+import xiangshan.mem.lsqueue.{LSQExceptionGen, LoadRAWQueueDataModule}
 import xs.utils.perf.HasPerfLogging
 
 class LqPtr(implicit p: Parameters) extends CircularQueuePtr[LqPtr](
@@ -77,6 +77,7 @@ class LqEnqIO(implicit p: Parameters) extends XSBundle {
 
 class LqPaddrWriteBundle(implicit p: Parameters) extends XSBundle {
   val paddr = Output(UInt(PAddrBits.W))
+  val mask = Output(UInt(8.W))
   val lqIdx = Output(new LqPtr)
 }
 
@@ -99,6 +100,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val loadPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqPaddrWriteBundle)))
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
+    val storeViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
     val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
     val load_s1 = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ)) // TODO: to be renamed
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
@@ -117,6 +119,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val mmioWb = DecoupledIO(new ExuOutput)
+    val stAddrReadyPtr = Input(new SqPtr)
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
@@ -134,6 +137,18 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr
   replayQueue.io.degbugInfo.debug_enqPtr := io.debug_enqPtr
 
+
+  val rawQueue = Module(new LoadRAWQueue)
+  rawQueue.io := DontCare
+  rawQueue.io.redirect := io.brqRedirect
+  rawQueue.io.stAddrReadyPtr := io.stAddrReadyPtr
+  rawQueue.io.storeQuery := io.storeViolationQuery
+
+//  val debugReplayQ = Seq.fill(LoadPipelineWidth)(RegInit(0.U.asTypeOf(new ReplayQueueIssueBundle)))
+//  for(i <- 0 until LoadPipelineWidth){
+//    debugReplayQ(i) <> replayQueue.io.replayQIssue(i).bits
+//    dontTouch(debugReplayQ(i))
+//  }
   XSPerfAccumulate("replayq", replayQueue.io.replayQIssue(0).fire || replayQueue.io.replayQIssue(1).fire)
   println("LoadQueue: size:" + LoadQueueSize)
 
@@ -255,6 +270,8 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   for (i <- 0 until LoadPipelineWidth) {
     dataModule.io.wb.wen(i) := false.B
     dataModule.io.paddr.wen(i) := false.B
+    rawQueue.io.loadEnq_paddr(i).valid := false.B
+    rawQueue.io.loadEnq_mask(i).valid := false.B
     vaddrTriggerResultModule.io.wen(i) := false.B
     val loadWbIndex = io.loadIn(i).bits.uop.lqIdx.value
 
@@ -314,6 +331,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       loadWbData.fwdMask := io.loadIn(i).bits.forwardMask
       dataModule.io.wbWrite(i, loadWbIndex, loadWbData)
       dataModule.io.wb.wen(i) := true.B
+      rawQueue.io.loadEnq_mask(i).valid := true.B
+      rawQueue.io.loadEnq_mask(i).lqIdx := loadWbIndex
+      rawQueue.io.loadEnq_mask(i).mask := loadWbData.mask
     }
     // dirty code for load instr
     when(io.loadIn(i).bits.lq_data_wen_dup(1)){
@@ -345,6 +365,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       dataModule.io.paddr.wen(i) := true.B
       dataModule.io.paddr.waddr(i) := io.loadPaddrIn(i).bits.lqIdx.value
       dataModule.io.paddr.wdata(i) := io.loadPaddrIn(i).bits.paddr
+      rawQueue.io.loadEnq_paddr(i).valid := true.B
+      rawQueue.io.loadEnq_paddr(i).lqIdx := io.loadPaddrIn(i).bits.lqIdx.value
+      rawQueue.io.loadEnq_paddr(i).paddr := io.loadPaddrIn(i).bits.paddr(PAddrBits - 1, 3)
     }
 
     // vaddrModule write is delayed, as vaddrModule will not be read right after write
@@ -449,6 +472,14 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     // check if load already in lq needs to be rolledback
     dataModule.io.violation(i).paddr := io.storeIn(i).bits.paddr
     dataModule.io.violation(i).mask := io.storeIn(i).bits.mask
+
+//    rawQueue.io.violation(i).paddr := io.storeIn(i).bits.paddr(PAddrBits - 1, 3)
+//    rawQueue.io.violation(i).mask := io.storeIn(i).bits.mask
+
+//    when(io.storeIn(i).valid) {
+//      assert(dataModule.io.violation(i).violationMask === rawQueue.io.violation(i).violationMask, "must be equal!!!")
+//    }
+
     val addrMaskMatch = RegEnable(dataModule.io.violation(i).violationMask.asUInt,io.storeIn(i).valid)
     val entryNeedCheck = RegNext(VecInit((0 until LoadQueueSize).map(j => {
       allocated(j) && stToEnqPtrMask(j) && (datavalid(j) || miss(j))
