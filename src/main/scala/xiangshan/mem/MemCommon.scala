@@ -67,10 +67,9 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   //softprefetch
   val isSoftPrefetch = Bool()
-  val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
-  val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
-  val isReplayQReplay = Bool()
 
+  // replayInfo
+  val replay = new ReplayInfo
 }
 
 class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
@@ -96,9 +95,9 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
 
     lq_data_wen_dup := DontCare
 
-    replayCause := DontCare
-    schedIndex := DontCare
-    isReplayQReplay := DontCare
+    replay.replayCause := DontCare
+    replay.schedIndex := DontCare
+    replay.isReplayQReplay := DontCare
   }
 }
 
@@ -113,39 +112,10 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
   val isReplayQReplay = Bool()
   val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
   val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
-  val vaddr_replay = UInt(VAddrBits.W)
+  val vaddr = UInt(VAddrBits.W)
 
   //Rs
   val rsIdx = new RsIdx
-
-  def fromRsToS0Bundle(input: ExuInput,inRsIdx: RsIdx): Unit = {
-    //EXUInput
-    uop := input.uop
-    src := input.src
-    vm := input.vm
-
-    //Rs
-    rsIdx := inRsIdx
-
-    vaddr_replay := 0.U
-    replayCause.foreach(_ := false.B)
-    schedIndex := 0.U
-    isReplayQReplay := false.B
-  }
-
-  def fromRQToS0Bundle(input: ReplayQueueIssueBundle): Unit = {
-    uop := input.uop
-    src.foreach(_ := 0.U)
-    vm := 0.U
-
-    //Rs
-    rsIdx := DontCare
-
-    replayCause.foreach(_ := false.B)
-    vaddr_replay := input.vaddr
-    schedIndex := input.schedIndex
-    isReplayQReplay := true.B
-  }
 }
 
 

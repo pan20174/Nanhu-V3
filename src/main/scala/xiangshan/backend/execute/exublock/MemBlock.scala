@@ -560,7 +560,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     PrintTriggerInfo(tEnable(j), tdata(j))
 
   for (i <- 0 until exuParameters.LduCnt) {
-    loadUnits(i).io.ldStop := lsq.io.ldStop
     loadUnits(i).io.redirect := Pipe(redirectIn)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
@@ -595,7 +594,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //replayQueue
     lsq.io.replayQEnq(i) <> loadUnits(i).io.s3_enq_replqQueue
     loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
-    loadUnits(i).io.replayQFull <> lsq.io.replayQFull
     //cancel
     io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
     // prefetch
