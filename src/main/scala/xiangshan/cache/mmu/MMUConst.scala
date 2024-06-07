@@ -33,10 +33,12 @@ case class TLBParameters
   useDmode: Boolean = true,
   sameCycle: Boolean = false,
   missSameCycle: Boolean = false,
-  nWays: Int = 48,
+  normalNWays: Int = 48,
+  superNWays: Int = 8,
   // To avoid issues with unexpected nSets values in FA Cache, 
   // we hardcode nSets to 1 and restrict user modifications
-  replacer: Option[String] = Some("plru"),
+  normalReplacer: Option[String] = Some("plru"),
+  superReplacer: Option[String] = Some("plru"),
   outReplace: Boolean = false,
   shouldBlock: Boolean = false, // only for perf, not support for io
   partialStaticPMP: Boolean = false, // partila static pmp result stored in entries

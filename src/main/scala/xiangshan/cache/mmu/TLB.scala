@@ -74,13 +74,25 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
   def widthMap[T <: Data](f: Int => T) = (0 until Width).map(f)
 
 
-  val tlbfa = TlbStorage(
+  val tlbnm = TlbStorage(
+    name = "tlbnm",
+    sameCycle = q.sameCycle,
+    ports = Width,
+    nDups = nRespDups,
+    nSets = 1,
+    nWays = q.normalNWays,
+    saveLevel = q.saveLevel,
+    normalPage = true,
+    superPage = true,
+  )
+
+    val tlbsp = TlbStorage(
     name = "tlbfa",
     sameCycle = q.sameCycle,
     ports = Width,
     nDups = nRespDups,
     nSets = 1,
-    nWays = q.nWays,
+    nWays = q.superNWays,
     saveLevel = q.saveLevel,
     normalPage = true,
     superPage = true,
@@ -88,7 +100,14 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
 
 
   for (i <- 0 until Width) {
-    tlbfa.r_req_apply(
+    tlbnm.r_req_apply(
+      valid = io.requestor(i).req.valid,
+      vpn = vpn(i),
+      asid = csr_dup(i).satp.asid,
+      i = i,
+    )
+
+    tlbsp.r_req_apply(
       valid = io.requestor(i).req.valid,
       vpn = vpn(i),
       asid = csr_dup(i).satp.asid,
@@ -96,12 +115,16 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     )
   }
 
-  tlbfa.sfence <> sfence
-  tlbfa.csr <> csr_dup_2
+  tlbnm.sfence <> sfence
+  tlbnm.csr <> csr_dup_2
+
+  tlbsp.sfence <> sfence
+  tlbsp.csr <> csr_dup_2
 
   val refill_now = ptw_resp_v
   def TLBRead(i: Int) = {
-    val (hit_sameCycle, hit, ppn_, perm_) = tlbfa.r_resp_apply(i)
+    val (nm_hit_sameCycle, nm_hit, nm_ppn, nm_perm) = tlbnm.r_resp_apply(i)
+    val (sp_hit_sameCycle, sp_hit, sp_ppn, sp_perm) = tlbsp.r_resp_apply(i)
     // assert(!(normal_hit && super_hit && vmEnable_dup(i) && RegNext(req(i).valid, init = false.B)))
 
     val cmdReg = if (!q.sameCycle) RegEnable(cmd(i), reqValid(i)) else cmd(i)
@@ -109,7 +132,8 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     val offReg = if (!q.sameCycle) RegEnable(reqAddr(i).off, reqValid(i)) else reqAddr(i).off
     val sizeReg = if (!q.sameCycle) RegEnable(req(i).bits.size, reqValid(i)) else req(i).bits.size
 
-
+    val hit = nm_hit || sp_hit
+    val hit_sameCycle = nm_hit_sameCycle || sp_hit_sameCycle
 
     /** *************** next cycle when two cycle is false******************* */
     val miss = !hit && vmEnable_dup(i)
@@ -127,7 +151,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     // dynamic: superpage (or full-connected reg entries) -> check pmp when translation done
     // static: 4K pages (or sram entries) -> check pmp with pre-checked results
 //    val pmp_paddr = Mux(vmEnable_dup(i), Cat(super_ppn(0), offReg), if (!q.sameCycle) RegNext(vaddr) else vaddr)
-    val pmp_paddr = Mux(vmEnable_dup(i), Cat(ppn_(0), offReg), if (!q.sameCycle) RegEnable(vaddr,reqValid(i)) else vaddr)
+    val pmp_paddr = Mux(vmEnable_dup(i), Cat(sp_ppn(0), offReg), if (!q.sameCycle) RegEnable(vaddr,reqValid(i)) else vaddr)
     pmp(i).valid := resp(i).valid
     pmp(i).bits.addr := pmp_paddr
     pmp(i).bits.size := sizeReg
@@ -136,8 +160,8 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     // duplicate resp part
     for (d <- 0 until nRespDups) {
       // ppn and perm from tlbfa resp
-      val ppn = ppn_(d)
-      val perm = perm_(d)
+      val ppn = Mux(sp_hit, sp_ppn(d), nm_ppn(d))
+      val perm = Mux(sp_hit, sp_perm(d), nm_perm(d))
 
       val pf = perm.pf
       val af = perm.af
@@ -185,21 +209,37 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
   }
 
 
-  val refill_idx = if (q.outReplace) {
-    io.replace.page.access <> tlbfa.access
-    io.replace.page.chosen_set := DontCare  // only fa
-    io.replace.page.refillIdx
+  val normal_refill_idx = if (q.outReplace) {
+    io.replace.normalPage.access <> tlbnm.access
+    io.replace.normalPage.chosen_set := DontCare  // only fa
+    io.replace.normalPage.refillIdx
   } else {
-    val re = ReplacementPolicy.fromString(q.replacer, q.nWays)
-    re.access(tlbfa.access.map(_.touch_ways))
+    val re = ReplacementPolicy.fromString(q.normalReplacer, q.normalNWays)
+    re.access(tlbnm.access.map(_.touch_ways))
+    re.way
+  }
+
+  val super_refill_idx = if (q.outReplace) {
+    io.replace.superPage.access <> tlbsp.access
+    io.replace.superPage.chosen_set := DontCare
+    io.replace.superPage.refillIdx
+  } else {
+    val re = ReplacementPolicy.fromString(q.normalReplacer, q.normalNWays)
+    re.access(tlbsp.access.map(_.touch_ways))
     re.way
   }
 
   val refill = ptw_resp_v && !sfence.valid && !satp.changed
 
-  tlbfa.w_apply(
-    valid = refill,
-    wayIdx = refill_idx,
+  tlbnm.w_apply(
+    valid = refill && ptw_resp.entry.is_normalentry(),
+    wayIdx = normal_refill_idx,
+    data = ptw_resp,
+  )
+
+  tlbsp.w_apply(
+    valid = refill && !ptw_resp.entry.is_normalentry(),
+    wayIdx = super_refill_idx,
     data = ptw_resp,
   )
 
@@ -276,7 +316,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
   }
   XSDebug(ptw.resp.valid, p"L2TLB resp:${ptw.resp.bits} (v:${ptw.resp.valid}r:${ptw.resp.ready}) \n")
 
-  println(s"${q.name}: page: ${q.nWays} Ways fully-associative ${q.replacer.get}")
+  println(s"${q.name}: normal page: ${q.normalNWays} Ways fully-associative ${q.normalReplacer.get}")
 
 //   // NOTE: just for simple tlb debug, comment it after tlb's debug
   // assert(!io.ptw.resp.valid || io.ptw.resp.bits.entry.tag === io.ptw.resp.bits.entry.ppn, "Simple tlb debug requires vpn === ppn")
@@ -299,9 +339,13 @@ class TlbReplace(Width: Int, q: TLBParameters)(implicit p: Parameters) extends T
   val io = IO(new TlbReplaceIO(Width, q))
 
   // no sa
-  val re = ReplacementPolicy.fromString(q.replacer, q.nWays)
-  re.access(io.page.access.map(_.touch_ways))
-  io.page.refillIdx := re.way
+  val normal_re = ReplacementPolicy.fromString(q.normalReplacer, q.normalNWays)
+  normal_re.access(io.normalPage.access.map(_.touch_ways))
+  io.normalPage.refillIdx := normal_re.way
+
+  val super_re = ReplacementPolicy.fromString(q.superReplacer, q.superNWays)
+  super_re.access(io.superPage.access.map(_.touch_ways))
+  io.superPage.refillIdx := super_re.way
 }
 
 object TLB {

@@ -113,27 +113,34 @@ class MinimalConfig(n: Int = 1) extends Config(
           useDmode = false,
           sameCycle = false,
           missSameCycle = true,
-          nWays = 4,
-          replacer = Some("plru"),
+          normalNWays = 4,
+          superNWays = 2,
+          normalReplacer = Some("plru"),
+          superReplacer = Some("plru"),
           shouldBlock = true
         ),
         ldtlbParameters = TLBParameters(
           name = "ldtlb",
-          nWays = 16,
-          replacer = Some("plru"),
+          normalNWays = 16,
+          superNWays = 4,
+          normalReplacer = Some("plru"),
+          superReplacer = Some("plru"),
           partialStaticPMP = true,
           outReplace = false
         ),
         sttlbParameters = TLBParameters(
           name = "sttlb",
-          nWays = 16,
-          replacer = Some("plru"),
+          normalNWays = 16,
+          superNWays = 4,
+          normalReplacer = Some("plru"),
+          superReplacer = Some("plru"),
           partialStaticPMP = true,
           outReplace = false
         ),
         btlbParameters = TLBParameters(
           name = "btlb",
-          nWays = 8,
+          normalNWays = 8,
+          superNWays = 2,
         ),
         l2tlbParameters = L2TLBParameters(
           l1Size = 4,
