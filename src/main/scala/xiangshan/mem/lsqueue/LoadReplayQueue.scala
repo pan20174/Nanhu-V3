@@ -11,6 +11,7 @@ import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.backend.issue.RsIdx
 import xiangshan.backend.rob.RobPtr
+import xiangshan.cache.HasDCacheParameters
 
 object LoadReplayCauses {
   /*
@@ -127,6 +128,7 @@ class ReplayQDebugBundle(implicit p: Parameters) extends XSBundle{
 class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule
   with HasLoadHelper
   with HasPerfLogging
+  with HasDCacheParameters
 {
   val io = IO(new Bundle() {
     val enq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
@@ -151,8 +153,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val causeReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(LoadReplayCauses.allCauses.W))))
   // uop: micro op per entry
   val uopReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U.asTypeOf(new MicroOp))))
+  // replay penalty, prevent dead block
   val penaltyReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(penaltyRegWidth.W))))
   val counterReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(log2Up(counterRegMax).W))))
+  // hintIDReg: store the Hint ID of TLB miss or Dcache miss
+  val hintIDReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(reqIdWidth.W))))
 
   // replayQueue enq\deq control
   val freeList = Module(new FreeList(
@@ -213,13 +218,16 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       causeReg(enqIndex)     := enq.bits.replay.replayCause.asUInt
       penaltyReg(enqIndex)   := 0.U
       blockingReg(enqIndex)  := true.B
+      hintIDReg(enqIndex)    := 0.U
       when(enq.bits.replay.replayCause(LoadReplayCauses.C_BC)){
         counterReg(enqIndex) := 1.U << penaltyReg(enqIndex)
         penaltyReg(enqIndex)  := penaltyReg(enqIndex) + 1.U
         blockingReg(enqIndex) := true.B
-      }.otherwise(
+      }.elsewhen(enq.bits.replay.replayCause(LoadReplayCauses.C_TM)){
+        hintIDReg(enqIndex) := (1.U << reqIdWidth) - 1.U
+      }.otherwise{
         XSError(false.B, p"cause ${enq.bits.replay.replayCause.asUInt} not implemented other replay cause yet")
-      )
+      }
       vaddrModule.io.wen(i)   := true.B
       vaddrModule.io.waddr(i) := enqIndex
       vaddrModule.io.wdata(i) := enq.bits.vaddr
@@ -239,6 +247,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       }
     }
   }
+
+  (0 until LoadReplayQueueSize).map(i => {
+    // case TLB MSS
+    when (causeReg(i)(LoadReplayCauses.C_TM)) {
+      blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+    }
+  })
 
   allocatedReg.zipWithIndex.foreach({case(valid,idx) => {
     when(valid){
