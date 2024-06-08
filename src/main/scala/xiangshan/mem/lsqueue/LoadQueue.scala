@@ -100,15 +100,11 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
-    val s3_delayed_load_error = Vec(LoadPipelineWidth, Input(Bool()))
-    val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
-    val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val load_s1 = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ)) // TODO: to be renamed
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     val lqSafeDeq = Input(new RobPtr)
     val robHead = Input(new RobPtr)
     val rollback = Output(Valid(new Redirect)) // replay now starts from load instead of store
-//    val dcache = Flipped(ValidIO(new Refill)) // TODO: to be renamed
     val release = Flipped(ValidIO(new Release))
     val uncache = new UncacheWordIO
     val exceptionAddr = new ExceptionAddrIO
@@ -123,7 +119,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val mmioWb = DecoupledIO(new ExuOutput)
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
-//    val mmioRawDataOut = Output(new LoadDataFromLQBundle)
   })
 
   val replayQueue = Module(new LoadReplayQueue(enablePerf = true))
@@ -136,26 +131,17 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   io.replayQFull := replayQueue.io.replayQFull
   replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr
   replayQueue.io.degbugInfo.debug_enqPtr := io.debug_enqPtr
-//  val debugReplayQ = Seq.fill(LoadPipelineWidth)(RegInit(0.U.asTypeOf(new ReplayQueueIssueBundle)))
-//  for(i <- 0 until LoadPipelineWidth){
-//    debugReplayQ(i) <> replayQueue.io.replayQIssue(i).bits
-//    dontTouch(debugReplayQ(i))
-//  }
+
   XSPerfAccumulate("replayq", replayQueue.io.replayQIssue(0).fire || replayQueue.io.replayQIssue(1).fire)
   println("LoadQueue: size:" + LoadQueueSize)
 
   val uop = Reg(Vec(LoadQueueSize, new MicroOp))
-  // val data = Reg(Vec(LoadQueueSize, new LsRobEntry))
   val dataModule = Module(new LoadQueueDataWrapper(LoadQueueSize, wbNumRead = LoadPipelineWidth, wbNumWrite = LoadPipelineWidth))
   dataModule.io := DontCare
-//  val vaddrModule = Module(new SyncDataModuleTemplate(UInt(VAddrBits.W), LoadQueueSize, numRead = LoadPipelineWidth + 1, numWrite = LoadPipelineWidth, "LqVaddr"))
-//  vaddrModule.io := DontCare  //todo
 
   val vaddrModule = Module(new LoadQueueVaddrModule(UInt(VAddrBits.W), LoadQueueSize, numRead = LoadPipelineWidth, numWrite = LoadPipelineWidth, "LqVaddr"))
   vaddrModule.io := DontCare //todo
 
-//  val vaddrTriggerResultModule = Module(new SyncDataModuleTemplate(Vec(TriggerNum, Bool()), LoadQueueSize, numRead = LoadPipelineWidth, numWrite = LoadPipelineWidth, "LqTrigger"))
-//  vaddrTriggerResultModule.io := DontCare
   val vaddrTriggerResultModule = Module(new vaddrTriggerResultDataModule(Vec(TriggerNum, Bool()), LoadQueueSize, numRead = LoadPipelineWidth, numWrite = LoadPipelineWidth, "LqTrigger"))
   vaddrTriggerResultModule.io := DontCare
 
@@ -170,9 +156,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val released = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load data has been released by dcache
   val error = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load data has been corrupted
   val miss = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load inst missed, waiting for miss queue to accept miss request
-  // val listening = Reg(Vec(LoadQueueSize, Bool())) // waiting for refill result
   val pending = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // mmio pending: inst is an mmio inst, it will not be executed until it reachs the end of rob
-  val refilling = WireInit(VecInit(List.fill(LoadQueueSize)(false.B))) // inst has been writebacked to CDB
 
   val debug_mmio = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // mmio: inst is an mmio inst
   val debug_paddr = RegInit(VecInit(List.fill(LoadQueueSize)(0.U(PAddrBits.W)))) // mmio: inst is an mmio inst
@@ -308,7 +292,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
       val dcacheMissed = io.loadIn(i).bits.miss && !io.loadIn(i).bits.mmio
       if(EnableFastForward){
-        miss(loadWbIndex) := dcacheMissed && !io.s2_load_data_forwarded(i) && !io.s2_dcache_require_replay(i)
+        miss(loadWbIndex) := dcacheMissed && !io.s2_load_data_forwarded(i)
       } else {
         miss(loadWbIndex) := dcacheMissed && !io.s2_load_data_forwarded(i)
       }
@@ -367,28 +351,10 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     vaddrModule.io.wen(i) := RegNext(io.loadIn(i).fire)
   }
 
-
-  // Refill 64 bit in a cycle
-  dataModule.io.refill.valid := false.B
-  dataModule.io.refill.paddr := DontCare
-  dataModule.io.refill.data := DontCare
-
-  val s2_dcache_require_replay = WireInit(VecInit((0 until LoadPipelineWidth).map(i =>{
-    RegNext(io.loadIn(i).fire) && RegNext(io.s2_dcache_require_replay(i))
-  })))
-  dontTouch(s2_dcache_require_replay)
-
-  (0 until LoadQueueSize).map(i => {
-    dataModule.io.refill.refillMask(i) := allocated(i) && miss(i)
-    when(dataModule.io.refill.valid && dataModule.io.refill.refillMask(i) && dataModule.io.refill.matchMask(i)) {
-      datavalid(i) := true.B
-      miss(i) := false.B
-      when(!s2_dcache_require_replay.asUInt.orR){
-        refilling(i) := true.B
-      }
-
-    }
-  })
+//  val s2_dcache_require_replay = WireInit(VecInit((0 until LoadPipelineWidth).map(i =>{
+//    RegNext(io.loadIn(i).fire) && RegNext(io.s2_dcache_require_replay(i))
+//  })))
+//  dontTouch(s2_dcache_require_replay)
 
   for (i <- 0 until LoadPipelineWidth) {
     val loadWbIndex = io.loadIn(i).bits.uop.lqIdx.value
@@ -398,21 +364,13 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       // s2_dcache_require_replay will be used to update lq flag 1 cycle after for better timing
       //
       // io.s2_dcache_require_replay comes from dcache miss req reject, which is quite slow to generate
-      when(s2_dcache_require_replay(i)) {
-        // do not writeback if that inst will be resend from rs
-        // rob writeback will not be triggered by a refill before inst replay
-        miss(lastCycleLoadWbIndex) := false.B // disable refill listening
-        datavalid(lastCycleLoadWbIndex) := false.B // disable refill listening
-        assert(!datavalid(lastCycleLoadWbIndex))
-      }
-    }
-    // update load error state in load s3
-    when(RegNext(io.loadIn(i).fire) && io.s3_delayed_load_error(i)){
-      uop(lastCycleLoadWbIndex).cf.exceptionVec(loadAccessFault) := true.B
-    }
-    // update inst replay from fetch flag in s3
-    when(RegNext(io.loadIn(i).fire) && io.s3_replay_from_fetch(i)){
-      uop(lastCycleLoadWbIndex).ctrl.replayInst := true.B
+//      when(s2_dcache_require_replay(i)) {
+//        // do not writeback if that inst will be resend from rs
+//        // rob writeback will not be triggered by a refill before inst replay
+//        miss(lastCycleLoadWbIndex) := false.B // disable refill listening
+//        datavalid(lastCycleLoadWbIndex) := false.B // disable refill listening
+//        assert(!datavalid(lastCycleLoadWbIndex))
+//      }
     }
   }
 

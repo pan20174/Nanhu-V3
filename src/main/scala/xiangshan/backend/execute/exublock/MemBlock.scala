@@ -249,8 +249,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val hartId = Input(UInt(8.W))
     // in
     val stIssuePtr = Output(new SqPtr())
-    // out
-    val s3_delayed_load_error = Vec(exuParameters.LduCnt, Output(Bool()))
     // misc
     val stIn = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
     val ptw = new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt)
@@ -619,13 +617,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 
     // passdown to lsq (load s3)
-    lsq.io.s2_dcache_require_replay(i) <> loadUnits(i).io.lsq.s2_dcache_require_replay
-    lsq.io.s3_replay_from_fetch(i) <> loadUnits(i).io.lsq.s3_replay_from_fetch
-    lsq.io.s3_delayed_load_error(i) <> loadUnits(i).io.s3_delayed_load_error
-
-    // alter writeback exception info
-    io.s3_delayed_load_error(i) := loadUnits(i).io.lsq.s3_delayed_load_error
-
+//    lsq.io.s2_dcache_require_replay(i) <> loadUnits(i).io.lsq.s2_dcache_require_replay
+//    lsq.io.s3_replay_from_fetch(i) <> loadUnits(i).io.lsq.s3_replay_from_fetch
 
     // --------------------------------
     // Load Triggers

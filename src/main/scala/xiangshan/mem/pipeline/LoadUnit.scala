@@ -37,12 +37,11 @@ class LoadToLsqIO(implicit p: Parameters) extends XSBundle {
 
   val s2_lduUpdateLQ = ValidIO(new LqWriteBundle)
   val s2_load_data_forwarded = Output(Bool())
-  val s2_dcache_require_replay = Output(Bool())
+//  val s2_dcache_require_replay = Output(Bool())
 
 //  val s3_lq_wb = Flipped(DecoupledIO(new ExuOutput))
 //  val s3_lq_wbLdRawData = Input(new LoadDataFromLQBundle)
-  val s3_delayed_load_error = Output(Bool())
-  val s3_replay_from_fetch = Output(Bool()) // update uop.ctrl.replayInst in load queue in s3
+//  val s3_replay_from_fetch = Output(Bool()) // update uop.ctrl.replayInst in load queue in s3
 
   val forwardFromSQ = new PipeLoadForwardFromSQ
   val loadViolationQuery = new LoadViolationQueryIO
@@ -104,8 +103,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
     // Global: csr control
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
-
-    val s3_delayed_load_error = Output(Bool()) // load ecc error // Note that io.s3_delayed_load_error and io.lsq.s3_delayed_load_error is different
   })
   
   /*
@@ -236,7 +233,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_hasException = Mux(s1_enableMem && s1_in.valid, ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR, false.B)
   val s1_tlb_miss = s1_dtlbResp.bits.miss
   val s1_bank_conflict = io.dcache.s1_bank_conflict
-  val s1_cancel_inner = RegEnable(s0_cancel,s0_out.fire)  
+  val s1_cancel_inner = RegEnable(s0_cancel,s0_out.fire)
   val s1_isSoftPrefetch = s1_in.bits.isSoftPrefetch
   val s1_dcacheKill = s1_in.valid && (s1_tlb_miss || s1_hasException || s1_cancel_inner || (!s1_enableMem))
   io.dcache.s1_kill := s1_dcacheKill
@@ -360,7 +357,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   val s2_dcache_kill = s2_pmp.ld || s2_pmp.mmio // move pmp resp kill to outside
   // to kill mmio resp which are redirected
-  io.dcache.s2_kill := s2_dcache_kill 
+  io.dcache.s2_kill := s2_dcache_kill
 
   val s2_dcacheShouldResp = !(s2_tlb_miss || s2_hasException || s2_mmio || s2_isSoftPrefetch)
   assert(!(s2_enableMem && (!s2_cancel_inner && s2_dcacheShouldResp && !s2_dcacheResp.valid)), "DCache response got lost")
@@ -388,8 +385,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     !s2_isSoftPrefetch && s2_enableMem
   s2_out.bits.uop.ctrl.fpWen := s2_in.bits.uop.ctrl.fpWen && !s2_hasException
   s2_out.bits.mmio := s2_mmio && s2_enableMem
-  s2_out.bits.uop.ctrl.flushPipe := false.B ///flushPipe logic is useless
-  // io.out.bits.forwardX will be send to lq
+
   s2_out.bits.forwardMask := s2_forwardMask
   s2_out.bits.forwardData := s2_forwardData // data from dcache is not included in io.out.bits.forwardData
   s2_in.ready := s2_out.ready || !s2_in.valid
@@ -429,8 +425,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))
   io.lsq.s2_lduUpdateLQ.bits.lq_data_wen_dup := s2_wen_dup
 
-  val s2_dcache_require_replay = s2_cache_replay && s2_rsFeedback.valid && !s2_dataForwarded && !s2_isSoftPrefetch && s2_out.bits.miss
-  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
+//  val s2_dcache_require_replay = s2_cache_replay && s2_rsFeedback.valid && !s2_dataForwarded && !s2_isSoftPrefetch && s2_out.bits.miss
+//  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
 
   // write to rob and writeback bus
   val s2_wb_valid = s2_out.valid && !s2_tlb_miss && !s2_data_invalid && !s2_cancel_inner && !s2_out.bits.miss &&
@@ -458,7 +454,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s2_cause := debugS2CauseReg
   debug_s2_cause.dcache_miss := s2_out.bits.miss|| debugS2CauseReg.dcache_miss
   debug_s2_cause.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
-  debug_s2_cause.dcache_rep  := s2_dcache_require_replay || debugS2CauseReg.dcache_rep
+  debug_s2_cause.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
   dontTouch(debug_s2_cause)
   
   /*
@@ -468,7 +464,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s3_in.ready := true.B
   PipelineConnect(s2_out, s3_in, true.B, s2_out.bits.uop.robIdx.needFlush(io.redirect))
 
-  //  val s2_out = Wire(Decoupled(new LsPipelineBundle))
   // mmio data from load queue
   val s3_mmioDataFromLq = RegEnable(io.mmioWb.bits.data, io.mmioWb.valid)
   // data from dcache hit
@@ -506,12 +501,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
   io.feedbackSlow.bits.sourceType := RegNext(s2_rsFeedback.bits.sourceType)
 
-  // If replay is reported at load_s1, inst will be canceled (will not enter load_s2),
-  // in that case:
-  // * replay should not be reported twice
   assert(!(RegNext(io.feedbackFast.valid) && io.feedbackSlow.valid))
-  // * io.fastUop.valid should not be reported
-//  assert(!RegNext(io.feedbackFast.valid && io.fastUop.valid))
 
   // load forward_fail/ldld_violation check
   // check for inst in load pipeline
@@ -520,19 +510,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s3_need_replay_from_fetch = s3_forward_fail || s3_ldld_violation
   val s3_can_replay_from_fetch = RegEnable(s2_out.bits.mmio && !s2_out.bits.isSoftPrefetch && s2_out.bits.tlbMiss, s2_out.valid)
 
-  // 1) use load pipe check result generated in load_s3 iff load_hit
   when (RegNext(hitLoadOut.valid)) {
     io.ldout.bits.uop.ctrl.replayInst := s3_need_replay_from_fetch
   }
-  // 2) otherwise, write check result to load queue
-  io.lsq.s3_replay_from_fetch := s3_need_replay_from_fetch && s3_can_replay_from_fetch
 
-  // s3_delayed_load_error path is not used for now, as we writeback load result in load_s3
-  // but we keep this path for future use
-  io.s3_delayed_load_error := false.B
-  io.lsq.s3_delayed_load_error := false.B //load_s2.io.s3_delayed_load_error
-
-//  io.lsq.s3_lq_wb.ready := !hitLoadOut.valid
   io.mmioWb.ready := !hitLoadOut.valid
 
   val lastValidData = RegEnable(io.ldout.bits.data, io.ldout.fire)
@@ -598,7 +579,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debugModule.io.infoIn.s0_valid := s0_valid
   debugModule.io.infoIn.s1_valid := s1_in.valid
   debugModule.io.infoIn.s2_valid := s2_in.valid
-//  debugModule.io.infoIn.s3_valid :=
+  debugModule.io.infoIn.s3_valid := s3_in.valid
   debugModule.io.infoIn.wb_valid := io.ldout.valid
   debugModule.io.infoIn.rsIdx := io.rsIdx
   debugModule.io.infoIn.robIdx := s0_sel_src.uop.robIdx
@@ -608,7 +589,7 @@ class LdDebugBundle(implicit p: Parameters) extends XSBundle {
   val s0_valid = Bool()
   val s1_valid = Bool()
   val s2_valid = Bool()
-//  val s3_valid = Bool()
+  val s3_valid = Bool()
   val wb_valid = Bool()
   val rsIdx = new RsIdx()
   val robIdx = new RobPtr()
