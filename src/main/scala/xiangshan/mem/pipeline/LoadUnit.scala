@@ -428,11 +428,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
 
   val exceptionWb = s2_hasException
-  val normalWb = !s2_tlb_miss && !s2_data_invalid && !s2_cancel_inner && !s2_out.bits.miss && !s2_out.bits.mmio &&
-    !s2_hasException
+  val normalWb = !s2_tlb_miss && (!s2_cache_miss || s2_fullForward) && !s2_data_invalid && !s2_mmio
+  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
+    normalWb)
 
-  // write to rob and writeback bus
-  val s2_wb_valid = s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb || normalWb)
+  when(s2_in.valid) {
+    assert(!(s2_tlb_miss && s2_fullForward),"when s2_tlb_miss,s2_fullForward must be false!!")
+  }
 
   // Int load, if hit, will be writebacked at s2
   val hitLoadOut = Wire(Valid(new ExuOutput))
