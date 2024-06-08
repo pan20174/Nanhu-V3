@@ -304,7 +304,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
   PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(io.redirect))
 
-  s2_out.valid := s2_in.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
+  s2_out.valid := s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect)
   s2_out.bits := s2_in.bits
   val s2_pmp = WireInit(io.pmp)
   val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm, io.tlb.resp.valid)
@@ -349,7 +349,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
   val s2_cache_miss = s2_dcacheResp.bits.miss
   val s2_cache_replay = s2_dcacheResp.bits.replay
-  val s2_cache_tag_error = 0.U.asTypeOf(s2_dcacheResp.bits.tag_error.cloneType)
 
   val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
     RegNext(io.csrCtrl.ldld_vio_check_enable)
@@ -390,7 +389,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s2_out.bits.forwardData := s2_forwardData // data from dcache is not included in io.out.bits.forwardData
   s2_in.ready := s2_out.ready || !s2_in.valid
 
-  val s2_dataForwarded = s2_cache_miss && !s2_hasException && (s2_fullForward || io.csrCtrl.cache_error_enable && s2_cache_tag_error)
+  val s2_dataForwarded = s2_cache_miss && !s2_hasException && s2_fullForward
   val s2_need_replay_from_rs = s2_tlb_miss || // replay if dtlb miss
     s2_cache_miss && !s2_isSoftPrefetch && !s2_mmio && !s2_hasException && !s2_dataForwarded || // replay if dcache miss queue full / busy
     s2_data_invalid && !s2_isSoftPrefetch // replay if store to load forward data is not ready
@@ -428,9 +427,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  val s2_dcache_require_replay = s2_cache_replay && s2_rsFeedback.valid && !s2_dataForwarded && !s2_isSoftPrefetch && s2_out.bits.miss
 //  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
 
+  val exceptionWb = s2_hasException
+  val normalWb = !s2_tlb_miss && !s2_data_invalid && !s2_cancel_inner && !s2_out.bits.miss && !s2_out.bits.mmio &&
+    !s2_hasException
+
   // write to rob and writeback bus
-  val s2_wb_valid = s2_out.valid && !s2_tlb_miss && !s2_data_invalid && !s2_cancel_inner && !s2_out.bits.miss &&
-      !s2_out.bits.mmio && !s2_out.bits.uop.robIdx.needFlush(io.redirect)
+  val s2_wb_valid = s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb || normalWb)
 
   // Int load, if hit, will be writebacked at s2
   val hitLoadOut = Wire(Valid(new ExuOutput))
