@@ -101,6 +101,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val ldStop = Output(Bool())
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
+    val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val mmioWb = DecoupledIO(new ExuOutput)
   })
 
@@ -142,6 +143,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
 
   // load queue wiring
+  loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.brqRedirect <> io.brqRedirect
   loadQueue.io.loadPaddrIn <> io.loadPaddrIn
   loadQueue.io.loadIn <> io.loadIn

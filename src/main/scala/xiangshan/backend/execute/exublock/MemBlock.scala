@@ -34,7 +34,7 @@ import xiangshan.backend.execute.fu.csr.{PFEvent, SdtrigExt}
 import xiangshan.backend.execute.fu.fence.{FenceToSbuffer, SfenceBundle}
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
-import xiangshan.cache.mmu.{BTlbPtwIO, TLB, TlbIO, TlbReplace}
+import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, TLB, TlbIO, TlbReplace}
 import xiangshan.mem._
 import xiangshan.mem.prefetch.{BasePrefecher, SMSParams, SMSPrefetcher}
 import xs.utils.mbist.MBISTPipeline
@@ -201,6 +201,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   with HasPerfEvents
   with SdtrigExt
   with HasPerfLogging
+  with HasTlbConst
 {
   private val lduIssues = outer.lduIssueNodes.map(iss => {
     require(iss.in.length == 1)
@@ -447,6 +448,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       tlb_st.io // let the module have name in waveform
     })
   }
+
+  val loadTlbWakeup = Wire(Valid(new LoadTLBWakeUpBundle))
+  loadTlbWakeup.valid := dtlb_ld.head.ptw.resp.valid
+  loadTlbWakeup.bits.vpn := dtlb_ld.head.ptw.resp.bits.entry.tag
+  lsq.io.tlbWakeup := loadTlbWakeup
 
   val dtlb = dtlb_ld ++ dtlb_st
   val dtlb_reqs = dtlb.flatMap(_.requestor)

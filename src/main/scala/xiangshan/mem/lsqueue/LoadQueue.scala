@@ -117,6 +117,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val mmioWb = DecoupledIO(new ExuOutput)
+    val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
   })
@@ -126,6 +127,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.enq <> io.replayQEnq
   replayQueue.io.replayQIssue(0).ready := true.B
   replayQueue.io.replayQIssue(1).ready := true.B
+  replayQueue.io.tlbWakeup := io.tlbWakeup
   io.ldStop := replayQueue.io.ldStop
   io.replayQIssue <> replayQueue.io.replayQIssue
   io.replayQFull := replayQueue.io.replayQFull
@@ -349,29 +351,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     vaddrModule.io.waddr(i) := RegEnable(loadWbIndex, io.loadIn(i).fire)
     vaddrModule.io.wdata(i) := RegEnable(io.loadIn(i).bits.vaddr, io.loadIn(i).fire)
     vaddrModule.io.wen(i) := RegNext(io.loadIn(i).fire)
-  }
-
-//  val s2_dcache_require_replay = WireInit(VecInit((0 until LoadPipelineWidth).map(i =>{
-//    RegNext(io.loadIn(i).fire) && RegNext(io.s2_dcache_require_replay(i))
-//  })))
-//  dontTouch(s2_dcache_require_replay)
-
-  for (i <- 0 until LoadPipelineWidth) {
-    val loadWbIndex = io.loadIn(i).bits.uop.lqIdx.value
-    val lastCycleLoadWbIndex = RegNext(loadWbIndex)
-    // update miss state in load s3
-    if(!EnableFastForward){
-      // s2_dcache_require_replay will be used to update lq flag 1 cycle after for better timing
-      //
-      // io.s2_dcache_require_replay comes from dcache miss req reject, which is quite slow to generate
-//      when(s2_dcache_require_replay(i)) {
-//        // do not writeback if that inst will be resend from rs
-//        // rob writeback will not be triggered by a refill before inst replay
-//        miss(lastCycleLoadWbIndex) := false.B // disable refill listening
-//        datavalid(lastCycleLoadWbIndex) := false.B // disable refill listening
-//        assert(!datavalid(lastCycleLoadWbIndex))
-//      }
-    }
   }
 
   /**

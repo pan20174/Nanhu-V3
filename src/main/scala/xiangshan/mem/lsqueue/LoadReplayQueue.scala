@@ -12,6 +12,7 @@ import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.backend.issue.RsIdx
 import xiangshan.backend.rob.RobPtr
 import xiangshan.cache.HasDCacheParameters
+import xiangshan.cache.mmu.HasTlbConst
 
 object LoadReplayCauses {
   /*
@@ -69,6 +70,9 @@ class ReplayQUopInfo(implicit p: Parameters) extends XSBundle{
   val exceptionVec = ExceptionVec()
 }
 
+class LoadTLBWakeUpBundle(implicit p: Parameters) extends XSBundle with HasTlbConst{
+  val vpn = UInt(vpnLen.W)
+}
 
 
 class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle {
@@ -138,6 +142,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
+    val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val degbugInfo = new ReplayQDebugBundle
     })
 
@@ -160,6 +165,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val counterReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(log2Up(counterRegMax).W))))
   // hintIDReg: store the Hint ID of TLB miss or Dcache miss
   val hintIDReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(reqIdWidth.W))))
+
+  //tmp: use vaddr
+  val vaddrReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(VAddrBits.W))))
 
   // replayQueue enq\deq control
   val freeList = Module(new FreeList(
@@ -233,6 +241,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       vaddrModule.io.wen(i)   := true.B
       vaddrModule.io.waddr(i) := enqIndex
       vaddrModule.io.wdata(i) := enq.bits.vaddr
+
+      vaddrReg(enqIndex) := enq.bits.vaddr
       if(enablePerf){for(i <- 0 until(LoadReplayQueueSize)){
         XSPerfAccumulate(s"LoadReplayQueue_entry_${i}_used", enqIndex === i.asUInt)
       }}
@@ -253,7 +263,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   (0 until LoadReplayQueueSize).map(i => {
     // case TLB MSS
     when (causeReg(i)(LoadReplayCauses.C_TM)) {
-      blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+//      blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+      //tmp: use vpn
+      when(io.tlbWakeup.valid){
+        blockingReg(i) := vaddrReg(i)(39 - 1,12) === io.tlbWakeup.bits.vpn
+      }
     }
   })
 
@@ -347,6 +361,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
     io.replayQIssue(i) <> s2_replay_req(i)
     dontTouch(io.replayQIssue(i))
+    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
   }
   io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
   //  perf cnt
