@@ -319,7 +319,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       validUop.bits := uop
       validUop
     }
-    SelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
+    ReplayQueueSelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
   }
   s1_robOldestSelOH := VecInit((0 until LoadPipelineWidth).map(rem => {
     val oldestBitsVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))

@@ -6,6 +6,7 @@ import chisel3.util._
 import utils._
 import xs.utils._
 import xiangshan._
+import xiangshan.backend.issue.SelectPolicy
 import xs.utils.perf.HasPerfLogging
 import xiangshan.backend.rob.RobPtr
 
@@ -29,43 +30,7 @@ class SelectInfo(implicit p: Parameters) extends XSBundle{
   val ftqOffset = UInt(log2Up(PredictWidth).W)
 }
 
-class SelectPolicy(width:Int, oldest:Boolean, haveEqual:Boolean)(implicit p: Parameters) extends Module{
-  val io = IO(new Bundle{
-    val in = Input(Vec(width, Valid(new RobPtr)))
-    val out = Output(Valid(UInt(width.W)))
-  })
-  private val ostr = if(oldest)"o" else "p"
-  private val estr = if(haveEqual) "e" else ""
-  override val desiredName:String = s"LoadReplayQueueSelectPolicy_w${width}" + ostr + estr
-  if(oldest) {
-    val onlyOne = PopCount(io.in.map(_.valid)) === 1.U
-    val oldestOHMatrix = io.in.zipWithIndex.map({ case (self, idx) =>
-      io.in.zipWithIndex.filterNot(_._2 == idx).map(i => (i._1.valid && self.valid && (self.bits <= i._1.bits)) ^ i._1.valid)
-    })
-    val oldestOHSeq = oldestOHMatrix.map(_.reduce(_|_)).map(!_)
-    val oldestOH = if(haveEqual) PriorityEncoderOH(Cat(oldestOHSeq.reverse)) else Cat(oldestOHSeq.reverse)
-    val defaultValue = Cat(io.in.map(_.valid).reverse)
-    io.out.valid := io.in.map(_.valid).reduce(_ | _)
-    io.out.bits := Mux(onlyOne, defaultValue, oldestOH)
-
-    val selRobPtr = Mux1H(io.out.bits, io.in.map(_.bits))
-    for(i <- io.in.indices) {
-      if(haveEqual) {
-        when(io.out.valid && !io.out.bits(i) && io.in(i).valid) {assert(selRobPtr <= io.in(i).bits)}
-      } else {
-        when(io.out.valid && !io.out.bits(i) && io.in(i).valid) {assert(selRobPtr < io.in(i).bits)}
-      }
-    }
-
-  } else {
-    io.out.valid := io.in.map(_.valid).reduce(_ | _)
-    io.out.bits := PriorityEncoderOH(Cat(io.in.map(_.valid).reverse))
-  }
-  when(io.out.valid) {
-    assert(PopCount(io.out.bits) === 1.U)
-  }
-}
-object SelectPolicy {
+object ReplayQueueSelectPolicy {
   def apply(in:Seq[Valid[MicroOp]], oldest:Boolean, haveEqual:Boolean, entryNum:Int, redirect: Valid[Redirect], p:Parameters) :Valid[UInt] = {
     val selector = Module(new SelectPolicy(in.length, oldest, haveEqual)(p))
     selector.io.in.zip(in).foreach({case(a, b) =>
