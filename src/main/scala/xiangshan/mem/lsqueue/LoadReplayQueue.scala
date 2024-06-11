@@ -170,7 +170,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val vaddrReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(VAddrBits.W))))
 
   // replayQueue enq\deq control
-  val freeList = Module(new FreeList(
+  val freeList = Module(new LsqFreeList(
     size = LoadReplayQueueSize,
     allocWidth = LoadPipelineWidth,
     freeWidth = 4,

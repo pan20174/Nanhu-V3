@@ -23,7 +23,7 @@ import xs.utils._
 import xiangshan._
 import xs.utils.perf.{HasPerfLogging}
 
-class FreeList(size: Int, allocWidth: Int, freeWidth: Int, enablePreAlloc: Boolean = false, moduleName: String = "")(implicit p: Parameters) extends XSModule
+class LsqFreeList(size: Int, allocWidth: Int, freeWidth: Int, enablePreAlloc: Boolean = false, moduleName: String = "")(implicit p: Parameters) extends XSModule
   with HasCircularQueuePtrHelper
   with HasPerfEvents
   with HasPerfLogging
