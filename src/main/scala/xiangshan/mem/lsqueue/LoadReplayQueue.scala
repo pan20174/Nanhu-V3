@@ -11,7 +11,7 @@ import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.backend.issue.RsIdx
 import xiangshan.backend.rob.RobPtr
-import xiangshan.cache.HasDCacheParameters
+import xiangshan.cache.{HasDCacheParameters, DcacheTLBypassLduIO}
 
 object LoadReplayCauses {
   /*
@@ -50,6 +50,7 @@ class ReplayInfo(implicit p: Parameters) extends XSBundle{
   val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
   val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
   val isReplayQReplay = Bool()
+  val full_fwd = Bool()
   // replay cause alias
   def mem_amb       = replayCause(LoadReplayCauses.C_MA)
   def tlb_miss      = replayCause(LoadReplayCauses.C_TM)
@@ -71,21 +72,17 @@ class ReplayQUopInfo(implicit p: Parameters) extends XSBundle{
 
 
 
-class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle {
+class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle with HasDCacheParameters{
   val vaddr = UInt(VAddrBits.W)
   val paddr = UInt(PAddrBits.W)
   val mask = UInt(8.W)
   val uop = new MicroOp
 
   val tlbMiss = Bool()
-
+  val tl_d_channel_wakeup = Input(new DcacheTLBypassLduIO)
+  val mshrMissIDResp = Flipped(ValidIO(UInt(log2Up(cfg.nMissEntries).W)) )
   val replay = new ReplayInfo
 }
-
-
-
-
-
 
 class ReplayQueueIssueBundle(implicit p: Parameters) extends XSBundle {
   val vaddr = UInt(VAddrBits.W)
@@ -93,10 +90,6 @@ class ReplayQueueIssueBundle(implicit p: Parameters) extends XSBundle {
   val uop = new MicroOp
   val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
 }
-
-
-
-
 class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: Int)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle(){
     val wen   = Input(Vec(numWrite, Bool()))
@@ -138,6 +131,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
+    val tlDchannelWakeupDup = Input(new DcacheTLBypassLduIO)
     val degbugInfo = new ReplayQDebugBundle
     })
 
@@ -160,7 +154,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val counterReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(log2Up(counterRegMax).W))))
   // hintIDReg: store the Hint ID of TLB miss or Dcache miss
   val hintIDReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(reqIdWidth.W))))
-
+  // mshrIDreg: store the L1 MissQ mshr ID
+  val mshrIDreg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U((log2Up(cfg.nMissEntries+1).W)))))
+  
   // replayQueue enq\deq control
   val freeList = Module(new FreeList(
     size = LoadReplayQueueSize,
@@ -225,11 +221,18 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
         counterReg(enqIndex) := 1.U << penaltyReg(enqIndex)
         penaltyReg(enqIndex)  := penaltyReg(enqIndex) + 1.U
         blockingReg(enqIndex) := true.B
-      }.elsewhen(enq.bits.replay.replayCause(LoadReplayCauses.C_TM)){
-        hintIDReg(enqIndex) := (1.U << reqIdWidth) - 1.U
-      }.otherwise{
-        XSError(false.B, p"cause ${enq.bits.replay.replayCause.asUInt} not implemented other replay cause yet")
       }
+      when(enq.bits.replay.replayCause(LoadReplayCauses.C_TM)){
+        hintIDReg(enqIndex) := (1.U << reqIdWidth) - 1.U
+      }
+      when(enq.bits.replay.replayCause(LoadReplayCauses.C_DM)){
+        blockingReg(enqIndex) := (!enq.bits.replay.full_fwd) || 
+        (!(enq.bits.tl_d_channel_wakeup.valid && enq.bits.tl_d_channel_wakeup.hitInflightDcacheResp))
+        when(enq.bits.mshrMissIDResp.valid){
+          mshrIDreg(enqIndex) := enq.bits.mshrMissIDResp.bits
+        }
+      }
+
       vaddrModule.io.wen(i)   := true.B
       vaddrModule.io.waddr(i) := enqIndex
       vaddrModule.io.wdata(i) := enq.bits.vaddr
@@ -254,6 +257,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     // case TLB MSS
     when (causeReg(i)(LoadReplayCauses.C_TM)) {
       blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+    }
+    // case Dcache MSS
+    when (causeReg(i)(LoadReplayCauses.C_DM)) {
+      blockingReg(i) :=  Mux(io.tlDchannelWakeupDup.valid && io.tlDchannelWakeupDup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
     }
   })
 
