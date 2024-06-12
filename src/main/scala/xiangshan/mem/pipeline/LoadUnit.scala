@@ -293,7 +293,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s1_in.ready := !s1_in.valid || s1_out.ready
 
   val debug_s1_cause = WireInit(0.U.asTypeOf(new ReplayInfo))
-  val s1_cause_can_transfer = !ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR && (!s1_isSoftPrefetch) && s1_enableMem
+  val s1_cause_can_transfer = !(ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && (!s1_isSoftPrefetch) && s1_enableMem
   debug_s1_cause.schedIndex := s1_out.bits.replay.schedIndex
   debug_s1_cause.isReplayQReplay := s1_out.bits.replay.isReplayQReplay
   debug_s1_cause.full_fwd := false.B
@@ -465,7 +465,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_cause_can_transfer = (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
   debug_s2_cause := debugS2CauseReg
   debug_s2_cause.full_fwd := s2_fullForward
-  debug_s2_cause.dcache_miss := s2_out.bits.miss|| debugS2CauseReg.dcache_miss
+  debug_s2_cause.dcache_miss := (s2_cache_miss && !RegNext(s1_bank_conflict)) || debugS2CauseReg.dcache_miss
   debug_s2_cause.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   debug_s2_cause.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
   dontTouch(debug_s2_cause)
