@@ -73,7 +73,7 @@ class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p
 
 class ViolationSelector(inNum:Int, haveEqual:Boolean)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle{
-    val in = Vec(inNum, ValidIO(new RobPtr))
+    val in = Vec(inNum, Flipped(ValidIO(new RobPtr)))
     val out = ValidIO(new RobPtr)
     val chosen = Output(UInt(inNum.W))
   })

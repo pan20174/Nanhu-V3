@@ -91,7 +91,10 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val sqFull = Output(Bool())
     val sqCancelCnt = Output(UInt(log2Up(StoreQueueSize + 1).W))
     val sqDeq = Output(UInt(2.W))
-    val stAddrReadyPtr = Output(new SqPtr)
+    val stPtrInfo = new Bundle(){
+      val stAddrReadyPtr = Output(new SqPtr)
+      val stAddrAllReady = Output(Bool())
+    }
   })
   println("StoreQueue: size:" + StoreQueueSize)
 
@@ -248,7 +251,8 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   val addrReadyLookup = addrReadyLookupVec.map(ptr => allocated(ptr.value) && addrvalid(ptr.value) && ptr =/= enqPtrExt(0))
   val nextAddrReadyPtr = addrReadyPtr + PriorityEncoder(VecInit(addrReadyLookup).map(!_) :+ true.B)
   addrReadyPtr := nextAddrReadyPtr
-  io.stAddrReadyPtr := addrReadyPtr
+  io.stPtrInfo.stAddrReadyPtr := addrReadyPtr
+  io.stPtrInfo.stAddrAllReady := addrReadyPtr === enqPtrExt(0)
 
   when(io.brqRedirect.valid){
     addrReadyPtr := Mux(isAfter(cmtPtrExt(0), deqPtrExt(0)),cmtPtrExt(0),deqPtrExtNext(0))

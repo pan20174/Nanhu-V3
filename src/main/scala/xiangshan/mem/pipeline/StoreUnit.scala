@@ -155,6 +155,8 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   io.storeViolationQuery.bits.robIdx := s1_out.bits.uop.robIdx
   io.storeViolationQuery.bits.paddr := s1_out.bits.paddr(PAddrBits - 1,3)
   io.storeViolationQuery.bits.mask := s1_out.bits.mask
+  io.storeViolationQuery.bits.stFtqPtr := s1_out.bits.uop.cf.ftqPtr
+  io.storeViolationQuery.bits.stFtqOffset := s1_out.bits.uop.cf.ftqOffset
 
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))

@@ -49,7 +49,7 @@ class LoadRAWQueueDataModule(queryWidth: Int, entrySize: Int, writeNum: Int, num
 
   maskModule.io.write.zip(paddrModule.io.write).zip(io.write).foreach({ case ((maskSink, paddrSink), source) =>
     maskSink.wen := source.wen
-    maskSink.entryAddr := source.mask
+    maskSink.entryAddr := source.entryAddr
     maskSink.mask := source.mask
 
     paddrSink.wen := source.wen

@@ -567,6 +567,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     loadUnits(i).io.redirect := Pipe(redirectIn)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
+
+    lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
+
+
+
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
     slduIssues(i).rsFeedback := DontCare
     val selSldu = slduIssues(i).auxValid
@@ -671,6 +676,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     stdUnits(i).io.in <> stdIssues(i).issue
     stdUnits(i).io.redirect := Pipe(redirectIn)
 
+    loadUnits.foreach({req =>
+      req.io.storeViolationQuery(i) := stu.io.storeViolationQuery
+    })
+
     stu.io.redirect     <> Pipe(redirectIn)
     stu.io.redirect_dup.foreach({ case d => {d <> Pipe(redirectIn)}})
     staIssues(i).rsFeedback.feedbackSlowStore := stu.io.feedbackSlow
@@ -680,6 +689,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     stu.io.stin         <> staIssues(i).issue
     stu.io.lsq          <> lsq.io.storeIn(i)
     stu.io.lsq_replenish <> lsq.io.storeInRe(i)
+    lsq.io.storeViolationQuery(i) := stu.io.storeViolationQuery
     // dtlb
     stu.io.tlb          <> dtlb_reqs.drop(ld_tlb_ports)(i)
     stu.io.pmp          <> pmp_check(i+ld_tlb_ports).resp

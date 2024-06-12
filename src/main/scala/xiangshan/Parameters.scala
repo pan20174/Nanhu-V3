@@ -137,7 +137,7 @@ case class XSCoreParameters
   LoadQueueSize: Int = 80,
   LoadQueueNWriteBanks: Int = 8,
   LoadReplayQueueSize: Int = 64,
-  LoadRAWQueueSize: Int = 80,
+  LoadRAWQueueSize: Int = 32,
   StoreQueueSize: Int = 64,
   StoreQueueNWriteBanks: Int = 8,
   RobSize: Int = 192,

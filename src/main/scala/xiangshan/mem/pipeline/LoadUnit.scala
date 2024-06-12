@@ -86,6 +86,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val pmp = Flipped(new PMPRespBundle()) // arrive same to tlb now
     // S2: preftech train output
     val prefetch_train = ValidIO(new LsPipelineBundle())
+    // S2: load enq LoadRAWQueue
+    val enqRAWQueue = new LoadEnqRAWBundle
+    // S2,S3: store violation query
+    val storeViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
 
     // S3: feedback reservationStation to replay
     val feedbackSlow = ValidIO(new RSFeedback)
@@ -103,11 +107,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
     // Global: csr control
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
-
-    val enqRAWQueue = new LoadEnqRAWBundle
-    val s3_enq_replqQueue = DecoupledIO(new LoadToReplayQueueBundle)
-    val ldStop = Input(Bool())
-    val replayQFull = Input(Bool())
   })
 
   /*
@@ -225,6 +224,15 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(io.redirect))
 
   s1_out.bits := s1_in.bits // todo: replace this way of coding!
+  //store load violation from storeUnit S1
+  val s1_stldViolationVec = Wire(Vec(StorePipelineWidth, Bool()))
+  s1_stldViolationVec := io.storeViolationQuery.map({ case req =>
+    s1_in.valid && req.valid &&
+      s1_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
+      s1_in.bits.mask === req.bits.mask
+  })
+  val s1_hasStLdViolation = s1_stldViolationVec.reduce(_ | _)
+
   val s1_dtlbResp = io.tlb.resp
   s1_dtlbResp.ready := true.B
 
@@ -298,6 +306,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s1_cause.schedIndex := s1_out.bits.replay.schedIndex
   debug_s1_cause.isReplayQReplay := s1_out.bits.replay.isReplayQReplay
   debug_s1_cause.tlb_miss := s1_tlb_miss  // tlb resp miss
+  debug_s1_cause.raw_nack := s1_hasStLdViolation
   debug_s1_cause.rar_nack := s1_needLdVioCheckRedo  // rar query fail
   debug_s1_cause.dcache_rep := s1_cancel_inner  // dcache not ready
   debug_s1_cause.bank_conflict := s1_bank_conflict  // bank read has conflict
@@ -311,6 +320,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   s2_out.valid := s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect)
   s2_out.bits := s2_in.bits
+
+  //store load violation from storeUnit S1
+  val s2_stldViolationVec = Wire(Vec(StorePipelineWidth, Bool()))
+  s2_stldViolationVec := io.storeViolationQuery.map({ case req =>
+    s2_in.valid && req.valid &&
+      s2_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
+      s2_in.bits.mask === req.bits.mask
+  })
+  val s2_hasStLdViolation = s2_stldViolationVec.reduce(_ | _)
+
   val s2_pmp = WireInit(io.pmp)
   val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm, io.tlb.resp.valid)
   when(s2_static_pm.valid) {
@@ -410,7 +429,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.lsq.s1_lduUpdateLQ.valid := s1_out.valid
   io.lsq.s1_lduUpdateLQ.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduUpdateLQ.bits.paddr := s1_paddr_dup_lsu
-  io.lsq.s1_lduUpdateLQ.bits.mask := s1_mask
   io.lsq.s2_load_data_forwarded := s2_dataForwarded
 
   // provide prefetcher train data
@@ -465,17 +483,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s2_cause.dcache_miss := s2_out.bits.miss|| debugS2CauseReg.dcache_miss
   debug_s2_cause.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   debug_s2_cause.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
+  debug_s2_cause.raw_nack := s2_hasStLdViolation || debugS2CauseReg.raw_nack
   dontTouch(debug_s2_cause)
 
-  io.enqRAWQueue.s2_enq.valid := s2_wb_valid
-  io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr
-  io.enqRAWQueue.s2_enq.bits.mask := s2_out.bits.mask
-  io.enqRAWQueue.s2_enq.bits.sqIdx := s2_out.bits.uop.sqIdx
-
-  // load s3
-//  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid, hitLoadOut.bits, io.lsq.s3_lq_wb.bits), hitLoadOut.valid | io.lsq.s3_lq_wb.valid)
-//  val s3_load_wb_meta_reg = RegEnable(hitLoadOut.bits, hitLoadOut.valid)
-  val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
   /*
     LOAD S3: writeback data merge; writeback control
   */
@@ -570,11 +580,21 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := temp_other_cause
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM) := debugS3CauseReg.tlb_miss
   io.s3_enq_replayQueue.bits.replay.schedIndex := s3_in.bits.replay.schedIndex
+  io.s3_enq_replayQueue.bits.uop := DontCare
   io.s3_enq_replayQueue.bits.uop := s3_in.bits.uop
   io.s3_enq_replayQueue.bits.mask := s3_in.bits.mask
   io.s3_enq_replayQueue.bits.tlbMiss := false.B
   assert(!(RegNext(hitLoadOut.valid,false.B) && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)),"when load" +
     " wb," + "replayCause must be 0!!")
+
+  io.enqRAWQueue.s2_enq.valid := s2_wb_valid
+  io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr(PAddrBits - 1, 3)
+  io.enqRAWQueue.s2_enq.bits.mask := s2_out.bits.mask
+  io.enqRAWQueue.s2_enq.bits.sqIdx := s2_out.bits.uop.sqIdx
+  io.enqRAWQueue.s2_enq.bits.robIdx := s2_out.bits.uop.robIdx
+  io.enqRAWQueue.s2_enq.bits.ftqPtr := s2_out.bits.uop.cf.ftqPtr
+  io.enqRAWQueue.s2_enq.bits.ftqOffset := s2_out.bits.uop.cf.ftqOffset
+  io.enqRAWQueue.s3_cancel := io.s3_enq_replayQueue.valid && (debugS3CauseReg.need_rep || s3_in.bits.uop.cf.exceptionVec.reduce(_|_))
 
   val perfEvents = Seq(
     ("load_s0_in_fire         ", s0_valid),
