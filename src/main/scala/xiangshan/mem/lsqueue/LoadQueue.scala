@@ -159,9 +159,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val dataModule = Module(new LoadQueueDataWrapper(LoadQueueSize, wbNumRead = LoadPipelineWidth, wbNumWrite = LoadPipelineWidth))
   dataModule.io := DontCare
 
-  val vaddrModule = Module(new LoadQueueVaddrModule(UInt(VAddrBits.W), LoadQueueSize, numRead = LoadPipelineWidth, numWrite = LoadPipelineWidth, "LqVaddr"))
-  vaddrModule.io := DontCare //todo
-
   val vaddrTriggerResultModule = Module(new vaddrTriggerResultDataModule(Vec(TriggerNum, Bool()), LoadQueueSize, numRead = LoadPipelineWidth, numWrite = LoadPipelineWidth, "LqTrigger"))
   vaddrTriggerResultModule.io := DontCare
 
@@ -364,11 +361,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       dataModule.io.paddr.waddr(i) := io.loadPaddrIn(i).bits.lqIdx.value
       dataModule.io.paddr.wdata(i) := io.loadPaddrIn(i).bits.paddr
     }
-
-    // vaddrModule write is delayed, as vaddrModule will not be read right after write
-    vaddrModule.io.waddr(i) := RegEnable(loadWbIndex, io.loadIn(i).fire)
-    vaddrModule.io.wdata(i) := RegEnable(io.loadIn(i).bits.vaddr, io.loadIn(i).fire)
-    vaddrModule.io.wen(i) := RegNext(io.loadIn(i).fire)
   }
 
   /**
@@ -806,22 +798,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     writebacked(s1_mmioLdWbSel) := true.B
   }
 
-  //only mmio load need to write back from loadQueue
-  //    io.ldout(i) := DontCare
-  //    io.ldout(i).bits.uop := seluop
-  //    io.ldout(i).bits.uop.cf.exceptionVec := Mux(excptCond, exceptionInfo.bits.eVec, defaultEVec)
-  //    io.ldout(i).bits.uop.lqIdx := loadWbSel(i).asTypeOf(new LqPtr)
-  //    io.ldout(i).bits.data := rdataPartialLoad // not used
-  //    io.ldout(i).bits.redirectValid := false.B
-  //    io.ldout(i).bits.redirect := DontCare
-  //    io.ldout(i).bits.debug.isMMIO := debug_mmio(loadWbSel(i))
-  //    io.ldout(i).bits.debug.isPerfCnt := false.B
-  //    io.ldout(i).bits.debug.paddr := debug_paddr(loadWbSel(i))
-  //    io.ldout(i).bits.debug.vaddr := vaddrModule.io.rdata(i)
-  //    io.ldout(i).bits.fflags := DontCare
-  //    io.ldout(i).valid := loadWbSelV(i) && !io.ldout(i).bits.uop.robIdx.needFlush(lastCycleRedirect)
-  //io.ldout(i).bits.wbmask := DontCare
-
   io.uncache.req.valid := uncache_Order_State === s_req
 
   dataModule.io.uncache.raddr := deqPtrExtNext.value  //todo
@@ -887,23 +863,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 //  })
 //  exceptionGen.io.clean := ffCleanConds.reduce(_ || _)
   exceptionGen.io.clean := false.B  //todo
-
   io.exceptionAddr.vaddr := exceptionInfo.bits.vaddr
 
-//  // Read vaddr for debug
-//  (0 until LoadPipelineWidth).foreach(i => {
-//    vaddrModule.io.raddr(i) := RegNext(loadWbSel(i))
-//  })
-
   (0 until LoadPipelineWidth).foreach(i => {
-//    vaddrTriggerResultModule.io.raddr(i) := loadWbSelGen(i)
-//    vaddrTriggerResultModule.io.raddr(i) := loadWbSel(i)
-//    io.trigger(i).lqLoadAddrTriggerHitVec := Mux(
-//      loadWbSelV(i),
-//      vaddrTriggerResultModule.io.rdata(i),
-//      VecInit(Seq.fill(TriggerNum)(false.B))
-//    )
-
     io.trigger(i).lqLoadAddrTriggerHitVec := DontCare //todo
   })
 
