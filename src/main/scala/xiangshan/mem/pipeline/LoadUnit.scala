@@ -397,11 +397,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   s2_out.bits.forwardData := s2_forwardData // data from dcache is not included in io.out.bits.forwardData
   s2_in.ready := s2_out.ready || !s2_in.valid
 
-  val s2_dataForwarded = s2_cache_miss && !s2_hasException && s2_fullForward
-  val s2_need_replay_from_rs = s2_tlb_miss || // replay if dtlb miss
-    s2_cache_miss && !s2_isSoftPrefetch && !s2_mmio && !s2_hasException && !s2_dataForwarded || // replay if dcache miss queue full / busy
-    s2_data_invalid && !s2_isSoftPrefetch // replay if store to load forward data is not ready
-  dontTouch(s2_need_replay_from_rs)
+  val s2_dataForwarded = (s2_cache_miss || s2_cache_replay) && !s2_hasException && s2_fullForward
+  // val s2_need_replay_from_rs = s2_tlb_miss || // replay if dtlb miss
+  //   s2_cache_miss && !s2_isSoftPrefetch && !s2_mmio && !s2_hasException && !s2_dataForwarded || // replay if dcache miss queue full / busy
+  //   s2_data_invalid && !s2_isSoftPrefetch // replay if store to load forward data is not ready
+  // dontTouch(s2_need_replay_from_rs)
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
   s2_rsFeedback.valid := s2_in.valid && (!s2_in.bits.replay.isReplayQReplay)
@@ -436,7 +436,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 //  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
 
   val exceptionWb = s2_hasException
-  val normalWb = !s2_tlb_miss && ((!s2_cache_miss && !s2_cache_replay)|| s2_fullForward) && !s2_data_invalid && !s2_mmio
+  val normalWb = !s2_tlb_miss && ((!s2_cache_miss && !s2_cache_replay)|| s2_fullForward) && !s2_data_invalid && !s2_mmio && !RegNext(s1_bank_conflict)
   val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
     normalWb)
 
@@ -546,7 +546,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   // lvp cancel feedback to reservationStation
   private val s1_cancel = RegInit(false.B)
   s1_cancel := s1_in.valid && (!s1_out.valid)
-  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss)
+  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss || s2_cache_replay)
   io.cancel := s1_cancel || s2_lpvCancel
 
   val debugS3CauseReg = RegInit(0.U.asTypeOf(new ReplayInfo))
