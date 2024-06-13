@@ -151,7 +151,7 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
   io.lsq.bits := s1_out.bits
   io.lsq.bits.miss := s1_tlb_miss
 
-  io.storeViolationQuery.valid := s1_in.valid
+  io.storeViolationQuery.valid := s1_in.valid && !s1_in.bits.uop.robIdx.needFlush(io.redirect)
   io.storeViolationQuery.bits.robIdx := s1_out.bits.uop.robIdx
   io.storeViolationQuery.bits.paddr := s1_out.bits.paddr(PAddrBits - 1,3)
   io.storeViolationQuery.bits.mask := s1_out.bits.mask
