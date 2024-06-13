@@ -759,7 +759,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   lsq.io.lqCancelCnt <> io.lqCancelCnt
   lsq.io.sqCancelCnt <> io.sqCancelCnt
   lsq.io.sqDeq <> io.sqDeq
-
+  for (i <- 0 until StorePipelineWidth){
+    lsq.io.storeDataWbPtr(i).valid := stData(i).fire
+    lsq.io.storeDataWbPtr(i).bits  := stData(i).bits.uop.sqIdx
+  }
   // LSQ to store buffer
   lsq.io.sbuffer        <> sbuffer.io.in
   lsq.io.sqempty        <> sbuffer.io.sqempty

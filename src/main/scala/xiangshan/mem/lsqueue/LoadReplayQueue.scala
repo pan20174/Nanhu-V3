@@ -51,6 +51,7 @@ class ReplayInfo(implicit p: Parameters) extends XSBundle{
   val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
   val isReplayQReplay = Bool()
   val full_fwd = Bool()
+  val fwd_data_sqIdx = new SqPtr
   // replay cause alias
   def mem_amb       = replayCause(LoadReplayCauses.C_MA)
   def tlb_miss      = replayCause(LoadReplayCauses.C_TM)
@@ -118,8 +119,6 @@ class ReplayQDebugBundle(implicit p: Parameters) extends XSBundle{
   val debug_enqPtr = Input(new RobPtr)
 }
 
-
-
 class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSModule
   with HasLoadHelper
   with HasPerfLogging
@@ -132,6 +131,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
     val tlDchannelWakeupDup = Input(new DcacheTLBypassLduIO)
+    val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
+    val stDataReadySqPtr = Input(new SqPtr)
+    val sqEmpty= Input(Bool())
+    val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
     val degbugInfo = new ReplayQDebugBundle
     })
 
@@ -156,6 +159,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val hintIDReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(reqIdWidth.W))))
   // mshrIDreg: store the L1 MissQ mshr ID
   val mshrIDreg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U((log2Up(cfg.nMissEntries+1).W)))))
+  // blockSqIdxReg: store the sqIdx which block load forward data
+  val blockSqIdxReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U.asTypeOf(new SqPtr))))
   
   // replayQueue enq\deq control
   val freeList = Module(new FreeList(
@@ -217,24 +222,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       scheduledReg(enqIndex(i)) := false.B
       uopReg(enqIndex(i))       := enq.bits.uop
       causeReg(enqIndex(i))     := enq.bits.replay.replayCause.asUInt
-      // penaltyReg(enqIndex(i))   := 0.U
-      // blockingReg(enqIndex(i))  := true.B
       hintIDReg(enqIndex(i))    := 0.U
-      // when(enq.bits.replay.replayCause(LoadReplayCauses.C_BC)){
-      //   counterReg(enqIndex(i)) := 1.U << penaltyReg(enqIndex(i))
-      //   penaltyReg(enqIndex(i))  := penaltyReg(enqIndex(i)) + 1.U
-      //   blockingReg(enqIndex(i)) := true.B
-      // }
-      // when(enq.bits.replay.replayCause(LoadReplayCauses.C_TM)){
-      //   hintIDReg(enqIndex(i)) := (1.U << reqIdWidth) - 1.U
-      // }
-      // when(enq.bits.replay.replayCause(LoadReplayCauses.C_DM)){
-      //   blockingReg(enqIndex(i)) := (!enq.bits.replay.full_fwd) &&
-      //   (!(enq.bits.tl_d_channel_wakeup.valid && enq.bits.tl_d_channel_wakeup.hitInflightDcacheResp))
-      //   when(enq.bits.mshrMissIDResp.valid){
-      //     mshrIDreg(enqIndex(i)) := enq.bits.mshrMissIDResp.bits
-      //   }
-      // }
       vaddrModule.io.wen(i)   := true.B
       vaddrModule.io.waddr(i) := enqIndex(i)
       vaddrModule.io.wdata(i) := enq.bits.vaddr
@@ -255,77 +243,77 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
   }
 
+  // val storeAddrInSameCycleVec = Wire(Vec(LoadReplayQueueSize, Bool()))
+  val storeDataInSameCycleVec = Wire(Vec(LoadReplayQueueSize, Bool()))
+  // val addrNotBlockVec = Wire(Vec(LoadReplayQueueSize, Bool()))
+  val dataNotBlockVec = Wire(Vec(LoadReplayQueueSize, Bool()))
+  // val storeAddrValidVec = addrNotBlockVec.asUInt | storeAddrInSameCycleVec.asUInt
+  val storeDataValidVec = dataNotBlockVec.asUInt | storeDataInSameCycleVec.asUInt
+  // store data valid check
+  // val stAddrReadyVec = io.stAddrReadyVec
+  val stDataReadyVec = io.stDataReadyVec
+  for (i <- 0 until LoadReplayQueueSize) {
+    // dequeue
+    dataNotBlockVec(i) := (io.stDataReadySqPtr > blockSqIdxReg(i)) || stDataReadyVec(blockSqIdxReg(i).value) || io.sqEmpty // for better timing
+    // store data execute
+    storeDataInSameCycleVec(i) := VecInit((0 until StorePipelineWidth).map(w => {
+      io.storeDataWbPtr(w).valid &&
+      blockSqIdxReg(i) === io.storeDataWbPtr(w).bits
+    })).asUInt.orR
+  }
+
+  // store data issue check
+  val stDataDeqVec = Wire(Vec(LoadReplayQueueSize, Bool()))
+  (0 until LoadReplayQueueSize).map(i => {
+    stDataDeqVec(i) := allocatedReg(i) && storeDataValidVec(i)
+  })
+
   (0 until LoadReplayQueueSize).map(i => {
     enqNeedAlloacteNew.zip(enqIndex).zip(io.enq).map{ case((newAlloc,enqIdx), enq) =>
         val hasEnq = newAlloc && (enqIdx === i.asUInt)
         // set new block logic when has enq
         when(hasEnq){
-          // case Bank Conflict
-          when(enq.bits.replay.bank_conflict){
-            counterReg(i) := 1.U << penaltyReg(i)
-            penaltyReg(i)  := penaltyReg(i) + 1.U
-            blockingReg(i) := true.B
-          }
           // case TLB MISS
           when(enq.bits.replay.tlb_miss){
             hintIDReg(i) := (1.U << reqIdWidth) - 1.U
+          }
+          // case Forward Fail
+          when(enq.bits.replay.fwd_fail){
+            blockingReg(i) := true.B
+            blockSqIdxReg(i) := enq.bits.replay.fwd_data_sqIdx
           }
           // case Dcache MISS
           when(enq.bits.replay.dcache_miss){
             blockingReg(i) := (!enq.bits.replay.full_fwd) && (!(enq.bits.tl_d_channel_wakeup.valid && enq.bits.tl_d_channel_wakeup.hitInflightDcacheResp))
             mshrIDreg(i) := enq.bits.mshrMissIDResp.bits
           }
+          // case Bank Conflict
+          when(enq.bits.replay.bank_conflict){
+            counterReg(i) := 1.U << penaltyReg(i)
+            penaltyReg(i)  := penaltyReg(i) + 1.U
+            blockingReg(i) := true.B
+          }
         }.otherwise{
         // otherwise listening the casue whether has been solved
-          // case Bank Conflict
-          when(causeReg(i)(LoadReplayCauses.C_BC)) {
-            blockingReg(i) := !(counterReg(i) === 0.U)
-          }
           // case TLB MISS
           when(causeReg(i)(LoadReplayCauses.C_TM)) {
             blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
           }
+          // case Forward Fail
+          when(causeReg(i)(LoadReplayCauses.C_FF)) {
+            blockingReg(i) := Mux(stDataDeqVec(i), false.B, blockingReg(i))
+          }
           // case Dcache MISS
           when(causeReg(i)(LoadReplayCauses.C_DM)) {
             blockingReg(i) := Mux(io.tlDchannelWakeupDup.valid &&
-              io.tlDchannelWakeupDup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
+            io.tlDchannelWakeupDup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
+          }
+          // case Bank Conflict
+          when(causeReg(i)(LoadReplayCauses.C_BC)) {
+            blockingReg(i) := !(counterReg(i) === 0.U)
           }
         }
       }
-
-    // // case Bank Conflict
-    // when (causeReg(i)(LoadReplayCauses.C_BC)) {
-    //   enqNeedAlloacteNew.zip(enqIndex).zip(io.enq).map{ case((newAlloc,enqIdx), enq) =>
-    //     when(newAlloc && (enqIdx === i.asUInt)){
-    //       counterReg(i) := 1.U << penaltyReg(i)
-    //       penaltyReg(i)  := penaltyReg(i) + 1.U
-    //       blockingReg(i) := true.B
-    //     }.otherwise{
-    //       blockingReg(i) := !(counterReg(i) === 0.U)
-    //     }
-    //   }
-    // }
-    // // case TLB MISS
-    // when (causeReg(i)(LoadReplayCauses.C_TM)) {
-    //   enqNeedAlloacteNew.zip(enqIndex).zip(io.enq).map{ case((newAlloc,enqIdx), enq) =>
-    //     when(newAlloc && (enqIdx === i.asUInt)){
-    //       hintIDReg(i) := (1.U << reqIdWidth) - 1.U
-    //     }.otherwise{
-    //       blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
-    //     }
-    //   }
-    // }
-    // // case Dcache MISS
-    // when (causeReg(i)(LoadReplayCauses.C_DM)) {
-    //   enqNeedAlloacteNew.zip(enqIndex).zip(io.enq).map{ case((newAlloc,enqIdx), enq) =>
-    //     when(newAlloc && (enqIdx === i.asUInt)){
-    //       blockingReg(i) := (!enq.bits.replay.full_fwd) && (!(enq.bits.tl_d_channel_wakeup.valid && enq.bits.tl_d_channel_wakeup.hitInflightDcacheResp))
-    //       mshrIDreg(i) := enq.bits.mshrMissIDResp.bits
-    //     }.otherwise{
-    //       blockingReg(i) :=  Mux(io.tlDchannelWakeupDup.valid && io.tlDchannelWakeupDup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
-    //     }
-    //   }
-    // }
   })
 
   allocatedReg.zipWithIndex.foreach({case(valid,idx) => {

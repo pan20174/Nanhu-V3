@@ -91,6 +91,8 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val sqFull = Output(Bool())
     val sqCancelCnt = Output(UInt(log2Up(StoreQueueSize + 1).W))
     val sqDeq = Output(UInt(2.W))
+    val stDataReadySqPtr =  Output(new SqPtr)
+    val stDataReadyVec = Output(Vec(StoreQueueSize, Bool()))
   })
   println("StoreQueue: size:" + StoreQueueSize)
 
@@ -146,6 +148,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   val rdataPtrExt = RegInit(VecInit((0 until StorePipelineWidth).map(_.U.asTypeOf(new SqPtr))))
   val deqPtrExt = RegInit(VecInit((0 until StorePipelineWidth).map(_.U.asTypeOf(new SqPtr))))
   val cmtPtrExt = RegInit(VecInit((0 until CommitWidth).map(_.U.asTypeOf(new SqPtr))))
+  val dataReadyPtrExt = RegInit(0.U.asTypeOf(new SqPtr))
   val issuePtrExt = RegInit(0.U.asTypeOf(new SqPtr))
   val validCounter = RegInit(0.U(log2Ceil(LoadQueueSize + 1).W))
 
@@ -257,6 +260,25 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
       deqPtrExtNext(0) // for mmio insts, deqPtr may be ahead of cmtPtr
     )
   }
+
+  // update
+  val dataReadyLookupVec = (0 until IssuePtrMoveStride).map(dataReadyPtrExt + _.U)
+  val dataReadyLookup = dataReadyLookupVec.map(ptr => allocated(ptr.value) && (mmio(ptr.value) || datavalid(ptr.value)) && ptr =/= enqPtrExt(0))
+  val nextDataReadyPtr = dataReadyPtrExt + PriorityEncoder(VecInit(dataReadyLookup.map(!_) :+ true.B))
+  dataReadyPtrExt := nextDataReadyPtr
+
+  (0 until StoreQueueSize).map(i => {
+    io.stDataReadyVec(i) := RegNext(allocated(i) && (mmio(i) || datavalid(i)))
+  })
+
+  when (io.brqRedirect.valid) {
+    dataReadyPtrExt := Mux(
+      isAfter(cmtPtrExt(0), deqPtrExt(0)),
+      cmtPtrExt(0),
+      deqPtrExtNext(0) // for mmio insts, deqPtr may be ahead of cmtPtr
+    )
+  }
+  io.stDataReadySqPtr := dataReadyPtrExt
   // send issuePtrExt to rs
   // io.issuePtrExt := cmtPtrExt(0)
   io.issuePtrExt := issuePtrExt

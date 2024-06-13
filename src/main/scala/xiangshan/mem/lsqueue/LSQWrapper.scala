@@ -74,6 +74,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val storeDataIn = Vec(StorePipelineWidth, Flipped(Valid(new ExuOutput))) // store data, send to sq from rs
     val storeMaskIn = Vec(StorePipelineWidth, Flipped(Valid(new StoreMaskBundle))) // store mask, send to sq from rs
     val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
+    val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
 //    val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
 //    val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val sbuffer = Vec(StorePipelineWidth, Decoupled(new DCacheWordReqWithVaddr))
@@ -167,6 +168,10 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.replayQEnq <> io.replayQEnq
   loadQueue.io.replayQIssue <> io.replayQIssue
   loadQueue.io.tlDchannelWakeupDup <> io.tlDchannelWakeupDup
+  loadQueue.io.stDataReadyVec := storeQueue.io.stDataReadyVec
+  loadQueue.io.sqempty := storeQueue.io.sqempty
+  loadQueue.io.stDataReadySqPtr := storeQueue.io.stDataReadySqPtr
+  loadQueue.io.storeDataWbPtr := io.storeDataWbPtr
 
   io.lqDeq := loadQueue.io.lqDeq
   io.ldStop := loadQueue.io.ldStop

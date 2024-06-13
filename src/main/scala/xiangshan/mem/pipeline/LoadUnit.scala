@@ -297,6 +297,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s1_cause.schedIndex := s1_out.bits.replay.schedIndex
   debug_s1_cause.isReplayQReplay := s1_out.bits.replay.isReplayQReplay
   debug_s1_cause.full_fwd := false.B
+  debug_s1_cause.fwd_data_sqIdx := 0.U.asTypeOf(new SqPtr)
   debug_s1_cause.tlb_miss := s1_tlb_miss  // tlb resp miss
   debug_s1_cause.rar_nack := s1_needLdVioCheckRedo  // rar query fail
   debug_s1_cause.dcache_rep := s1_cancel_inner  // dcache not ready
@@ -465,6 +466,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_cause_can_transfer = (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
   debug_s2_cause := debugS2CauseReg
   debug_s2_cause.full_fwd := s2_fullForward
+  debug_s2_cause.fwd_data_sqIdx := Mux(s2_data_invalid, s2_out.bits.uop.sqIdx, 0.U.asTypeOf(new SqPtr))
   debug_s2_cause.dcache_miss := (s2_cache_miss && !RegNext(s1_bank_conflict)) || debugS2CauseReg.dcache_miss
   debug_s2_cause.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   debug_s2_cause.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
@@ -552,7 +554,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val debugS3CauseReg = RegInit(0.U.asTypeOf(new ReplayInfo))
   debugS3CauseReg := Mux( s2_cause_can_transfer && s2_out.fire && !s2_wb_valid, debug_s2_cause, 0.U.asTypeOf(new ReplayInfo))
   dontTouch(debugS3CauseReg)
-  val temp_other_cause = (debugS3CauseReg.replayCause.updated(LoadReplayCauses.C_TM, false.B)).updated(LoadReplayCauses.C_DM, false.B).reduce(_ || _)
+  val temp_other_cause = debugS3CauseReg.replayCause
+  .updated(LoadReplayCauses.C_TM, false.B)
+  .updated(LoadReplayCauses.C_DM, false.B)
+  .updated(LoadReplayCauses.C_FF, false.B)
+  .reduce(_ || _)
   val s3_dcacheMshrID = RegEnable(s2_dcacheMshrID, s2_dcacheMshrID.valid)
   val s3_tl_d_channel_wakeup = WireInit(0.U.asTypeOf(new DcacheTLBypassLduIO))
   s3_tl_d_channel_wakeup.valid := io.tl_d_channel_wakeup.valid
@@ -568,10 +574,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replayQueue.bits.paddr := DontCare
   io.s3_enq_replayQueue.bits.replay.isReplayQReplay := s3_in.bits.replay.isReplayQReplay
   io.s3_enq_replayQueue.bits.replay.replayCause := DontCare
+  io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM) := debugS3CauseReg.tlb_miss
+  io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_FF) := debugS3CauseReg.fwd_fail
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DM) := debugS3CauseReg.dcache_miss
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := temp_other_cause
-  io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM) := debugS3CauseReg.tlb_miss
   io.s3_enq_replayQueue.bits.replay.schedIndex := s3_in.bits.replay.schedIndex
+  io.s3_enq_replayQueue.bits.replay.fwd_data_sqIdx := debugS3CauseReg.fwd_data_sqIdx
   io.s3_enq_replayQueue.bits.replay.full_fwd := RegNext(s2_dataForwarded)
   io.s3_enq_replayQueue.bits.mshrMissIDResp <> s3_dcacheMshrID
   io.s3_enq_replayQueue.bits.uop := s3_in.bits.uop

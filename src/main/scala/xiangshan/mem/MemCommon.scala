@@ -99,6 +99,7 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
     replay.schedIndex := DontCare
     replay.isReplayQReplay := DontCare
     replay.full_fwd := DontCare
+    replay.fwd_data_sqIdx := DontCare
   }
 }
 
