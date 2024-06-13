@@ -97,7 +97,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val enq = new LqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
     val loadPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqPaddrWriteBundle)))
-    val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
+    val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val stLdViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
     val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
@@ -148,11 +148,12 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   println("LoadQueue: size:" + LoadQueueSize)
 
   val rawQueue = Module(new LoadRAWQueue)
-  rawQueue.io := DontCare
   rawQueue.io.redirect := io.brqRedirect
   rawQueue.io.stAddrReadyPtr := io.stAddrReadyPtr
   rawQueue.io.storeQuery := io.stLdViolationQuery
   rawQueue.io.loadEnq <> io.loadEnqRAW
+  rawQueue.io.stAddrAllReady := io.stAddrAllReady
+
   dontTouch(rawQueue.io.rollback)
 
   val uop = Reg(Vec(LoadQueueSize, new MicroOp))
@@ -392,14 +393,14 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     }
   })
 
-  def getFirstOne(mask: Vec[Bool], startMask: UInt) = {
+  private def getFirstOne(mask: Vec[Bool], startMask: UInt): UInt = {
     val length = mask.length
     val highBits = (0 until length).map(i => mask(i) & (~startMask(i)).asBool)
     val highBitsUint = Cat(highBits.reverse)
     PriorityEncoder(Mux(highBitsUint.orR, highBitsUint, mask.asUInt))
   }
 
-  def getOldestInTwo(valid: Seq[Bool], uop: Seq[MicroOp]) = {
+  private def getOldestInTwo(valid: Seq[Bool], uop: Seq[MicroOp]): MicroOp = {
     assert(valid.length == uop.length)
     assert(valid.length == 2)
     Mux(valid(0) && valid(1),
@@ -407,7 +408,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       Mux(valid(0) && !valid(1), uop(0), uop(1)))
   }
 
-  def getAfterMask(valid: Seq[Bool], uop: Seq[MicroOp]) = {
+  private def getAfterMask(valid: Seq[Bool], uop: Seq[MicroOp]): IndexedSeq[IndexedSeq[Bool]] = {
     assert(valid.length == uop.length)
     val length = valid.length
     (0 until length).map(i => {
@@ -599,23 +600,25 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       (!lastlastCycleRedirect.valid || isBefore(uop.robIdx, lastlastCycleRedirect.bits.robIdx))
   }
 
-  io.rollback.bits.robIdx := rollbackUop.robIdx
-  io.rollback.bits.ftqIdx := rollbackUop.cf.ftqPtr
-  io.rollback.bits.stFtqIdx := rollbackStFtqIdx
-  io.rollback.bits.ftqOffset := rollbackUop.cf.ftqOffset
-  io.rollback.bits.stFtqOffset := rollbackStFtqOffset
-  io.rollback.bits.level := RedirectLevel.flush
-  io.rollback.bits.interrupt := false.B
-  io.rollback.bits.cfiUpdate := DontCare
-  io.rollback.bits.cfiUpdate.target := rollbackUop.cf.pc
-  io.rollback.bits.isException := false.B
-  io.rollback.bits.isLoadStore := true.B
-  io.rollback.bits.isLoadLoad := false.B
-  io.rollback.bits.isXRet := false.B
-  io.rollback.bits.isFlushPipe := false.B
-  io.rollback.bits.isPreWalk := false.B
+//  io.rollback.bits.robIdx := rollbackUop.robIdx
+//  io.rollback.bits.ftqIdx := rollbackUop.cf.ftqPtr
+//  io.rollback.bits.stFtqIdx := rollbackStFtqIdx
+//  io.rollback.bits.ftqOffset := rollbackUop.cf.ftqOffset
+//  io.rollback.bits.stFtqOffset := rollbackStFtqOffset
+//  io.rollback.bits.level := RedirectLevel.flush
+//  io.rollback.bits.interrupt := false.B
+//  io.rollback.bits.cfiUpdate := DontCare
+//  io.rollback.bits.cfiUpdate.target := rollbackUop.cf.pc
+//  io.rollback.bits.isException := false.B
+//  io.rollback.bits.isLoadStore := true.B
+//  io.rollback.bits.isLoadLoad := false.B
+//  io.rollback.bits.isXRet := false.B
+//  io.rollback.bits.isFlushPipe := false.B
+//  io.rollback.bits.isPreWalk := false.B
+//
+//  io.rollback.valid := rollbackValidVecChecked.asUInt.orR
 
-  io.rollback.valid := rollbackValidVecChecked.asUInt.orR
+  io.rollback := rawQueue.io.rollback
 
   when(io.rollback.valid) {
     // XSDebug("Mem rollback: pc %x robidx %d\n", io.rollback.bits.cfi, io.rollback.bits.robIdx.asUInt)

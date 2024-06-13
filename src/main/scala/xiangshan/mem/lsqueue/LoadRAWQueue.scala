@@ -62,7 +62,9 @@ class RAWInfoUop(implicit p: Parameters) extends XSBundle {
 }
 
 
-class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging with HasCircularQueuePtrHelper{
+class LoadRAWQueue(implicit p: Parameters) extends XSModule
+  with HasPerfLogging
+  with HasCircularQueuePtrHelper{
   val io = IO(new Bundle() {
     val redirect = Flipped(ValidIO(new Redirect))
     val loadEnq = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq //todo
@@ -91,11 +93,11 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
 
   })
 
-  val freeWidth = 4
+  private val freeWidth = 4
 
-  val allocatedReg = RegInit(VecInit(List.fill(LoadRAWQueueSize)(false.B)))
-  val uopReg = Reg(Vec(LoadRAWQueueSize,new RAWInfoUop))
-  val dataModule = Module(new LoadRAWQueueDataModule(
+  private val allocatedReg = RegInit(VecInit(List.fill(LoadRAWQueueSize)(false.B)))
+  private val uopReg = Reg(Vec(LoadRAWQueueSize,new RAWInfoUop))
+  private val dataModule = Module(new LoadRAWQueueDataModule(
     queryWidth = StorePipelineWidth,
     entrySize = LoadRAWQueueSize,
     writeNum = LoadPipelineWidth,
@@ -103,7 +105,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
   dataModule.io := DontCare
   dataModule.io.write.foreach(_.wen := false.B)
 
-  val freeList = Module(new LsqFreeList(
+  private val freeList = Module(new LsqFreeList(
     size = LoadRAWQueueSize,
     allocWidth = LoadPipelineWidth,
     freeWidth = freeWidth,
@@ -113,7 +115,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
   freeList.io := DontCare
   assert(freeList.io.validCount <= LoadRAWQueueSize.U)
 
-  val needAllocateEntryVec = Wire(Vec(LoadPipelineWidth,Valid(UInt(log2Up(LoadRAWQueueSize).W)))) //actually enqueue Idx
+  private val needAllocateEntryVec = Wire(Vec(LoadPipelineWidth,Valid(UInt(log2Up(LoadRAWQueueSize).W)))) //actually enqueue Idx
   dontTouch(needAllocateEntryVec)
 
   //allocate entry
@@ -133,7 +135,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
     enq.s2_enqSuccess := Mux(needAllocateEntryVec(idx).valid, canAccept, true.B)
   }
 
-  val reqWriteValidVec = Wire(Vec(LoadPipelineWidth,Bool()))
+  private val reqWriteValidVec = Wire(Vec(LoadPipelineWidth,Bool()))
   reqWriteValidVec.zipWithIndex.foreach({case(reqWriteValid,idx) =>
     reqWriteValid := needAllocateEntryVec(idx).valid && io.loadEnq(idx).s2_enqSuccess
 
@@ -185,10 +187,10 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
   //1. when the stAddrReadyPtr is after uop.sqIdx
   //2. redirect
   //3. when the inst enqueue replayQueue, the enqueue should be cancel in last cycle
-  val normalFreeVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
-  val redirectFreeVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
-  val cancelFreeVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
-  val freeMaskVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
+  private val normalFreeVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
+  private val redirectFreeVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
+  private val cancelFreeVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
+  private val freeMaskVec = WireInit(VecInit((0 until LoadRAWQueueSize).map(j => false.B)))
 
   dontTouch(normalFreeVec)
   dontTouch(redirectFreeVec)
@@ -218,18 +220,18 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
   })
 
   //detect store load violation
-  val s0_stFtq = Wire(Vec(StorePipelineWidth, new Bundle() {
+  private val s0_stFtq = Wire(Vec(StorePipelineWidth, new Bundle() {
     val stFtqIdx = new FtqPtr
     val stFtqOffset = UInt(log2Up(PredictWidth).W)
   }))
-  val s1_stFtq = WireInit(0.U.asTypeOf(s0_stFtq))
+  private val s1_stFtq = WireInit(0.U.asTypeOf(s0_stFtq))
 
 
   //  val violationOldestVec = Wire(Vec(StorePipelineWidth,Valid(new RobPtr)))
-  val violationOldestEntryIdxVec = Wire(Vec(StorePipelineWidth,Valid(UInt(log2Up(LoadRAWQueueSize).W))))
-//  val violationResRob = Wire(Valid(new RobPtr))
-//  val violationResIdx = Wire(UInt(LoadRAWQueueSize.W))
+  private val violationOldestEntryIdxVec = Wire(Vec(StorePipelineWidth,Valid(UInt(log2Up(LoadRAWQueueSize).W))))
+  dontTouch(violationOldestEntryIdxVec)
   require(io.storeQuery.length == dataModule.io.violation.length)
+
   io.storeQuery.zipWithIndex.foreach({case (query,idx) =>
     //S0: store_s1 req
     s0_stFtq(idx).stFtqIdx := query.bits.stFtqPtr
@@ -243,9 +245,10 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
     val s0_addrMaskMatch = dataModule.io.violation(idx).violationMask.asUInt
 
     //S1: store_s2 resp
-    s1_stFtq(idx) := RegEnable(s0_stFtq(idx),query.valid)
-    val s1_addrMaskMatch = RegEnable(s0_addrMaskMatch,query.valid)
-    val s1_needCheck = RegEnable(s0_needCheck,query.valid)
+    //Do not add "init" parameters randomly!!!!
+    s1_stFtq(idx) := RegEnable(s0_stFtq(idx), query.valid)
+    val s1_addrMaskMatch = RegEnable(s0_addrMaskMatch, query.valid)
+    val s1_needCheck = RegEnable(s0_needCheck, init = 0.U.asTypeOf(s0_needCheck), query.valid)
     val s1_violationValid = VecInit((0 until LoadRAWQueueSize).map(j => {
       s1_addrMaskMatch(j) && s1_needCheck(j)
     }))
@@ -256,22 +259,28 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule with HasPerfLogging 
       in.valid := s1_violationValid(i)
       in.bits := uopRob(i)
     })
+
+    //output is OneHot
     violationOldestEntryIdxVec(idx) := selModule.io.out
+    when(violationOldestEntryIdxVec(idx).valid){
+      assert(PopCount(violationOldestEntryIdxVec(idx).bits) <= 1.U,s"violationOldestEntryIdxVec${idx} must be OneHot!")
+    }
   })
 
-  val violationSelector = Module(new ViolationSelector(StorePipelineWidth,true))
+  private val violationSelector = Module(new ViolationSelector(StorePipelineWidth,true))
   require(violationSelector.io.in.length == violationOldestEntryIdxVec.length)
 
   violationSelector.io.in.zipWithIndex.foreach({case (in,idx) =>
-    val rob = uopReg(violationOldestEntryIdxVec(idx).bits).robIdx
+    val entryIdx = OHToUInt(violationOldestEntryIdxVec(idx).bits)
+    val rob = uopReg(entryIdx).robIdx
     in.valid := violationOldestEntryIdxVec(idx).valid
     in.bits := rob
   })
 
-  val rollbackStIdx = violationSelector.io.chosen
-  val rollbackEntryIdx = violationOldestEntryIdxVec(rollbackStIdx).bits
-  val rollbackRes = Wire(Valid(new Redirect))
-  val rollbackRob = violationSelector.io.out.bits
+  private val rollbackStIdx = violationSelector.io.chosen
+  private val rollbackEntryIdx = violationOldestEntryIdxVec(rollbackStIdx).bits
+  private val rollbackRes = Wire(Valid(new Redirect))
+  private val rollbackRob = violationSelector.io.out.bits
   rollbackRes.valid := violationSelector.io.out.valid && !rollbackRob.needFlush(io.redirect)
   rollbackRes.bits.robIdx := rollbackRob
   rollbackRes.bits.ftqIdx := uopReg(rollbackEntryIdx).ftqPtr

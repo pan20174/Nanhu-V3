@@ -339,6 +339,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   })
   val s2_hasStLdViolation = s2_stldViolationVec.reduce(_ | _)
   val s2_enqRAWFail = io.enqRAWQueue.s2_enq.valid && !io.enqRAWQueue.s2_enqSuccess
+  val s2_allStLdViolation = s2_hasStLdViolation | RegNext(s1_hasStLdViolation,false.B)
   dontTouch(s2_hasStLdViolation)
 
   val s2_pmp = WireInit(io.pmp)
@@ -463,7 +464,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 //  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
 
   val exceptionWb = s2_hasException
-  val normalWb = !s2_tlb_miss && (!s2_cache_miss || s2_fullForward) && !s2_data_invalid && !s2_mmio
+  val normalWb = !s2_tlb_miss && (!s2_cache_miss || s2_fullForward) && !s2_data_invalid && !s2_mmio & !s2_allStLdViolation
   val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
     normalWb)
 
@@ -598,6 +599,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   assert(!(RegNext(hitLoadOut.valid,false.B) && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)),"when load" +
     " wb," + "replayCause must be 0!!")
 
+
+  val s3_needReplay = io.s3_enq_replayQueue.valid && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)
+
   io.enqRAWQueue.s2_enq.valid := s2_wb_valid
   io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr(PAddrBits - 1, 3)
   io.enqRAWQueue.s2_enq.bits.mask := s2_out.bits.mask
@@ -605,7 +609,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.enqRAWQueue.s2_enq.bits.robIdx := s2_out.bits.uop.robIdx
   io.enqRAWQueue.s2_enq.bits.ftqPtr := s2_out.bits.uop.cf.ftqPtr
   io.enqRAWQueue.s2_enq.bits.ftqOffset := s2_out.bits.uop.cf.ftqOffset
-  io.enqRAWQueue.s3_cancel := io.s3_enq_replayQueue.valid && (debugS3CauseReg.need_rep || s3_in.bits.uop.cf.exceptionVec.reduce(_|_))
+  io.enqRAWQueue.s3_cancel := RegNext(io.enqRAWQueue.s2_enq.valid && io.enqRAWQueue.s2_enqSuccess,false.B) && s3_needReplay
 
   val perfEvents = Seq(
     ("load_s0_in_fire         ", s0_valid),
