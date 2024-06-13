@@ -169,7 +169,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.replayQIssue <> io.replayQIssue
   loadQueue.io.tlDchannelWakeupDup <> io.tlDchannelWakeupDup
   loadQueue.io.stDataReadyVec := storeQueue.io.stDataReadyVec
-  loadQueue.io.sqempty := storeQueue.io.sqempty
+  loadQueue.io.sqEmpty := storeQueue.io.sqempty
   loadQueue.io.stDataReadySqPtr := storeQueue.io.stDataReadySqPtr
   loadQueue.io.storeDataWbPtr := io.storeDataWbPtr
 
