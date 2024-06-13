@@ -232,6 +232,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
       s1_in.bits.mask === req.bits.mask
   })
   val s1_hasStLdViolation = s1_stldViolationVec.reduce(_ | _)
+  dontTouch(s1_hasStLdViolation)
 
   val s1_dtlbResp = io.tlb.resp
   s1_dtlbResp.ready := true.B
@@ -329,6 +330,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
       s2_in.bits.mask === req.bits.mask
   })
   val s2_hasStLdViolation = s2_stldViolationVec.reduce(_ | _)
+  val s2_enqRAWFail = io.enqRAWQueue.s2_enq.valid && !io.enqRAWQueue.s2_enqSuccess
+  dontTouch(s2_hasStLdViolation)
 
   val s2_pmp = WireInit(io.pmp)
   val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm, io.tlb.resp.valid)
@@ -483,7 +486,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s2_cause.dcache_miss := s2_out.bits.miss|| debugS2CauseReg.dcache_miss
   debug_s2_cause.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   debug_s2_cause.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
-  debug_s2_cause.raw_nack := s2_hasStLdViolation || debugS2CauseReg.raw_nack
+  debug_s2_cause.raw_nack := s2_hasStLdViolation || debugS2CauseReg.raw_nack || s2_enqRAWFail
   dontTouch(debug_s2_cause)
 
   /*
