@@ -135,6 +135,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.stDataReadyVec := io.stDataReadyVec
   replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
   replayQueue.io.sqEmpty := io.sqEmpty
+  replayQueue.io.stDataReadySqPtr := io.stDataReadySqPtr
 
   io.ldStop := replayQueue.io.ldStop
   io.replayQIssue <> replayQueue.io.replayQIssue
