@@ -56,7 +56,13 @@ class LoadUnitTriggerIO(implicit p: Parameters) extends XSBundle {
   val lastDataHit = Output(Bool())
 }
 
-class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with HasDCacheParameters with SdtrigExt with HasPerfLogging {
+class LoadUnit(implicit p: Parameters) extends XSModule
+  with HasLoadHelper
+  with HasPerfEvents
+  with HasDCacheParameters
+  with SdtrigExt
+  with HasPerfLogging
+  with HasCircularQueuePtrHelper {
   val io = IO(new Bundle() {
 
     // S0: reservationStation issueIn
@@ -228,7 +234,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_stldViolationVec = Wire(Vec(StorePipelineWidth, Bool()))
   s1_stldViolationVec := io.storeViolationQuery.map({ case req =>
     s1_in.valid && req.valid &&
-      s1_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
+    isAfter(s1_in.bits.uop.robIdx, req.bits.robIdx) &&
+    s1_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
       s1_in.bits.mask === req.bits.mask
   })
   val s1_hasStLdViolation = s1_stldViolationVec.reduce(_ | _)
@@ -326,6 +333,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s2_stldViolationVec = Wire(Vec(StorePipelineWidth, Bool()))
   s2_stldViolationVec := io.storeViolationQuery.map({ case req =>
     s2_in.valid && req.valid &&
+      isAfter(s2_in.bits.uop.robIdx, req.bits.robIdx) &&
       s2_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
       s2_in.bits.mask === req.bits.mask
   })
