@@ -233,10 +233,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   //store load violation from storeUnit S1
   val s1_stldViolationVec = Wire(Vec(StorePipelineWidth, Bool()))
   s1_stldViolationVec := io.storeViolationQuery.map({ case req =>
-    s1_in.valid && req.valid &&
-    isAfter(s1_in.bits.uop.robIdx, req.bits.robIdx) &&
-    s1_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
-      s1_in.bits.mask === req.bits.mask
+    s1_out.valid && req.valid &&
+    isAfter(s1_out.bits.uop.robIdx, req.bits.robIdx) &&
+    s1_out.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
+      (s1_out.bits.mask & req.bits.mask).orR
   })
   val s1_hasStLdViolation = s1_stldViolationVec.reduce(_ | _)
   dontTouch(s1_hasStLdViolation)
@@ -335,7 +335,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     s2_in.valid && req.valid &&
       isAfter(s2_in.bits.uop.robIdx, req.bits.robIdx) &&
       s2_in.bits.paddr(PAddrBits - 1, 3) === req.bits.paddr &&
-      s2_in.bits.mask === req.bits.mask
+      (s2_in.bits.mask & req.bits.mask).orR
   })
   val s2_hasStLdViolation = s2_stldViolationVec.reduce(_ | _)
   val s2_enqRAWFail = io.enqRAWQueue.s2_enq.valid && !io.enqRAWQueue.s2_enqSuccess

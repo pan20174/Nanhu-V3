@@ -63,7 +63,7 @@ class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p
     interRes.valid := selectPolicy.io.out.valid
     interRes.bits := Mux1H(selectPolicy.io.out.bits, in.map(_._1.bits))
     val idx = Mux1H(selectPolicy.io.out.bits, in.map(_._2))
-    (interRes, idx)
+    (interRes, idx)//((valid,rob),idx)
   }
 
   private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), 8, ReductionFunc)
@@ -78,12 +78,12 @@ class ViolationSelector(inNum:Int, haveEqual:Boolean)(implicit p: Parameters) ex
     val chosen = Output(UInt(inNum.W))
   })
 
-  private val selector = Module(new SelectPolicy(inNum, false, haveEqual))
+  private val selector = Module(new SelectPolicy(inNum, true, haveEqual))
   selector.io.in.zip(io.in).foreach({case(si, in) =>
     si.valid := in.valid
-    si.bits := in.bits
+    si.bits := in.bits  //rob
   })
   io.out.valid := selector.io.out.valid
-  io.out.bits := Mux1H(selector.io.out.bits, io.in.map(_.bits))
+  io.out.bits := Mux1H(selector.io.out.bits, io.in.map(_.bits)) //rob
   io.chosen := selector.io.out.bits
 }

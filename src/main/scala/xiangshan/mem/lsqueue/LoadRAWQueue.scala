@@ -284,8 +284,8 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
     when(in.valid){ assert(allocatedReg(entryIdx)) }
   })
 
-  private val rollbackStIdx = violationSelector.io.chosen
-  private val rollbackEntryIdx = violationOldestEntryIdxVec(rollbackStIdx).bits
+  private val rollbackStIdx = OHToUInt(violationSelector.io.chosen)
+  private val rollbackEntryIdx = OHToUInt(violationOldestEntryIdxVec(rollbackStIdx).bits)
   private val rollbackRes = Wire(Valid(new Redirect))
   private val rollbackRob = violationSelector.io.out.bits
   rollbackRes.valid := violationSelector.io.out.valid && !rollbackRob.needFlush(io.redirect)
