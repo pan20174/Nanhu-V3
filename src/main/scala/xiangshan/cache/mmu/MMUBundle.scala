@@ -284,7 +284,7 @@ class TlbSectorEntry(pageNormal: Boolean, pageSuper: Boolean)(implicit p: Parame
     if (saveLevel) {
       if (!pageNormal) {
         require(ppn.getWidth == ppnLen - vpnnLen)
-        Cat(ppn(ppn.getWidth-1, vpnnLen*2), RegEnable(ppn_res(vpnnLen*2-1, 0), valid))
+        Cat(ppn(ppn.getWidth-1, vpnnLen), RegEnable(ppn_res(vpnnLen*2-1, 0), valid))
       } else {
         require(ppn.getWidth == sectorPpnLen)
         Cat(ppn(ppn.getWidth-1, vpnnLen*2-sectorTlbWidth), RegEnable(ppn_res(vpnnLen*2-1, 0), valid))

@@ -83,7 +83,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     nWays = q.normalNWays,
     saveLevel = q.saveLevel,
     normalPage = true,
-    superPage = true,
+    superPage = false,
   )
 
     val tlbsp = TlbStorage(
@@ -94,7 +94,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     nSets = 1,
     nWays = q.superNWays,
     saveLevel = q.saveLevel,
-    normalPage = true,
+    normalPage = false,
     superPage = true,
   )
 
@@ -147,11 +147,9 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     resp(i).bits.miss := { if (q.missSameCycle) miss_sameCycle else miss }
     resp(i).bits.ptwBack := ptw.resp.fire
 
-    // for timing optimization, pmp check is divided into dynamic and static
-    // dynamic: superpage (or full-connected reg entries) -> check pmp when translation done
-    // static: 4K pages (or sram entries) -> check pmp with pre-checked results
-//    val pmp_paddr = Mux(vmEnable_dup(i), Cat(super_ppn(0), offReg), if (!q.sameCycle) RegNext(vaddr) else vaddr)
-    val pmp_paddr = Mux(vmEnable_dup(i), Cat(sp_ppn(0), offReg), if (!q.sameCycle) RegEnable(vaddr,reqValid(i)) else vaddr)
+    val pmp_ppn = Mux(sp_hit, sp_ppn(0), nm_ppn(0))
+
+    val pmp_paddr = Mux(vmEnable_dup(i), Cat(pmp_ppn, offReg), if (!q.sameCycle) RegEnable(vaddr,reqValid(i)) else vaddr)
     pmp(i).valid := resp(i).valid
     pmp(i).bits.addr := pmp_paddr
     pmp(i).bits.size := sizeReg
@@ -224,7 +222,7 @@ class TLB(Width: Int, nRespDups: Int = 1, q: TLBParameters)(implicit p: Paramete
     io.replace.superPage.chosen_set := DontCare
     io.replace.superPage.refillIdx
   } else {
-    val re = ReplacementPolicy.fromString(q.normalReplacer, q.normalNWays)
+    val re = ReplacementPolicy.fromString(q.superReplacer, q.superNWays)
     re.access(tlbsp.access.map(_.touch_ways))
     re.way
   }
