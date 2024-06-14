@@ -491,7 +491,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     io.forward(i).matchInvalid := vaddrMatchFailed
     val dataInvalidMaskRegWire = Wire(UInt(StoreQueueSize.W))
     dataInvalidMaskRegWire := dataInvalidMaskReg // make chisel happy
-//    io.forward(i).dataInvalidSqIdx := PriorityEncoder(dataInvalidMaskRegWire)
+    io.forward(i).dataInvalidSqIdx := PriorityEncoder(dataInvalidMaskRegWire)
   }
 
   /**

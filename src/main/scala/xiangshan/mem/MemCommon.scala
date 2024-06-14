@@ -151,6 +151,7 @@ class LoadForwardQueryIO(implicit p: Parameters) extends XSBundle {
 // PipeLoadForwardFromSQ is used in loadUnit stage_1 to require StoreQueue to forward data
 class PipeLoadForwardFromSQ(implicit p: Parameters) extends LoadForwardQueryIO {
   val sqIdxMask = Output(UInt(StoreQueueSize.W))
+  val dataInvalidSqIdx = Input(new SqPtr) // resp to load_s2, sqIdx
 }
 
 // Query load queue for ld-ld violation
