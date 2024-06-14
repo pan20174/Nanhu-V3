@@ -120,6 +120,14 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
       data(io.waddr(i)) := io.wdata(i)
     }
   }
+
+  for(i <- 0 until numWrite){
+    for(j <- (i + 1) until numWrite){
+      when(io.wen(i) && io.wen(j)){
+        assert(io.waddr(i) === io.waddr(j),"can not write the same address")
+      }
+    }
+  }
 }
 
 class ReplayQDebugBundle(implicit p: Parameters) extends XSBundle{
