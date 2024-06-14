@@ -89,23 +89,45 @@ class FTBEntry(implicit p: Parameters) extends XSBundle with FTBParams with BPUU
   val alwaysTaken = Bool()
 
   def setLowerStatByTarget(pc: UInt, target: UInt, isShare: Boolean = false): Unit = {
-    val pcHigher = pc(VAddrBits - 1, JMP_OFFSET_LEN + 1)
-    val targetHigher = target(VAddrBits - 1, JMP_OFFSET_LEN + 1)
-    val stat = Mux(targetHigher > pcHigher, TAR_OVF, Mux(targetHigher < pcHigher, TAR_UDF, TAR_FIT))
-    val lower = target(JMP_OFFSET_LEN, 1)
+    def getTargetStatByHigher(pc_higher: UInt, target_higher: UInt) =
+      Mux(target_higher > pc_higher, TAR_OVF,
+        Mux(target_higher < pc_higher, TAR_UDF, TAR_FIT))
+
+    val offLen = if (isShare) BR_OFFSET_LEN else JMP_OFFSET_LEN
+    val pc_higher = pc(VAddrBits - 1, offLen + 1)
+    val target_higher = target(VAddrBits - 1, offLen + 1)
+    val stat = getTargetStatByHigher(pc_higher, target_higher)
+    val lower = ZeroExt(target(offLen, 1), JMP_OFFSET_LEN)
+
     this.lower := lower
     this.tarStat := stat
     this.sharing := isShare.B
   }
 
   def getTarget(pc: UInt): UInt = {
-    val h = pc(VAddrBits - 1, JMP_OFFSET_LEN + 1)
-    val higher = MuxLookup(tarStat, h)(Seq(
-      TAR_OVF -> (h + 1.U),
-      TAR_UDF -> (h - 1.U),
-      TAR_FIT -> h
-    ))
-    Cat(higher, lower, 0.U(1.W))
+
+    def getTarget(offLen: Int)(pc: UInt, lower: UInt, stat: UInt): UInt = {
+      val h = pc(VAddrBits - 1, offLen + 1)
+      val higher = Wire(UInt((VAddrBits - offLen - 1).W))
+      higher := h
+      val target =
+        Cat(
+          Mux1H(Seq(
+            (stat === TAR_OVF, higher + 1.U),
+            (stat === TAR_UDF, higher - 1.U),
+            (stat === TAR_FIT, higher),
+          )),
+          lower(offLen - 1, 0), 0.U(1.W)
+        )
+      require(target.getWidth == VAddrBits)
+      require(offLen != 0)
+      target
+    }
+
+    Mux(sharing,
+      getTarget(BR_OFFSET_LEN)(pc, lower, tarStat),
+      getTarget(JMP_OFFSET_LEN)(pc, lower, tarStat)
+    )
   }
 
   def getFallThrough(pc: UInt): UInt = {
