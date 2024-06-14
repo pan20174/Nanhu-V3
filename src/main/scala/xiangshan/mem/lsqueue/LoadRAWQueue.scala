@@ -228,8 +228,8 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
 
 
   //  val violationOldestVec = Wire(Vec(StorePipelineWidth,Valid(new RobPtr)))
-  private val violationOldestEntryIdxVec = Wire(Vec(StorePipelineWidth,Valid(UInt(log2Up(LoadRAWQueueSize).W))))
-  dontTouch(violationOldestEntryIdxVec)
+  private val violationOldestEntryIdxVec = Wire(Vec(StorePipelineWidth,Valid(UInt(LoadRAWQueueSize.W))))
+  dontTouch(violationOldestEntryIdxVec) //violationOldestEntryIdxVec.bits is OneHot
   require(io.storeQuery.length == dataModule.io.violation.length)
 
   io.storeQuery.zipWithIndex.foreach({case (query,idx) =>
@@ -240,15 +240,18 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
     dataModule.io.violation(idx).paddr := query.bits.paddr
     dataModule.io.violation(idx).mask := query.bits.mask
     val s0_needCheck = VecInit((0 until LoadRAWQueueSize).map(j => {
-      allocatedReg(j) && !uopReg(j).robIdx.needFlush(io.redirect) && isAfter(uopReg(j).robIdx,query.bits.robIdx)
+      query.valid && allocatedReg(j) &&
+        !uopReg(j).robIdx.needFlush(io.redirect) &&
+        isAfter(uopReg(j).robIdx,query.bits.robIdx)
     }))
+    s0_needCheck.suggestName(s"s0_needCheck_${idx}")
     val s0_addrMaskMatch = dataModule.io.violation(idx).violationMask.asUInt
 
     //S1: store_s2 resp
     //Do not add "init" parameters randomly!!!!
     s1_stFtq(idx) := RegEnable(s0_stFtq(idx), query.valid)
     val s1_addrMaskMatch = RegEnable(s0_addrMaskMatch, query.valid)
-    val s1_needCheck = RegEnable(s0_needCheck, init = 0.U.asTypeOf(s0_needCheck), query.valid)
+    val s1_needCheck = RegEnable(s0_needCheck, 0.U.asTypeOf(s0_needCheck), query.valid)
     val s1_violationValid = VecInit((0 until LoadRAWQueueSize).map(j => {
       s1_addrMaskMatch(j) && s1_needCheck(j)
     }))
@@ -256,7 +259,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
 
     val selModule = Module(new RAWQueueSelectPolicy(LoadRAWQueueSize, true, idx))
     selModule.io.in.zipWithIndex.foreach({case (in,i) =>
-      in.valid := s1_violationValid(i)
+      in.valid := s1_violationValid(i) && RegNext(query.valid,false.B)
       in.bits := uopRob(i)
     })
 
@@ -273,8 +276,10 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
   violationSelector.io.in.zipWithIndex.foreach({case (in,idx) =>
     val entryIdx = OHToUInt(violationOldestEntryIdxVec(idx).bits)
     val rob = uopReg(entryIdx).robIdx
-    in.valid := violationOldestEntryIdxVec(idx).valid
+    in.valid := violationOldestEntryIdxVec(idx).valid && RegNext(io.storeQuery(idx).valid,false.B) //can't ignore
     in.bits := rob
+
+    when(in.valid){ assert(allocatedReg(entryIdx)) }
   })
 
   private val rollbackStIdx = violationSelector.io.chosen

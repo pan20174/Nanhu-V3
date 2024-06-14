@@ -536,9 +536,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     )
   }
 
-  // S2: select rollback (part1) and generate rollback request
-  // rollback check
-  // Wb/L1 rollback seq check is done in s2
+//   S2: select rollback (part1) and generate rollback request
+//   rollback check
+//   Wb/L1 rollback seq check is done in s2
   val rollbackWb = Wire(Vec(StorePipelineWidth, Valid(new MicroOpRbExt)))
   val rollbackL1 = Wire(Vec(StorePipelineWidth, Valid(new MicroOpRbExt)))
   val rollbackL1Wb = Wire(Vec(StorePipelineWidth*2, Valid(new MicroOpRbExt)))
@@ -547,6 +547,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   // store ftq index for store set update
   val stFtqIdxS2 = Wire(Vec(StorePipelineWidth, new FtqPtr))
   val stFtqOffsetS2 = Wire(Vec(StorePipelineWidth, UInt(log2Up(PredictWidth).W)))
+
   for (i <- 0 until StorePipelineWidth) {
     val detectedRollback = detectRollback(i)
     rollbackLq(i).valid := detectedRollback._1._1 && RegNext(io.storeIn(i).valid)
@@ -572,15 +573,15 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val rollbackLq1VReg = RegNext(rollbackLq(1).valid)
   val rollbackLq1Reg = RegEnable(rollbackLq(1).bits, rollbackLq(1).valid)
 
-  // S3: select rollback (part2), generate rollback request, then fire rollback request
-  // Note that we use robIdx - 1.U to flush the load instruction itself.
-  // Thus, here if last cycle's robIdx equals to this cycle's robIdx, it still triggers the redirect.
+//   S3: select rollback (part2), generate rollback request, then fire rollback request
+//   Note that we use robIdx - 1.U to flush the load instruction itself.
+//   Thus, here if last cycle's robIdx equals to this cycle's robIdx, it still triggers the redirect.
 
   // FIXME: this is ugly
   val rollbackValidVec = Seq(rollbackL1WbVReg, rollbackLq0VReg, rollbackLq1VReg)
   val rollbackUopExtVec = Seq(rollbackL1WbReg, rollbackLq0Reg, rollbackLq1Reg)
 
-  // select uop in parallel
+//   select uop in parallel
   val mask = getAfterMask(rollbackValidVec, rollbackUopExtVec.map(i => i.uop))
   val oneAfterZero = mask(1)(0)
   val rollbackUopExt = Mux(oneAfterZero && mask(2)(0),
