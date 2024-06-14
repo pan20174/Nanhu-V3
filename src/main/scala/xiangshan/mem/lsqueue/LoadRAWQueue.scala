@@ -101,7 +101,9 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
     queryWidth = StorePipelineWidth,
     entrySize = LoadRAWQueueSize,
     writeNum = LoadPipelineWidth,
-    numWBanks = 1))
+    numWBanks = 1,
+    nextWrite = false
+  ))
   dataModule.io := DontCare
   dataModule.io.write.foreach(_.wen := false.B)
 

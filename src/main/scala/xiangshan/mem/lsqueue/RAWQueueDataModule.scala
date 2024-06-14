@@ -21,7 +21,11 @@ import xs.utils._
  * See the Mulan PSL v2 for more details.
  ***************************************************************************************/
 
-class LoadRAWQueueDataModule(queryWidth: Int, entrySize: Int, writeNum: Int, numWBanks: Int = 1)(implicit p: Parameters) extends XSModule {
+class LoadRAWQueueDataModule(queryWidth: Int,
+                             entrySize: Int,
+                             writeNum: Int,
+                             numWBanks: Int = 1,
+                             nextWrite: Boolean)(implicit p: Parameters) extends XSModule {
   val offsetWidth = 3
   val io = IO(new Bundle(){
     val write = Vec(writeNum, new Bundle(){
@@ -40,8 +44,15 @@ class LoadRAWQueueDataModule(queryWidth: Int, entrySize: Int, writeNum: Int, num
     })
   })
 
-  val paddrModule = Module(new RAWQPAddrModule(numEntries = entrySize, numRead = queryWidth, numWrite = writeNum, numWBanks = numWBanks))
-  val maskModule = Module(new RAWQMaskModule(numEntries = entrySize, numRead = queryWidth, numWrite = writeNum, numWBanks = 1))
+  val paddrModule = Module(new RAWQPAddrModule(numEntries = entrySize,
+    numRead = queryWidth,
+    numWrite = writeNum,
+    numWBanks = numWBanks,
+    nextWrite = nextWrite))
+  val maskModule = Module(new RAWQMaskModule(numEntries = entrySize,
+    numRead = queryWidth,
+    numWrite = writeNum,
+    numWBanks = 1))
 
   io.write.zip(paddrModule.io.write).foreach({ case (io, p) =>
     require(io.paddr.getWidth == p.paddr.getWidth)
@@ -68,7 +79,10 @@ class LoadRAWQueueDataModule(queryWidth: Int, entrySize: Int, writeNum: Int, num
 
 
 // load queue load mask module
-class RAWQMaskModule(numEntries: Int, numRead: Int, numWrite: Int, numWBanks: Int)(implicit p: Parameters) extends XSModule {
+class RAWQMaskModule(numEntries: Int,
+                     numRead: Int,
+                     numWrite: Int,
+                     numWBanks: Int)(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle {
     val write = Vec(numWrite, new Bundle() {
       val wen = Input(Bool())
@@ -115,8 +129,12 @@ class RAWQMaskModule(numEntries: Int, numRead: Int, numWrite: Int, numWBanks: In
 }
 
 
-class RAWQPAddrModule(numEntries: Int, numRead: Int, numWrite: Int, numWBanks: Int)(implicit p: Parameters) extends
-  XSModule with HasDCacheParameters {
+class RAWQPAddrModule(numEntries: Int,
+                      numRead: Int,
+                      numWrite: Int,
+                      numWBanks: Int,
+                      nextWrite: Boolean)
+                     (implicit p: Parameters) extends XSModule with HasDCacheParameters {
   val offsetWidth = 3
 
   val io = IO(new Bundle {
@@ -136,27 +154,40 @@ class RAWQPAddrModule(numEntries: Int, numRead: Int, numWrite: Int, numWBanks: I
 //  val paddrReg = Reg(Vec(numEntries, UInt((PAddrBits - offsetWidth).W)))
   val paddrReg = RegInit(VecInit(List.fill(numEntries)(0.U((PAddrBits - offsetWidth).W))))
 
-  //write data: use 2 cycle
-  val s0_wen = io.write.map(_.wen)
-  val s0_waddrOH = io.write.map(a => UIntToOH(a.entryAddr))
-  val s0_wdata = io.write.map(_.paddr)
+  if(nextWrite){
+    //write data: use 2 cycle
+    val s0_wen = io.write.map(_.wen)
+    val s0_waddrOH = io.write.map(a => UIntToOH(a.entryAddr))
+    val s0_wdata = io.write.map(_.paddr)
 
-  val s1_wen = s0_wen.map(RegNext(_))
-  val s1_waddrOH = s0_waddrOH.zip(s0_wen).map({case(a, en) =>
-    RegEnable(a,en)
-  })
-  val s1_wdata = s0_wdata.zip(s0_wen).map({ case (d, en) =>
-    RegEnable(d, en)
-  })
+    val s1_wen = s0_wen.map(RegNext(_))
+    val s1_waddrOH = s0_waddrOH.zip(s0_wen).map({case(a, en) =>
+      RegEnable(a,en)
+    })
+    val s1_wdata = s0_wdata.zip(s0_wen).map({ case (d, en) =>
+      RegEnable(d, en)
+    })
 
 
-  for (i <- 0 until numEntries) {
-    val wen = s1_wen.zip(s1_waddrOH).map(w => w._1 && w._2(i))
-    val data = s1_wdata
-    when(wen.reduce(_ | _)) {
-      paddrReg(i) := Mux1H(wen, data)
+    for (i <- 0 until numEntries) {
+      val wen = s1_wen.zip(s1_waddrOH).map(w => w._1 && w._2(i))
+      val data = s1_wdata
+      when(wen.reduce(_ | _)) {
+        paddrReg(i) := Mux1H(wen, data)
+      }
     }
   }
+  else {
+    val waddrOH = io.write.map(a => UIntToOH(a.entryAddr))
+    for (i <- 0 until numEntries) {
+      val wen = io.write.zip(waddrOH).map(w => w._1.wen && w._2(i))
+      val wMask = io.write.map(d => d.paddr)
+      when(wen.reduce(_ | _)) {
+        paddrReg(i) := Mux1H(wen, wMask)
+      }
+    }
+  }
+
 
 
   // content addressed match
