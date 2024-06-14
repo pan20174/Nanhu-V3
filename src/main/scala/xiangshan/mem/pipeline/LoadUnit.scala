@@ -279,7 +279,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   val s1_needLdVioCheckRedo = s1_ldViolationQueryReq.valid && !s1_ldViolationQueryReq.ready &&
     RegNext(s1_csrCtrl_ldld_vio_check_enable)
 
-  s1_out.bits.replay.replayCause(LoadReplayCauses.C_BC) := s1_in.valid && (s1_cancel_inner ||  s1_bank_conflict || s1_needLdVioCheckRedo)
   s1_out.valid        := s1_in.valid && s1_enableMem
   s1_out.bits.paddr   := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
@@ -300,8 +299,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   debug_s1_cause.fwd_data_sqIdx := 0.U.asTypeOf(new SqPtr)
   debug_s1_cause.tlb_miss := s1_tlb_miss  // tlb resp miss
   debug_s1_cause.rar_nack := s1_needLdVioCheckRedo  // rar query fail
-  debug_s1_cause.dcache_rep := s1_cancel_inner  // dcache not ready
-  debug_s1_cause.bank_conflict := s1_bank_conflict  // bank read has conflict
+  debug_s1_cause.bank_conflict := s1_bank_conflict || s1_cancel_inner  // bank read has conflict
   dontTouch(debug_s1_cause)
   /*
     LOAD S2: cache miss control; forward data merge; mmio check; feedback to reservationStation
@@ -558,6 +556,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   .updated(LoadReplayCauses.C_TM, false.B)
   .updated(LoadReplayCauses.C_DM, false.B)
   .updated(LoadReplayCauses.C_FF, false.B)
+  .updated(LoadReplayCauses.C_DR, false.B)
   .reduce(_ || _)
   val s3_dcacheMshrID = RegEnable(s2_dcacheMshrID, s2_dcacheMshrID.valid)
   val s3_tl_d_channel_wakeup = WireInit(0.U.asTypeOf(new DcacheTLBypassLduIO))
@@ -576,6 +575,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replayQueue.bits.replay.replayCause := DontCare
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM) := debugS3CauseReg.tlb_miss
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_FF) := debugS3CauseReg.fwd_fail
+  io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DR) := debugS3CauseReg.dcache_rep
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DM) := debugS3CauseReg.dcache_miss
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := temp_other_cause
   io.s3_enq_replayQueue.bits.replay.schedIndex := s3_in.bits.replay.schedIndex

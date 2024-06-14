@@ -282,6 +282,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
             blockingReg(i) := true.B
             blockSqIdxReg(i) := enq.bits.replay.fwd_data_sqIdx
           }
+          // case Dcache no mshr
+          when(enq.bits.replay.dcache_rep){
+            blockingReg(i) := true.B
+          }
           // case Dcache MISS
           when(enq.bits.replay.dcache_miss){
             blockingReg(i) := (!enq.bits.replay.full_fwd) && (!(enq.bits.tl_d_channel_wakeup.valid && enq.bits.tl_d_channel_wakeup.hitInflightDcacheResp))
@@ -302,6 +306,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
           // case Forward Fail
           when(causeReg(i)(LoadReplayCauses.C_FF)) {
             blockingReg(i) := Mux(stDataDeqVec(i), false.B, blockingReg(i))
+          }
+          // case Dcache no mshr
+          when(causeReg(i)(LoadReplayCauses.C_DR)) {
+            blockingReg(i) := Mux(io.tlDchannelWakeupDup.valid &&
+            (io.tlDchannelWakeupDup.mshrid<=15.U), false.B, blockingReg(i))
           }
           // case Dcache MISS
           when(causeReg(i)(LoadReplayCauses.C_DM)) {
