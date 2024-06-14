@@ -484,14 +484,41 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val dataInvalidMask = addrValidVec.asUInt & (~dataValidVec).asUInt & v_pAddrModule.io.forwardMmask_v(i).asUInt & needForward
 //    io.forward(i).dataInvalidFast := dataInvalidMask.orR && (sqForwardMaskFast & loadMask).orR
     val dataInvalidFast = dataInvalidMask.orR && (sqForwardMaskFast & loadMask).orR
-    val dataInvalidMaskReg = RegEnable(dataInvalidMask, io.forward(i).valid)
+    // val dataInvalidMaskReg = RegEnable(dataInvalidMask, io.forward(i).valid)
     // load_s2
     io.forward(i).dataInvalid := RegEnable(dataInvalidFast, false.B, io.forward(i).valid)
     // check if vaddr forward mismatched
     io.forward(i).matchInvalid := vaddrMatchFailed
+    // val dataInvalidMaskRegWire = Wire(UInt(StoreQueueSize.W))
+    // dataInvalidMaskRegWire := dataInvalidMaskReg // make chisel happy
+
+    // Find the dataInvalid SqIdx which block loadS2 forward
+    // also has two cases to consider, same with canForward1/2
+    val forwardMask1 = Mux(differentFlag, ~deqMask, deqMask ^ forwardMask).asUInt
+    val forwardMask2 = Mux(differentFlag, forwardMask, 0.U(StoreQueueSize.W)).asUInt
+    val dataInvalidMask1 = (addrValidVec.asUInt & ~dataValidVec.asUInt & v_pAddrModule.io.forwardMmask_v(i).asUInt & forwardMask1.asUInt)
+    val dataInvalidMask2 = (addrValidVec.asUInt & ~dataValidVec.asUInt & v_pAddrModule.io.forwardMmask_v(i).asUInt & forwardMask2.asUInt)
+    val dataInvalidMask1Reg = Wire(UInt(StoreQueueSize.W))
+    val dataInvalidMask2Reg = Wire(UInt(StoreQueueSize.W))
+    dataInvalidMask1Reg := RegNext(dataInvalidMask1)
+    dataInvalidMask2Reg := RegNext(dataInvalidMask2)
+    val dataInvalidMaskWire = dataInvalidMask1Reg | dataInvalidMask2Reg
     val dataInvalidMaskRegWire = Wire(UInt(StoreQueueSize.W))
-    dataInvalidMaskRegWire := dataInvalidMaskReg // make chisel happy
-    io.forward(i).dataInvalidSqIdx := PriorityEncoder(dataInvalidMaskRegWire)
+    dataInvalidMaskRegWire := dataInvalidMaskWire
+    val dataInvalidFlag = dataInvalidMaskRegWire.orR
+    val dataInvalidSqIdx1 = OHToUInt(Reverse(PriorityEncoderOH(Reverse(dataInvalidMask1Reg))))
+    val dataInvalidSqIdx2 = OHToUInt(Reverse(PriorityEncoderOH(Reverse(dataInvalidMask2Reg))))
+    val dataInvalidSqIdx = Mux(dataInvalidMask2Reg.orR, dataInvalidSqIdx2, dataInvalidSqIdx1)
+    val s2_differentFlag = RegNext(differentFlag)
+    val s2_enqPtrExt = RegNext(enqPtrExt(0))
+    val s2_deqPtrExt = RegNext(deqPtrExt(0))
+    when (dataInvalidFlag) {
+      io.forward(i).dataInvalidSqIdx.flag := Mux(!s2_differentFlag || dataInvalidSqIdx >= s2_deqPtrExt.value, s2_deqPtrExt.flag, s2_enqPtrExt.flag)
+      io.forward(i).dataInvalidSqIdx.value := dataInvalidSqIdx
+    } .otherwise {
+      // may be store inst has been written to sbuffer already.
+      io.forward(i).dataInvalidSqIdx := RegNext(io.forward(i).uop.sqIdx)
+    }
   }
 
   /**
