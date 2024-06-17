@@ -739,6 +739,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   lsq.io.enq            <> io.enqLsq
   lsq.io.brqRedirect    <> Pipe(redirectIn)
   lsq.io.tlDchannelWakeupDup := dcache.io.lsu.tl_d_channel
+  lsq.io.mshrFull := dcache.io.mshrFull
   staWritebacks.head.bits.redirectValid := lsq.io.rollback.valid
   staWritebacks.head.bits.redirect := lsq.io.rollback.bits
   staWritebacks.tail.foreach(e => {

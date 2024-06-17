@@ -136,6 +136,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val sqEmpty= Input(Bool())
     val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
     val degbugInfo = new ReplayQDebugBundle
+    val mshrFull = Input(Bool())
     })
 
   val counterRegMax = 16
@@ -310,7 +311,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
           // case Dcache no mshr
           when(causeReg(i)(LoadReplayCauses.C_DR)) {
             blockingReg(i) := Mux(io.tlDchannelWakeupDup.valid &&
-            (io.tlDchannelWakeupDup.mshrid<=15.U), false.B, blockingReg(i))
+            (io.tlDchannelWakeupDup.mshrid<=15.U), false.B, 
+            Mux(!io.mshrFull, false.B, blockingReg(i)))
           }
           // case Dcache MISS
           when(causeReg(i)(LoadReplayCauses.C_DM)) {

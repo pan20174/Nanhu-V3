@@ -122,6 +122,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val sqEmpty = Input(Bool())
     val stDataReadySqPtr = Input(new SqPtr)
     val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
+    val mshrFull = Input(Bool())
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
   })
@@ -136,6 +137,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
   replayQueue.io.sqEmpty := io.sqEmpty
   replayQueue.io.stDataReadySqPtr := io.stDataReadySqPtr
+  replayQueue.io.mshrFull := io.mshrFull
 
   io.ldStop := replayQueue.io.ldStop
   io.replayQIssue <> replayQueue.io.replayQIssue
