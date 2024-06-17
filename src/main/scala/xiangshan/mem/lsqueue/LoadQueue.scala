@@ -677,9 +677,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 //  XSPerfAccumulate("writeback_blocked", PopCount(VecInit(io.ldout.map(i => i.valid && !i.ready))))
   XSPerfAccumulate("utilization_miss", PopCount((0 until LoadQueueSize).map(i => allocated(i) && miss(i))))
 
-  private val perfValidCount = RegNext(validCount)
+  val perfValidCount = RegNext(validCount)
 
-  private val perfEvents = Seq(
+  val perfEvents = Seq(
     ("rollback         ", io.rollback.valid),
     ("mmioCycle        ", uncache_Order_State =/= s_idle),
     ("mmio_Cnt         ", io.uncache.req.fire),
@@ -696,7 +696,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   // debug info
   XSDebug("enqPtrExt %d:%d deqPtrExt %d:%d\n", enqPtrExt(0).flag, enqPtr, deqPtrExt.flag, deqPtr)
 
-  private def PrintFlag(flag: Bool, name: String): Unit = {
+  def PrintFlag(flag: Bool, name: String): Unit = {
     when(flag) {
       XSDebug(false, true.B, name)
     }.otherwise {
