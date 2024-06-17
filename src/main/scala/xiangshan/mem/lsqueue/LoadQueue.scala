@@ -119,6 +119,12 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val stAddrReadyPtr = Input(new SqPtr)
     val stAddrAllReady = Input(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
+    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
+    val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
+    val sqEmpty = Input(Bool())
+    val stDataReadySqPtr = Input(new SqPtr)
+    val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
+    val mshrFull = Input(Bool())
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
 
@@ -131,17 +137,20 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.enq <> io.replayQEnq
   replayQueue.io.replayQIssue(0).ready := true.B
   replayQueue.io.replayQIssue(1).ready := true.B
+  replayQueue.io.tlDchannelWakeup := io.tlDchannelWakeup
+  replayQueue.io.stDataReadyVec := io.stDataReadyVec
+  replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
+  replayQueue.io.sqEmpty := io.sqEmpty
+  replayQueue.io.stDataReadySqPtr := io.stDataReadySqPtr
+  replayQueue.io.mshrFull := io.mshrFull
   replayQueue.io.tlbWakeup := io.tlbWakeup
+
   io.ldStop := replayQueue.io.ldStop
   io.replayQIssue <> replayQueue.io.replayQIssue
   io.replayQFull := replayQueue.io.replayQFull
   replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr
   replayQueue.io.degbugInfo.debug_enqPtr := io.debug_enqPtr
-  //  val debugReplayQ = Seq.fill(LoadPipelineWidth)(RegInit(0.U.asTypeOf(new ReplayQueueIssueBundle)))
-  //  for(i <- 0 until LoadPipelineWidth){
-  //    debugReplayQ(i) <> replayQueue.io.replayQIssue(i).bits
-  //    dontTouch(debugReplayQ(i))
-  //  }
+
   XSPerfAccumulate("replayq", replayQueue.io.replayQIssue(0).fire || replayQueue.io.replayQIssue(1).fire)
   println("LoadQueue: size:" + LoadQueueSize)
 

@@ -31,6 +31,7 @@ import coupledL2.{AliasKey, DirtyKey, PrefetchKey}
 import xs.utils.FastArbiter
 import mem.AddPipelineReg
 import xs.utils.perf.HasPerfLogging
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 class MissReqWoStoreData(implicit p: Parameters) extends DCacheBundle {
   val source = UInt(sourceTypeWidth.W)
@@ -582,6 +583,8 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
       val tag = UInt(tagBits.W) // paddr
     }))
     val l2_pf_store_only = Input(Bool())
+
+    val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W))
   })
   
   // 128KBL1: FIXME: provide vaddr for l2
@@ -592,6 +595,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val req_data_buffer = RegEnable(req_data_gen, io.req.valid)
 
   val primary_ready_vec = entries.map(_.io.primary_ready)
+  val primary_valid_vec = entries.map(_.io.primary_valid)
   val secondary_ready_vec = entries.map(_.io.secondary_ready)
   val secondary_reject_vec = entries.map(_.io.secondary_reject)
   val probe_block_vec = entries.map { case e => e.io.block_addr.valid && e.io.block_addr.bits === io.probe_addr }
@@ -655,6 +659,13 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
       io.debug_early_replace(i) := e.io.debug_early_replace
   }
+
+  val loadReqHandledOH = primary_ready_vec.zip(primary_valid_vec).zip(secondary_ready_vec).map{
+    case((priVld, priRdy), secRdy) => (priVld && priRdy) || secRdy
+  }
+  assert(PopCount(loadReqHandledOH) <= 1.U, "has more than 1 entry handled req")
+  io.loadReqHandledResp.valid := loadReqHandledOH.reduce(_ || _) && io.req.valid && !io.req.bits.cancel
+  io.loadReqHandledResp.bits := OHToUInt(VecInit(loadReqHandledOH).asUInt)
 
   io.req.ready := accept
   io.refill_to_ldq.valid := Cat(entries.map(_.io.refill_to_ldq.valid)).orR

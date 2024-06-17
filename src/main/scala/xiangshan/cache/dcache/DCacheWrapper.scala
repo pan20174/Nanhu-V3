@@ -410,8 +410,15 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
   def hit_resps: Seq[ValidIO[DCacheLineResp]] = Seq(main_pipe_hit_resp, refill_hit_resp)
 }
 
+class DcacheTLBypassLduIO (implicit p: Parameters) extends DCacheBundle {
+  val valid = Bool()
+  val mshrid = UInt(log2Up(cfg.nMissEntries).W)
+}
+
 class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val load  = Vec(LoadPipelineWidth, Flipped(new DCacheLoadIO)) // for speculative load
+  val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W)) // mshrID which handled load miss req
+  val tl_d_channel = Output(new DcacheTLBypassLduIO)
   //todo: remove lsq
   val lsq = ValidIO(new Refill)  // refill to load queue, wake up load misses
   val store = new DCacheToSbufferIO // for sbuffer
@@ -624,6 +631,14 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   // refill to load queue
   io.lsu.lsq <> missQueue.io.refill_to_ldq
+  io.lsu.loadReqHandledResp <> missQueue.io.loadReqHandledResp
+  val (_, _, done, _) = edge.count(bus.d)
+  when (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant) {
+    io.lsu.tl_d_channel.valid := bus.d.fire && done
+    io.lsu.tl_d_channel.mshrid := bus.d.bits.source
+  } .otherwise {
+    io.lsu.tl_d_channel := DontCare
+  }
 
   // tilelink stuff
   bus.a <> missQueue.io.mem_acquire

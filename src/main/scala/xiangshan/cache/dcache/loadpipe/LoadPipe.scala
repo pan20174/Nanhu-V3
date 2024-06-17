@@ -230,7 +230,7 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   val s2_nack_no_mshr = io.miss_req.valid && !io.miss_req.ready
   // Bank conflict on data arrays
   val s2_nack_data = RegEnable(!io.banked_data_read.ready, s1_fire)
-  val s2_nack = s2_nack_hit || s2_nack_no_mshr || s2_nack_data
+  val s2_nack = s2_nack_hit || s2_nack_no_mshr
 
   val banked_data_resp = io.banked_data_resp
   val s2_bank_addr = addr_to_dcache_bank(s2_paddr)
@@ -282,9 +282,9 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   //
   // * report a miss if bank conflict is detected
   val real_miss = !s2_hit_dup_lsu
-  resp.bits.miss := real_miss || io.bank_conflict_slow
-  // load pipe need replay when there is a bank conflict
-  resp.bits.replay := resp.bits.miss && (!io.miss_req.fire || s2_nack) || io.bank_conflict_slow
+  resp.bits.miss := real_miss && (io.miss_req.fire)
+  // load pipe need replay when there is mshr full
+  resp.bits.replay := real_miss && (!(io.miss_req.fire) || s2_nack_hit)
   resp.bits.tag_error := false.B//s2_tag_error // report tag_error in load s2
 
   XSPerfAccumulate("dcache_read_bank_conflict", io.bank_conflict_slow && s2_valid)

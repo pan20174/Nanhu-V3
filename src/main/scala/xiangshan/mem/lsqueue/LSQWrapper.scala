@@ -73,6 +73,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val storeDataIn = Vec(StorePipelineWidth, Flipped(Valid(new ExuOutput))) // store data, send to sq from rs
     val storeMaskIn = Vec(StorePipelineWidth, Flipped(Valid(new StoreMaskBundle))) // store mask, send to sq from rs
     val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
+    val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
 //    val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
 //    val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val sbuffer = Vec(StorePipelineWidth, Decoupled(new DCacheWordReqWithVaddr))
@@ -101,9 +102,11 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
+    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
     val mmioWb = DecoupledIO(new ExuOutput)
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
+    val mshrFull = Input(Bool())
   })
 
   val loadQueue = Module(new LoadQueue)
@@ -171,9 +174,16 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.lqCancelCnt <> io.lqCancelCnt
   loadQueue.io.replayQEnq <> io.replayQEnq
   loadQueue.io.replayQIssue <> io.replayQIssue
+  loadQueue.io.tlDchannelWakeup <> io.tlDchannelWakeup
+  loadQueue.io.stDataReadyVec := storeQueue.io.stDataReadyVec
+  loadQueue.io.sqEmpty := storeQueue.io.sqempty
+  loadQueue.io.stDataReadySqPtr := storeQueue.io.stDataReadySqPtr
+  loadQueue.io.storeDataWbPtr := io.storeDataWbPtr
+
   io.lqDeq := loadQueue.io.lqDeq
   io.ldStop := loadQueue.io.ldStop
   io.replayQFull := loadQueue.io.replayQFull
+  loadQueue.io.mshrFull := io.mshrFull
   // store queue wiring
   // storeQueue.io <> DontCare
   storeQueue.io.brqRedirect <> io.brqRedirect
