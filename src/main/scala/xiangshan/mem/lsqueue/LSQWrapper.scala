@@ -67,7 +67,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val hartId = Input(UInt(8.W))
     val enq = new LsqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
-    val loadPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqPaddrWriteBundle)))
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val storeInRe = Vec(StorePipelineWidth, Input(new LsPipelineBundle()))
@@ -149,7 +148,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   // load queue wiring
   loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.brqRedirect <> io.brqRedirect
-  loadQueue.io.loadPaddrIn <> io.loadPaddrIn
   loadQueue.io.loadIn <> io.loadIn
   loadQueue.io.storeIn.zip(io.storeIn).foreach({case(a, b) =>
     a.valid := b.valid & b.bits.uop.loadStoreEnable
@@ -192,7 +190,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   storeQueue.io.sqCancelCnt <> io.sqCancelCnt
   storeQueue.io.sqDeq <> io.sqDeq
 
-  loadQueue.io.load_s1 <> io.forward
   storeQueue.io.forward <> io.forward // overlap forwardMask & forwardData, DO NOT CHANGE SEQUENCE
 
   loadQueue.io.loadViolationQuery <> io.loadViolationQuery

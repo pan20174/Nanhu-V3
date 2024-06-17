@@ -617,9 +617,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       pf.io.ld_in(i).bits := loadUnits(i).io.prefetch_train.bits
       pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
-    // passdown to lsq (load s1)
-    lsq.io.loadPaddrIn(i) <> loadUnits(i).io.lsq.s1_lduUpdateLQ
-
     // passdown to lsq (load s2)
     lsq.io.loadIn(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
 //    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb

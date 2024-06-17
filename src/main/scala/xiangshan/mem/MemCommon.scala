@@ -23,7 +23,7 @@ import chisel3.util._
 import xiangshan._
 import xiangshan.backend.issue.RsIdx
 import xiangshan.cache._
-import xs.utils.{LookupTree, UIntToMask}
+import xs.utils.{LookupTree, CircularQueuePtr}
 
 object genWmask {
   def apply(addr: UInt, sizeEncode: UInt): UInt = {
@@ -46,6 +46,43 @@ object genWdata {
     ))
   }
 }
+
+object getFirstOne{
+  def apply(mask: Vec[Bool], startMask: UInt): UInt = {
+    val length = mask.length
+    val highBits = (0 until length).map(i => mask(i) & (~startMask(i)).asBool)
+    val highBitsUint = Cat(highBits.reverse)
+    PriorityEncoder(Mux(highBitsUint.orR, highBitsUint, mask.asUInt))
+  }
+}
+
+object getOldestInTwo {
+  def apply(valid: Seq[Bool], uop: Seq[MicroOp]): MicroOp = {
+    assert(valid.length == uop.length)
+    assert(valid.length == 2)
+    Mux(valid(0) && valid(1),
+      Mux(uop(0).robIdx > uop(1).robIdx, uop(1), uop(0)),
+      Mux(valid(0) && !valid(1), uop(0), uop(1)))
+  }
+}
+
+object getAfterMask{
+  def apply(valid: Seq[Bool], uop: Seq[MicroOp]): IndexedSeq[IndexedSeq[Bool]] = {
+    assert(valid.length == uop.length)
+    val length = valid.length
+    (0 until length).map(i => {
+      (0 until length).map(j => {
+        Mux(valid(i) && valid(j),
+          uop(i).robIdx > uop(j).robIdx,
+          Mux(!valid(i), true.B, false.B))
+      })
+    })
+  }
+}
+
+
+
+
 
 class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
   val vaddr = UInt(VAddrBits.W)
