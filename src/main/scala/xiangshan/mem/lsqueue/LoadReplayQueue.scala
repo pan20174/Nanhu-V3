@@ -80,8 +80,7 @@ class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle with HasD
   val uop = new MicroOp
 
   val tlbMiss = Bool()
-  val tl_d_channel_wakeup = Input(new DcacheTLBypassLduIO)
-  val mshrMissIDResp = Flipped(ValidIO(UInt(log2Up(cfg.nMissEntries).W)) )
+  val mshrMissIDResp = (UInt(log2Up(cfg.nMissEntries).W))
   val replay = new ReplayInfo
 }
 
@@ -130,7 +129,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
-    val tlDchannelWakeupDup = Input(new DcacheTLBypassLduIO)
+    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val stDataReadySqPtr = Input(new SqPtr)
     val sqEmpty= Input(Bool())
@@ -270,36 +269,34 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   })
 
   (0 until LoadReplayQueueSize).map(i => {
-    enqNeedAlloacteNew.zip(enqIndex).zip(io.enq).map{ case((newAlloc,enqIdx), enq) =>
-        val hasEnq = newAlloc && (enqIdx === i.asUInt)
-        // set new block logic when has enq
-        when(hasEnq){
+    (0 until LoadPipelineWidth).map(j => {
+      when(enqNeedAlloacteNew(j) && (enqIndex(j) === i.asUInt)){
           // case TLB MISS
-          when(enq.bits.replay.tlb_miss){
+          when(io.enq(j).bits.replay.tlb_miss){
             hintIDReg(i) := (1.U << reqIdWidth) - 1.U
           }
           // case Forward Fail
-          when(enq.bits.replay.fwd_fail){
+          when(io.enq(j).bits.replay.fwd_fail){
             blockingReg(i) := true.B
-            blockSqIdxReg(i) := enq.bits.replay.fwd_data_sqIdx
+            blockSqIdxReg(i) := io.enq(j).bits.replay.fwd_data_sqIdx
           }
           // case Dcache no mshr
-          when(enq.bits.replay.dcache_rep){
+          when(io.enq(j).bits.replay.dcache_rep){
             blockingReg(i) := true.B
           }
           // case Dcache MISS
-          when(enq.bits.replay.dcache_miss){
-            blockingReg(i) := (!enq.bits.replay.full_fwd) && (!(enq.bits.tl_d_channel_wakeup.valid && enq.bits.tl_d_channel_wakeup.hitInflightDcacheResp))
-            mshrIDreg(i) := enq.bits.mshrMissIDResp.bits
+          when(io.enq(j).bits.replay.dcache_miss){
+            blockingReg(i) := (!io.enq(j).bits.replay.full_fwd) && !(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === io.enq(j).bits.mshrMissIDResp)
+            mshrIDreg(i) := io.enq(j).bits.mshrMissIDResp
           }
           // case Bank Conflict
-          when(enq.bits.replay.bank_conflict){
+          when(io.enq(j).bits.replay.bank_conflict){
             counterReg(i) := 1.U << penaltyReg(i)
             penaltyReg(i)  := penaltyReg(i) + 1.U
             blockingReg(i) := true.B
           }
-        }.otherwise{
-        // otherwise listening the casue whether has been solved
+      }.otherwise{
+          // otherwise listening the casue whether has been solved
           // case TLB MISS
           when(causeReg(i)(LoadReplayCauses.C_TM)) {
             blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
@@ -310,21 +307,78 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
           }
           // case Dcache no mshr
           when(causeReg(i)(LoadReplayCauses.C_DR)) {
-            blockingReg(i) := Mux(io.tlDchannelWakeupDup.valid &&
-            (io.tlDchannelWakeupDup.mshrid<=15.U), false.B, 
+            blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
+            (io.tlDchannelWakeup.mshrid<=15.U), false.B, 
             Mux(!io.mshrFull, false.B, blockingReg(i)))
           }
           // case Dcache MISS
           when(causeReg(i)(LoadReplayCauses.C_DM)) {
-            blockingReg(i) := Mux(io.tlDchannelWakeupDup.valid &&
-            io.tlDchannelWakeupDup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
+            blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
+            io.tlDchannelWakeup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
           }
           // case Bank Conflict
           when(causeReg(i)(LoadReplayCauses.C_BC)) {
             blockingReg(i) := !(counterReg(i) === 0.U)
           }
-        }
       }
+    })
+
+    
+    // enqNeedAlloacteNew.zip(enqIndex).zip(io.enq).map{ case((newAlloc,enqIdx), enq) =>
+    //     val hasEnq = newAlloc && (enqIdx === i.asUInt)
+    //     // set new block logic when has enq
+    //     when(hasEnq){
+    //       // case TLB MISS
+    //       when(enq.bits.replay.tlb_miss){
+    //         hintIDReg(i) := (1.U << reqIdWidth) - 1.U
+    //       }
+    //       // case Forward Fail
+    //       when(enq.bits.replay.fwd_fail){
+    //         blockingReg(i) := true.B
+    //         blockSqIdxReg(i) := enq.bits.replay.fwd_data_sqIdx
+    //       }
+    //       // case Dcache no mshr
+    //       when(enq.bits.replay.dcache_rep){
+    //         blockingReg(i) := true.B
+    //       }
+    //       // case Dcache MISS
+    //       when(enq.bits.replay.dcache_miss){
+    //         blockingReg(i) := (!enq.bits.replay.full_fwd) && !(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === enq.bits.mshrMissIDResp)
+    //         mshrIDreg(i) := enq.bits.mshrMissIDResp
+    //       }
+    //       // case Bank Conflict
+    //       when(enq.bits.replay.bank_conflict){
+    //         counterReg(i) := 1.U << penaltyReg(i)
+    //         penaltyReg(i)  := penaltyReg(i) + 1.U
+    //         blockingReg(i) := true.B
+    //       }
+    //     }.otherwise{
+    //     // otherwise listening the casue whether has been solved
+    //       // case TLB MISS
+    //       when(causeReg(i)(LoadReplayCauses.C_TM)) {
+    //         blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+    //       }
+    //       // case Forward Fail
+    //       when(causeReg(i)(LoadReplayCauses.C_FF)) {
+    //         blockingReg(i) := Mux(stDataDeqVec(i), false.B, blockingReg(i))
+    //       }
+    //       // case Dcache no mshr
+    //       when(causeReg(i)(LoadReplayCauses.C_DR)) {
+    //         blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
+    //         (io.tlDchannelWakeup.mshrid<=15.U), false.B, 
+    //         Mux(!io.mshrFull, false.B, blockingReg(i)))
+    //       }
+    //       // case Dcache MISS
+    //       when(causeReg(i)(LoadReplayCauses.C_DM)) {
+    //         blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
+    //         io.tlDchannelWakeup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
+    //       }
+    //       // case Bank Conflict
+    //       when(causeReg(i)(LoadReplayCauses.C_BC)) {
+    //         blockingReg(i) := !(counterReg(i) === 0.U)
+    //       }
+    //     }
+    //   }
   })
 
   allocatedReg.zipWithIndex.foreach({case(valid,idx) => {
@@ -390,6 +444,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     for (j <- 0 until LoadReplayQueueSize) {
       when (s1_selResSeq(i).valid && s1_robOldestSelOH(i)(j)) {
         scheduledReg(j) := true.B
+        causeReg(j)     := 0.U
       }
     }
   }

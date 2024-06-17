@@ -105,8 +105,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
     // Global: csr control
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
-    // Global: tileLine D channel bypass
-    val tl_d_channel_wakeup = Input(new DcacheTLBypassLduIO)
   })
   
   /*
@@ -558,12 +556,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   .updated(LoadReplayCauses.C_FF, false.B)
   .updated(LoadReplayCauses.C_DR, false.B)
   .reduce(_ || _)
-  val s3_dcacheMshrID = RegEnable(s2_dcacheMshrID, s2_dcacheMshrID.valid)
-  val s3_tl_d_channel_wakeup = WireInit(0.U.asTypeOf(new DcacheTLBypassLduIO))
-  s3_tl_d_channel_wakeup.valid := io.tl_d_channel_wakeup.valid
-  s3_tl_d_channel_wakeup.mshrid := io.tl_d_channel_wakeup.mshrid
-  s3_tl_d_channel_wakeup.hitInflightDcacheResp := RegNext(io.tl_d_channel_wakeup.hitInflightDcacheResp) || 
-  (s3_dcacheMshrID.bits === io.tl_d_channel_wakeup.mshrid)
+  val s3_dcacheMshrID = RegEnable(s2_dcacheMshrID.bits, s2_dcacheMshrID.valid)
   
   dontTouch(s3_dcacheMshrID)
   //write back control info to replayQueue in S3
@@ -581,11 +574,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   io.s3_enq_replayQueue.bits.replay.schedIndex := s3_in.bits.replay.schedIndex
   io.s3_enq_replayQueue.bits.replay.fwd_data_sqIdx := debugS3CauseReg.fwd_data_sqIdx
   io.s3_enq_replayQueue.bits.replay.full_fwd := RegNext(s2_dataForwarded)
-  io.s3_enq_replayQueue.bits.mshrMissIDResp <> s3_dcacheMshrID
+  io.s3_enq_replayQueue.bits.mshrMissIDResp := s3_dcacheMshrID
   io.s3_enq_replayQueue.bits.uop := s3_in.bits.uop
   io.s3_enq_replayQueue.bits.mask := s3_in.bits.mask
   io.s3_enq_replayQueue.bits.tlbMiss := false.B
-  io.s3_enq_replayQueue.bits.tl_d_channel_wakeup <> s3_tl_d_channel_wakeup
+
 
   assert(!(RegNext(hitLoadOut.valid,false.B) && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)),"when load" +
     " wb," + "replayCause must be 0!!")

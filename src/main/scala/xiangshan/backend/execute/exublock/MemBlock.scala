@@ -577,7 +577,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     // dcache access
     loadUnits(i).io.dcache <> dcache.io.lsu.load(i)
     loadUnits(i).io.loadReqHandledResp <> dcache.io.lsu.loadReqHandledResp
-    loadUnits(i).io.tl_d_channel_wakeup <> dcache.io.lsu.tl_d_channel
 
     dcache.io.lsu.load(i).req.valid := loadUnits(i).io.dcache.req.valid && !loadUnits(i).io.dcache.req.bits.robIdx.needFlush(Pipe(redirectIn))
     // forward
@@ -738,7 +737,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   lsq.io.rob            <> io.lsqio.rob
   lsq.io.enq            <> io.enqLsq
   lsq.io.brqRedirect    <> Pipe(redirectIn)
-  lsq.io.tlDchannelWakeupDup := dcache.io.lsu.tl_d_channel
+  lsq.io.tlDchannelWakeup := dcache.io.lsu.tl_d_channel
   lsq.io.mshrFull := dcache.io.mshrFull
   staWritebacks.head.bits.redirectValid := lsq.io.rollback.valid
   staWritebacks.head.bits.redirect := lsq.io.rollback.bits

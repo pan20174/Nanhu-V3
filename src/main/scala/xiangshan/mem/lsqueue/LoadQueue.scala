@@ -117,7 +117,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val mmioWb = DecoupledIO(new ExuOutput)
-    val tlDchannelWakeupDup = Input(new DcacheTLBypassLduIO)
+    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val sqEmpty = Input(Bool())
     val stDataReadySqPtr = Input(new SqPtr)
@@ -132,7 +132,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.enq <> io.replayQEnq
   replayQueue.io.replayQIssue(0).ready := true.B
   replayQueue.io.replayQIssue(1).ready := true.B
-  replayQueue.io.tlDchannelWakeupDup := io.tlDchannelWakeupDup
+  replayQueue.io.tlDchannelWakeup := io.tlDchannelWakeup
   replayQueue.io.stDataReadyVec := io.stDataReadyVec
   replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
   replayQueue.io.sqEmpty := io.sqEmpty

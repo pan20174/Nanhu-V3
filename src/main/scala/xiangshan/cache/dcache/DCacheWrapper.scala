@@ -413,7 +413,6 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
 class DcacheTLBypassLduIO (implicit p: Parameters) extends DCacheBundle {
   val valid = Bool()
   val mshrid = UInt(log2Up(cfg.nMissEntries).W)
-  val hitInflightDcacheResp = Bool()
 }
 
 class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
@@ -637,7 +636,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   when (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant) {
     io.lsu.tl_d_channel.valid := bus.d.fire && done
     io.lsu.tl_d_channel.mshrid := bus.d.bits.source
-    io.lsu.tl_d_channel.hitInflightDcacheResp := bus.d.bits.source === io.lsu.loadReqHandledResp.bits
   } .otherwise {
     io.lsu.tl_d_channel := DontCare
   }
