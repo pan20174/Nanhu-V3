@@ -119,7 +119,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val stAddrReadyPtr = Input(new SqPtr)
     val stAddrAllReady = Input(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
-    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
+    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val sqEmpty = Input(Bool())
     val stDataReadySqPtr = Input(new SqPtr)

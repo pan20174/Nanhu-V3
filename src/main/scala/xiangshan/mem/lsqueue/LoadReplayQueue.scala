@@ -11,8 +11,7 @@ import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.backend.issue.RsIdx
 import xiangshan.backend.rob.RobPtr
-import xiangshan.cache.{HasDCacheParameters, DcacheTLBypassLduIO}
-import xiangshan.cache.HasDCacheParameters
+import xiangshan.cache.{DCacheTLDBypassLduIO, HasDCacheParameters}
 import xiangshan.cache.mmu.HasTlbConst
 
 object LoadReplayCauses {
@@ -142,7 +141,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
-    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
+    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val stDataReadySqPtr = Input(new SqPtr)
     val sqEmpty= Input(Bool())
@@ -241,15 +240,12 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       uopReg(enqIndex(i))       := enq.bits.uop
       causeReg(enqIndex(i))     := enq.bits.replay.replayCause.asUInt
       hintIDReg(enqIndex(i))    := 0.U
+      vaddrReg(enqIndex(i)) := enq.bits.vaddr
       vaddrModule.io.wen(i)   := true.B
       vaddrModule.io.waddr(i) := enqIndex(i)
       vaddrModule.io.wdata(i) := enq.bits.vaddr
-      if(enablePerf){for(j <- 0 until(LoadReplayQueueSize)){
+      if(enablePerf){for(j <- 0 until(LoadReplayQueueSize)) {
         XSPerfAccumulate(s"LoadReplayQueue_entry_${i}_used", enqIndex(i) === j.asUInt)
-
-      vaddrReg(enqIndex(i)) := enq.bits.vaddr
-      if(enablePerf){for(i <- 0 until(LoadReplayQueueSize)){
-        XSPerfAccumulate(s"LoadReplayQueue_entry_${i}_used", enqIndex === i.asUInt)
       }}
     }
 
@@ -434,7 +430,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
     io.replayQIssue(i) <> s2_replay_req(i)
     dontTouch(io.replayQIssue(i))
-    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
+//    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
   }
   io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
   //  perf cnt

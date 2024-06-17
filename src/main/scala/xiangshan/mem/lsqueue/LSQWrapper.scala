@@ -102,7 +102,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
-    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
+    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val mmioWb = DecoupledIO(new ExuOutput)
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
