@@ -75,7 +75,7 @@ class LqEnqIO(implicit p: Parameters) extends XSBundle {
   val reqNum = Input((UInt(exuParameters.LsExuCnt.W)))
 }
 
-class LqPaddrWriteBundle(implicit p: Parameters) extends XSBundle {
+class LoadMMIOPaddrWriteBundle(implicit p: Parameters) extends XSBundle {
   val paddr = Output(UInt(PAddrBits.W))
   val lqIdx = Output(new LqPtr)
 }
@@ -96,6 +96,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val io = IO(new Bundle() {
     val enq = new LqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
+    val loadMMIOPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LoadMMIOPaddrWriteBundle)))
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val stLdViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
@@ -362,7 +363,17 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       vaddrTriggerResultModule.io.wdata(i) := io.trigger(i).hitLoadAddrTriggerHitVec
       vaddrTriggerResultModule.io.wen(i) := true.B
     }
+
+
+    when(io.loadMMIOPaddrIn(i).valid) {
+      dataModule.io.paddr.wen(i) := true.B
+      dataModule.io.paddr.waddr(i) := io.loadMMIOPaddrIn(i).bits.lqIdx.value
+      dataModule.io.paddr.wdata(i) := io.loadMMIOPaddrIn(i).bits.paddr
+    }
   }
+
+
+
 
   /**
     * Load commits

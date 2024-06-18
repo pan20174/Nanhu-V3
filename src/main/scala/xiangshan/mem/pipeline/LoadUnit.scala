@@ -33,6 +33,7 @@ import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
 import xs.utils.perf.HasPerfLogging
 
 class LoadToLsqIO(implicit p: Parameters) extends XSBundle {
+  val s1_lduMMIOPAddr = ValidIO(new LoadMMIOPaddrWriteBundle)
   val s2_lduUpdateLQ = ValidIO(new LqWriteBundle)
   val s2_load_data_forwarded = Output(Bool())
 //  val s2_dcache_require_replay = Output(Bool())
@@ -437,6 +438,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   dontTouch(s2_rsFeedback)
 
   // provide paddr for lq
+  io.lsq.s1_lduMMIOPAddr.valid := s1_out.valid
+  io.lsq.s1_lduMMIOPAddr.bits.lqIdx := s1_out.bits.uop.lqIdx
+  io.lsq.s1_lduMMIOPAddr.bits.paddr := s1_paddr_dup_lsu
   io.lsq.s2_load_data_forwarded := s2_dataForwarded
 
   // provide prefetcher train data

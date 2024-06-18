@@ -67,6 +67,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val hartId = Input(UInt(8.W))
     val enq = new LsqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
+    val loadMMIOPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LoadMMIOPaddrWriteBundle)))
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val storeInRe = Vec(StorePipelineWidth, Input(new LsPipelineBundle()))
@@ -149,6 +150,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
 
   // load queue wiring
+  loadQueue.io.loadMMIOPaddrIn <> io.loadMMIOPaddrIn
   loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.brqRedirect <> io.brqRedirect
   loadQueue.io.loadIn <> io.loadIn
@@ -249,7 +251,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   assert(!(loadQueue.io.uncache.req.valid && storeQueue.io.uncache.req.valid))
   assert(!(loadQueue.io.uncache.resp.valid && storeQueue.io.uncache.resp.valid))
-  assert(!((loadQueue.io.uncache.resp.valid || storeQueue.io.uncache.resp.valid) && pendingstate === s_idle)) //todo ????
+  assert(!((loadQueue.io.uncache.resp.valid || storeQueue.io.uncache.resp.valid) && pendingstate === s_idle))
+  assert(!(io.uncache.req.valid && (io.uncache.req.bits.addr === 0.U)))
 
   io.lqFull := loadQueue.io.lqFull
   io.sqFull := storeQueue.io.sqFull
