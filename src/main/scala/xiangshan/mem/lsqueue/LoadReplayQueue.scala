@@ -34,18 +34,16 @@ object LoadReplayCauses {
   val C_DR  = 3
   // dcache miss check
   val C_DM  = 4
-  // wpu predict fail
-  val C_WF  = 5
   // dcache bank conflict check
-  val C_BC  = 6
+  val C_BC  = 5
   // RAR queue accept check
-  val C_RAR = 7
+  val C_RAR = 6
   // RAW queue accept check
-  val C_RAW = 8
+  val C_RAW = 7
   // st-ld violation
-  val C_NK  = 9
+  val C_NK  = 8
   // total causes
-  val allCauses = 10
+  val allCauses = 9
 }
 class ReplayInfo(implicit p: Parameters) extends XSBundle{
   val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
@@ -59,7 +57,6 @@ class ReplayInfo(implicit p: Parameters) extends XSBundle{
   def fwd_fail      = replayCause(LoadReplayCauses.C_FF)
   def dcache_rep    = replayCause(LoadReplayCauses.C_DR)
   def dcache_miss   = replayCause(LoadReplayCauses.C_DM)
-  def wpu_fail      = replayCause(LoadReplayCauses.C_WF)
   def bank_conflict = replayCause(LoadReplayCauses.C_BC)
   def rar_nack      = replayCause(LoadReplayCauses.C_RAR)
   def raw_nack      = replayCause(LoadReplayCauses.C_RAW)
@@ -291,7 +288,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       when(enqNeedAlloacteNew(j) && (enqIndex(j) === i.asUInt)){
           // case TLB MISS
           when(io.enq(j).bits.replay.tlb_miss){
-            hintIDReg(i) := (1.U << reqIdWidth) - 1.U
+            hintIDReg(i) := (1.U << reqIdWidth).asUInt - 1.U
           }
           // case Forward Fail
           when(io.enq(j).bits.replay.fwd_fail){
