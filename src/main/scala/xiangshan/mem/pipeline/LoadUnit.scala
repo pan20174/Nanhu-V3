@@ -384,8 +384,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   s2_loadViolationQueryResp := io.lsq.loadViolationQuery.s2_resp
 
-  val s2_actually_mmio = s2_pmp.mmio
   val s2_tlb_miss = s2_in.bits.tlbMiss
+  val s2_actually_mmio = s2_pmp.mmio && !s2_tlb_miss
   val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
   val s2_cache_miss = s2_dcacheResp.bits.miss
   val s2_cache_replay = s2_dcacheResp.bits.replay
@@ -438,7 +438,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   dontTouch(s2_rsFeedback)
 
   // provide paddr for lq
-  io.lsq.s1_lduMMIOPAddr.valid := s1_out.valid
+  io.lsq.s1_lduMMIOPAddr.valid := s1_out.valid && !s1_tlb_miss
   io.lsq.s1_lduMMIOPAddr.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduMMIOPAddr.bits.paddr := s1_paddr_dup_lsu
   io.lsq.s2_load_data_forwarded := s2_dataForwarded
