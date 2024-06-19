@@ -468,6 +468,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
     !s2_data_invalid && !s2_mmio &&
     !s2_allStLdViolation &&
+    !s2_enqRAWFail &&
     !RegNext(s1_bank_conflict)
 
   val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
