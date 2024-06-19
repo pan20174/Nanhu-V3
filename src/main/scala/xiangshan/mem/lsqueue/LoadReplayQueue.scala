@@ -283,8 +283,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     stDataDeqVec(i) := allocatedReg(i) && storeDataValidVec(i)
   })
 
-  (0 until LoadReplayQueueSize).map(i => {
-    (0 until LoadPipelineWidth).map(j => {
+  (0 until LoadReplayQueueSize).foreach(i => {
+    (0 until LoadPipelineWidth).foreach(j => {
       when(enqNeedAlloacteNew(j) && (enqIndex(j) === i.asUInt)){
           // case TLB MISS
           when(io.enq(j).bits.replay.tlb_miss){
@@ -310,34 +310,37 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
             penaltyReg(i)  := penaltyReg(i) + 1.U
             blockingReg(i) := true.B
           }
-      }.otherwise{
-          // otherwise listening the casue whether has been solved
-          // case TLB MISS
-          when(causeReg(i)(LoadReplayCauses.C_TM)) {
-            blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
-          }
-          // case Forward Fail
-          when(causeReg(i)(LoadReplayCauses.C_FF)) {
-            blockingReg(i) := Mux(stDataDeqVec(i), false.B, blockingReg(i))
-          }
-          // case Dcache no mshr
-          when(causeReg(i)(LoadReplayCauses.C_DR)) {
-            blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
-            (io.tlDchannelWakeup.mshrid<=15.U), false.B,
-            Mux(!io.mshrFull, false.B, blockingReg(i)))
-          }
-          // case Dcache MISS
-          when(causeReg(i)(LoadReplayCauses.C_DM)) {
-            blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
-            io.tlDchannelWakeup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
-          }
-          // case Bank Conflict
-          when(causeReg(i)(LoadReplayCauses.C_BC)) {
-            blockingReg(i) := !(counterReg(i) === 0.U)
-          }
       }
     })
   })
+
+  (0 until LoadReplayQueueSize).foreach(i => {
+    // otherwise listening the casue whether has been solved
+    // case TLB MISS
+    when(causeReg(i)(LoadReplayCauses.C_TM)) {
+      blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+    }
+    // case Forward Fail
+    when(causeReg(i)(LoadReplayCauses.C_FF)) {
+      blockingReg(i) := Mux(stDataDeqVec(i), false.B, blockingReg(i))
+    }
+    // case Dcache no mshr
+    when(causeReg(i)(LoadReplayCauses.C_DR)) {
+      blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
+        (io.tlDchannelWakeup.mshrid <= 15.U), false.B,
+        Mux(!io.mshrFull, false.B, blockingReg(i)))
+    }
+    // case Dcache MISS
+    when(causeReg(i)(LoadReplayCauses.C_DM)) {
+      blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
+        io.tlDchannelWakeup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
+    }
+    // case Bank Conflict
+    when(causeReg(i)(LoadReplayCauses.C_BC)) {
+      blockingReg(i) := !(counterReg(i) === 0.U)
+    }
+  })
+
 
   allocatedReg.zipWithIndex.foreach({case(valid,idx) => {
     when(valid){
