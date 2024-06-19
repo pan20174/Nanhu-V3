@@ -214,10 +214,11 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
   })
 
   freeList.io.free := freeMaskVec.asUInt
-
+  val freeMaskVecDelayOne = RegInit(0.U)
   freeMaskVec.zipWithIndex.foreach({case(free,idx) =>
     when(free){   //todo
       allocatedReg(idx) := false.B
+      freeMaskVecDelayOne := freeMaskVec.asUInt
     }
   })
 
@@ -278,17 +279,17 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
   violationSelector.io.in.zipWithIndex.foreach({case (in,idx) =>
     val entryIdx = OHToUInt(violationOldestEntryIdxVec(idx).bits)
     val rob = uopReg(entryIdx).robIdx
-    in.valid := violationOldestEntryIdxVec(idx).valid && RegNext(io.storeQuery(idx).valid,false.B) //can't ignore
+    in.valid := violationOldestEntryIdxVec(idx).valid && RegNext(io.storeQuery(idx).valid,false.B) && !freeMaskVecDelayOne(idx)//can't ignore
     in.bits := rob
 
-    when(in.valid){ assert(allocatedReg(entryIdx)) }
+    when(in.valid){ assert(allocatedReg(entryIdx) || (violationOldestEntryIdxVec(idx).bits & freeMaskVecDelayOne).orR) }
   })
 
   private val rollbackStIdx = OHToUInt(violationSelector.io.chosen)
   private val rollbackEntryIdx = OHToUInt(violationOldestEntryIdxVec(rollbackStIdx).bits)
   private val rollbackRes = Wire(Valid(new Redirect))
   private val rollbackRob = violationSelector.io.out.bits
-  rollbackRes.valid := violationSelector.io.out.valid && !rollbackRob.needFlush(io.redirect)
+  rollbackRes.valid := violationSelector.io.out.valid && (rollbackEntryIdx=/=RegNext(OHToUInt(freeMaskVecDelayOne))) && !rollbackRob.needFlush(io.redirect)
   rollbackRes.bits.robIdx := rollbackRob
   rollbackRes.bits.ftqIdx := uopReg(rollbackEntryIdx).ftqPtr
   rollbackRes.bits.ftqOffset := uopReg(rollbackEntryIdx).ftqOffset
