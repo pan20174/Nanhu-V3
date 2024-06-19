@@ -624,7 +624,19 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s3_needReplay = io.s3_enq_replayQueue.valid && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)
 
-  io.enqRAWQueue.s2_enq.valid := s2_wb_valid
+  val s2_canEnqRAW = !s2_cancel_inner &&
+    s2_in.valid &&
+    !s2_in.bits.uop.robIdx.needFlush(io.redirect) &&
+    !s2_hasException &&
+    !s2_tlb_miss &&
+    !s2_cache_miss &&
+    !s2_cache_replay &&
+    (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
+    !s2_data_invalid && !s2_mmio &&
+    !s2_allStLdViolation &&
+    !RegNext(s1_bank_conflict)
+
+  io.enqRAWQueue.s2_enq.valid := s2_canEnqRAW
   io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr(PAddrBits - 1, 3)
   io.enqRAWQueue.s2_enq.bits.mask := s2_out.bits.mask
   io.enqRAWQueue.s2_enq.bits.sqIdx := s2_out.bits.uop.sqIdx

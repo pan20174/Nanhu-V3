@@ -261,7 +261,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
 
     val selModule = Module(new RAWQueueSelectPolicy(LoadRAWQueueSize, true, idx))
     selModule.io.in.zipWithIndex.foreach({case (in,i) =>
-      in.valid := s1_violationValid(i) && RegNext(query.valid,false.B)
+      in.valid := s1_violationValid(i) && RegNext(query.valid,false.B) && !freeMaskVec(i)
       in.bits := uopRob(i)
     })
 
@@ -278,10 +278,10 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
   violationSelector.io.in.zipWithIndex.foreach({case (in,idx) =>
     val entryIdx = OHToUInt(violationOldestEntryIdxVec(idx).bits)
     val rob = uopReg(entryIdx).robIdx
-    in.valid := violationOldestEntryIdxVec(idx).valid && RegNext(io.storeQuery(idx).valid,false.B) //can't ignore
+    in.valid := violationOldestEntryIdxVec(idx).valid && RegNext(io.storeQuery(idx).valid,false.B) && !freeMaskVec(entryIdx)//can't ignore
     in.bits := rob
 
-    when(in.valid){ assert(allocatedReg(entryIdx)) }
+    when(in.valid){ assert(allocatedReg(entryIdx) || freeMaskVec(entryIdx)) }
   })
 
   private val rollbackStIdx = OHToUInt(violationSelector.io.chosen)
