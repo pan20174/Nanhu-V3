@@ -462,17 +462,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
 //  val s2_dcache_require_replay = s2_cache_replay && s2_rsFeedback.valid && !s2_dataForwarded && !s2_isSoftPrefetch && s2_out.bits.miss
 //  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
-
-  val exceptionWb = s2_hasException
-  val normalWb = !s2_tlb_miss &&
-    (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
-    !s2_data_invalid && !s2_mmio &&
-    !s2_allStLdViolation &&
-    !s2_enqRAWFail &&
-    !RegNext(s1_bank_conflict)
-
-  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
-    normalWb)
+  val debug_s2_cause = WireInit(0.U.asTypeOf(new ReplayInfo))
+  val debugS2CauseReg = RegInit(0.U.asTypeOf(new ReplayInfo))
+  val exceptionNeedWb = s2_hasException
+  val hasNoCause = !(debug_s2_cause.replayCause.reduce(_|_))
+  val s2_wb_valid = s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionNeedWb || hasNoCause)
 
   when(s2_in.valid) {
     assert(!(s2_tlb_miss && s2_fullForward),"when s2_tlb_miss,s2_fullForward must be false!!")
@@ -493,8 +487,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   hitLoadOut.bits.fflags := DontCare
 
   s2_out.ready := true.B
-  val debug_s2_cause = WireInit(0.U.asTypeOf(new ReplayInfo))
-  val debugS2CauseReg = RegInit(0.U.asTypeOf(new ReplayInfo))
+
   debugS2CauseReg := Mux(s1_cause_can_transfer && s1_out.valid, debug_s1_cause, 0.U.asTypeOf(new ReplayInfo))
   val s2_cause_can_transfer = (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
   debug_s2_cause := debugS2CauseReg
@@ -623,8 +616,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
 
   val s3_needReplay = io.s3_enq_replayQueue.valid && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)
-
-  io.enqRAWQueue.s2_enq.valid := s2_wb_valid
+  val s2_canQueryRAW = s2_in.valid && !(debug_s2_cause.replayCause.updated(LoadReplayCauses.C_RAW, false.B).reduce(_|_)) && !s2_hasException && !s2_isSoftPrefetch
+  io.enqRAWQueue.s2_enq.valid := s2_canQueryRAW && !s2_in.bits.uop.robIdx.needFlush(io.redirect)
   io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr(PAddrBits - 1, 3)
   io.enqRAWQueue.s2_enq.bits.mask := s2_out.bits.mask
   io.enqRAWQueue.s2_enq.bits.sqIdx := s2_out.bits.uop.sqIdx
