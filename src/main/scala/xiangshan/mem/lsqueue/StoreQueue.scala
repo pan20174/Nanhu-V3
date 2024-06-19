@@ -91,6 +91,10 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     val sqFull = Output(Bool())
     val sqCancelCnt = Output(UInt(log2Up(StoreQueueSize + 1).W))
     val sqDeq = Output(UInt(2.W))
+    val stPtrInfo = new Bundle(){
+      val stAddrReadyPtr = Output(new SqPtr)
+      val stAddrAllReady = Output(Bool())
+    }
     val stDataReadySqPtr =  Output(new SqPtr)
     val stDataReadyVec = Output(Vec(StoreQueueSize, Bool()))
   })
@@ -151,6 +155,7 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
   val dataReadyPtrExt = RegInit(0.U.asTypeOf(new SqPtr))
   val issuePtrExt = RegInit(0.U.asTypeOf(new SqPtr))
   val validCounter = RegInit(0.U(log2Ceil(LoadQueueSize + 1).W))
+  val addrReadyPtr = RegInit(0.U.asTypeOf(new SqPtr))
 
   assert(cmtPtrExt.head <= enqPtrExt.head)
   assert(rdataPtrExt.head <= cmtPtrExt.head)
@@ -240,6 +245,21 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasPerfLogging
     io.enq.resp(i) := sqIdx
   }
   XSDebug(p"(ready, valid): ${io.enq.canAccept}, ${Binary(Cat(io.enq.req.map(_.valid)))}\n")
+
+  //update addrReadyPtr when store address is ready
+  //the address before addrReadyPtr is ready
+  val addrReadyPtrUpdateStride = 8
+  require(addrReadyPtrUpdateStride >= 2)
+  val addrReadyLookupVec = (0 until addrReadyPtrUpdateStride).map(addrReadyPtr + _.U)
+  val addrReadyLookup = addrReadyLookupVec.map(ptr => allocated(ptr.value) && addrvalid(ptr.value) && ptr =/= enqPtrExt(0))
+  val nextAddrReadyPtr = addrReadyPtr + PriorityEncoder(VecInit(addrReadyLookup).map(!_) :+ true.B)
+  addrReadyPtr := nextAddrReadyPtr
+  io.stPtrInfo.stAddrReadyPtr := addrReadyPtr
+  io.stPtrInfo.stAddrAllReady := addrReadyPtr === enqPtrExt(0)
+
+  when(io.brqRedirect.valid){
+    addrReadyPtr := Mux(isAfter(cmtPtrExt(0), deqPtrExt(0)),cmtPtrExt(0),deqPtrExtNext(0))
+  }
 
   /**
     * Update issuePtr when issue from rs

@@ -67,7 +67,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val hartId = Input(UInt(8.W))
     val enq = new LsqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
-    val loadPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqPaddrWriteBundle)))
+    val loadMMIOPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LoadMMIOPaddrWriteBundle)))
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val storeInRe = Vec(StorePipelineWidth, Input(new LsPipelineBundle()))
@@ -102,8 +102,11 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val ldStop = Output(Bool())
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
-    val tlDchannelWakeup = Input(new DcacheTLBypassLduIO)
+    val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
+    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val mmioWb = DecoupledIO(new ExuOutput)
+    val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
+    val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
     val mshrFull = Input(Bool())
   })
 
@@ -118,6 +121,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   io.enq.canAccept := loadQueue.io.enq.canAccept && storeQueue.io.enq.canAccept
   loadQueue.io.enq.sqCanAccept := storeQueue.io.enq.canAccept
   storeQueue.io.enq.lqCanAccept := loadQueue.io.enq.canAccept
+  loadQueue.io.stAddrReadyPtr := storeQueue.io.stPtrInfo.stAddrReadyPtr
+  loadQueue.io.stAddrAllReady := storeQueue.io.stPtrInfo.stAddrAllReady
 
   val loadValid  = Wire(Vec(exuParameters.LsExuCnt,Bool()))
   val storeValid = Wire(Vec(exuParameters.LsExuCnt,Bool()))
@@ -145,14 +150,17 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
 
   // load queue wiring
+  loadQueue.io.loadMMIOPaddrIn <> io.loadMMIOPaddrIn
+  loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.brqRedirect <> io.brqRedirect
-  loadQueue.io.loadPaddrIn <> io.loadPaddrIn
   loadQueue.io.loadIn <> io.loadIn
   loadQueue.io.storeIn.zip(io.storeIn).foreach({case(a, b) =>
     a.valid := b.valid & b.bits.uop.loadStoreEnable
     a.bits := b.bits
   })
+  loadQueue.io.stLdViolationQuery := io.storeViolationQuery
   loadQueue.io.s2_load_data_forwarded <> io.s2_load_data_forwarded
+  loadQueue.io.loadEnqRAW <> io.loadEnqRAW
 //  loadQueue.io.s2_dcache_require_replay <> io.s2_dcache_require_replay
 //  loadQueue.io.s3_replay_from_fetch <> io.s3_replay_from_fetch
 //  loadQueue.io.ldout <> io.ldout
@@ -194,7 +202,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   storeQueue.io.sqCancelCnt <> io.sqCancelCnt
   storeQueue.io.sqDeq <> io.sqDeq
 
-  loadQueue.io.load_s1 <> io.forward
   storeQueue.io.forward <> io.forward // overlap forwardMask & forwardData, DO NOT CHANGE SEQUENCE
 
   loadQueue.io.loadViolationQuery <> io.loadViolationQuery
@@ -244,7 +251,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   assert(!(loadQueue.io.uncache.req.valid && storeQueue.io.uncache.req.valid))
   assert(!(loadQueue.io.uncache.resp.valid && storeQueue.io.uncache.resp.valid))
-  assert(!((loadQueue.io.uncache.resp.valid || storeQueue.io.uncache.resp.valid) && pendingstate === s_idle)) //todo ????
+  assert(!((loadQueue.io.uncache.resp.valid || storeQueue.io.uncache.resp.valid) && pendingstate === s_idle))
+  assert(!(io.uncache.req.valid && (io.uncache.req.bits.addr === 0.U)))
 
   io.lqFull := loadQueue.io.lqFull
   io.sqFull := storeQueue.io.sqFull

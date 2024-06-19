@@ -34,7 +34,7 @@ import xiangshan.backend.execute.fu.csr.{PFEvent, SdtrigExt}
 import xiangshan.backend.execute.fu.fence.{FenceToSbuffer, SfenceBundle}
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
-import xiangshan.cache.mmu.{BTlbPtwIO, TLB, TlbIO, TlbReplace}
+import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, TLB, TlbIO, TlbReplace}
 import xiangshan.mem._
 import xiangshan.mem.prefetch.{BasePrefecher, SMSParams, SMSPrefetcher}
 import xs.utils.mbist.MBISTPipeline
@@ -201,6 +201,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   with HasPerfEvents
   with SdtrigExt
   with HasPerfLogging
+  with HasTlbConst
 {
   private val lduIssues = outer.lduIssueNodes.map(iss => {
     require(iss.in.length == 1)
@@ -448,6 +449,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     })
   }
 
+  val loadTlbWakeup = Wire(Valid(new LoadTLBWakeUpBundle))
+  loadTlbWakeup.valid := dtlb_ld.head.ptw.resp.valid
+  loadTlbWakeup.bits.vpn := dtlb_ld.head.ptw.resp.bits.entry.tag
+  lsq.io.tlbWakeup := loadTlbWakeup
+
   val dtlb = dtlb_ld ++ dtlb_st
   val dtlb_reqs = dtlb.flatMap(_.requestor)
   val dtlb_pmps = dtlb.flatMap(_.pmp)
@@ -561,6 +567,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     loadUnits(i).io.redirect := Pipe(redirectIn)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
+
+    lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
+
+
+
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
     slduIssues(i).rsFeedback := DontCare
     val selSldu = slduIssues(i).auxValid
@@ -609,18 +620,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
     // passdown to lsq (load s1)
-    lsq.io.loadPaddrIn(i) <> loadUnits(i).io.lsq.s1_lduUpdateLQ
-
+    lsq.io.loadMMIOPaddrIn(i) <> loadUnits(i).io.lsq.s1_lduMMIOPAddr
     // passdown to lsq (load s2)
     lsq.io.loadIn(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
-//    lsq.io.ldout(i) <> loadUnits(i).io.lsq.s3_lq_wb
-//    lsq.io.ldRawDataOut(i) <> loadUnits(i).io.lsq.s3_lq_wbLdRawData
     lsq.io.s2_load_data_forwarded(i) <> loadUnits(i).io.lsq.s2_load_data_forwarded
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
-
-    // passdown to lsq (load s3)
-//    lsq.io.s2_dcache_require_replay(i) <> loadUnits(i).io.lsq.s2_dcache_require_replay
-//    lsq.io.s3_replay_from_fetch(i) <> loadUnits(i).io.lsq.s3_replay_from_fetch
 
     // --------------------------------
     // Load Triggers
@@ -667,6 +671,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     stdUnits(i).io.in <> stdIssues(i).issue
     stdUnits(i).io.redirect := Pipe(redirectIn)
 
+    loadUnits.foreach({req =>
+      req.io.storeViolationQuery(i) := stu.io.storeViolationQuery
+    })
+
     stu.io.redirect     <> Pipe(redirectIn)
     stu.io.redirect_dup.foreach({ case d => {d <> Pipe(redirectIn)}})
     staIssues(i).rsFeedback.feedbackSlowStore := stu.io.feedbackSlow
@@ -676,6 +684,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     stu.io.stin         <> staIssues(i).issue
     stu.io.lsq          <> lsq.io.storeIn(i)
     stu.io.lsq_replenish <> lsq.io.storeInRe(i)
+    lsq.io.storeViolationQuery(i) := stu.io.storeViolationQuery
     // dtlb
     stu.io.tlb          <> dtlb_reqs.drop(ld_tlb_ports)(i)
     stu.io.pmp          <> pmp_check(i+ld_tlb_ports).resp

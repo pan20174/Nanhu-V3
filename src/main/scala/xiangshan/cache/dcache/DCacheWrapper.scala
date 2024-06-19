@@ -410,7 +410,7 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
   def hit_resps: Seq[ValidIO[DCacheLineResp]] = Seq(main_pipe_hit_resp, refill_hit_resp)
 }
 
-class DcacheTLBypassLduIO (implicit p: Parameters) extends DCacheBundle {
+class DCacheTLDBypassLduIO(implicit p: Parameters) extends DCacheBundle {
   val valid = Bool()
   val mshrid = UInt(log2Up(cfg.nMissEntries).W)
 }
@@ -418,7 +418,7 @@ class DcacheTLBypassLduIO (implicit p: Parameters) extends DCacheBundle {
 class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val load  = Vec(LoadPipelineWidth, Flipped(new DCacheLoadIO)) // for speculative load
   val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W)) // mshrID which handled load miss req
-  val tl_d_channel = Output(new DcacheTLBypassLduIO)
+  val tl_d_channel = Output(new DCacheTLDBypassLduIO)
   //todo: remove lsq
   val lsq = ValidIO(new Refill)  // refill to load queue, wake up load misses
   val store = new DCacheToSbufferIO // for sbuffer
