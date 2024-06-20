@@ -343,7 +343,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
 
   allocatedReg.zipWithIndex.foreach({case(valid,idx) => {
-    when(valid){
+    when(valid && (counterReg(idx) =/= 0.U)){
       counterReg(idx) := counterReg(idx) - 1.U
     }
   }})
@@ -355,6 +355,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     when (needCancel(i)) {
       allocatedReg(i) := false.B
       freeMaskVec(i) := true.B
+      causeReg(i) := 0.U
     }
   }
   freeList.io.free := freeMaskVec.asUInt
