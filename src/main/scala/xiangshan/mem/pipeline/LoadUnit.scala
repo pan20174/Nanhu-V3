@@ -629,8 +629,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     !s2_in.bits.uop.robIdx.needFlush(io.redirect) &&
     !s2_hasException &&
     !s2_tlb_miss &&
-    !s2_cache_miss &&
-    !s2_cache_replay &&
     (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
     !s2_data_invalid && !s2_mmio &&
     !s2_allStLdViolation &&
