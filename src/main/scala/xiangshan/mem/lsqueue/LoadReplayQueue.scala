@@ -146,6 +146,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val degbugInfo = new ReplayQDebugBundle
     val mshrFull = Input(Bool())
+    val rawIsFull = Input(Bool())
     })
 
   val counterRegMax = 32
@@ -286,30 +287,34 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   (0 until LoadReplayQueueSize).foreach(i => {
     (0 until LoadPipelineWidth).foreach(j => {
       when(enqNeedAlloacteNew(j) && (enqIndex(j) === i.asUInt)){
-          // case TLB MISS
-          when(io.enq(j).bits.replay.tlb_miss){
-            hintIDReg(i) := (1.U << reqIdWidth).asUInt - 1.U
-          }
-          // case Forward Fail
-          when(io.enq(j).bits.replay.fwd_fail){
-            blockingReg(i) := true.B
-            blockSqIdxReg(i) := io.enq(j).bits.replay.fwd_data_sqIdx
-          }
-          // case Dcache no mshr
-          when(io.enq(j).bits.replay.dcache_rep){
-            blockingReg(i) := true.B
-          }
-          // case Dcache MISS
-          when(io.enq(j).bits.replay.dcache_miss){
-            blockingReg(i) := (!io.enq(j).bits.replay.full_fwd) && !(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === io.enq(j).bits.mshrMissIDResp)
-            mshrIDreg(i) := io.enq(j).bits.mshrMissIDResp
-          }
-          // case Bank Conflict
-          when(io.enq(j).bits.replay.bank_conflict){
-            counterReg(i) := 1.U << penaltyReg(i)
-            penaltyReg(i)  := penaltyReg(i) + 1.U
-            blockingReg(i) := true.B
-          }
+        // case TLB MISS
+        when(io.enq(j).bits.replay.tlb_miss){
+          hintIDReg(i) := (1.U << reqIdWidth).asUInt - 1.U
+        }
+        // case Forward Fail
+        when(io.enq(j).bits.replay.fwd_fail){
+          blockingReg(i) := true.B
+          blockSqIdxReg(i) := io.enq(j).bits.replay.fwd_data_sqIdx
+        }
+        // case Dcache no mshr
+        when(io.enq(j).bits.replay.dcache_rep){
+          blockingReg(i) := true.B
+        }
+        // case Dcache MISS
+        when(io.enq(j).bits.replay.dcache_miss){
+          blockingReg(i) := (!io.enq(j).bits.replay.full_fwd) && !(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === io.enq(j).bits.mshrMissIDResp)
+          mshrIDreg(i) := io.enq(j).bits.mshrMissIDResp
+        }
+        // case Bank Conflict
+        when(io.enq(j).bits.replay.bank_conflict){
+          counterReg(i) := 1.U << penaltyReg(i)
+          penaltyReg(i)  := penaltyReg(i) + 1.U
+          blockingReg(i) := true.B
+        }
+        // case read after read
+        when(io.enq(j).bits.replay.raw_nack) {
+          blockingReg(i) := Mux(io.rawIsFull,true.B,false.B)
+        }
       }
     })
   })
@@ -322,22 +327,29 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     // case Forward Fail
     when(causeReg(i)(LoadReplayCauses.C_FF)) {
-      blockingReg(i) := Mux(stDataDeqVec(i), false.B, blockingReg(i))
+      when(stDataDeqVec(i)){
+        blockingReg(i) := false.B
+      }
     }
     // case Dcache no mshr
     when(causeReg(i)(LoadReplayCauses.C_DR)) {
-      blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
-        (io.tlDchannelWakeup.mshrid <= 15.U), false.B,
-        Mux(!io.mshrFull, false.B, blockingReg(i)))
+      when((io.tlDchannelWakeup.valid && (io.tlDchannelWakeup.mshrid <= 15.U)) || !io.mshrFull){
+        blockingReg(i) := false.B
+      }
     }
     // case Dcache MISS
     when(causeReg(i)(LoadReplayCauses.C_DM)) {
-      blockingReg(i) := Mux(io.tlDchannelWakeup.valid &&
-        io.tlDchannelWakeup.mshrid === mshrIDreg(i), false.B, blockingReg(i))
+      when(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === mshrIDreg(i)){
+        blockingReg(i) := false.B
+      }
     }
     // case Bank Conflict
     when(causeReg(i)(LoadReplayCauses.C_BC)) {
       blockingReg(i) := !(counterReg(i) === 0.U)
+    }
+    // case read after read
+    when(causeReg(i)(LoadReplayCauses.C_RAW)) {
+      blockingReg(i) := Mux(io.rawIsFull, true.B, false.B)
     }
   })
 

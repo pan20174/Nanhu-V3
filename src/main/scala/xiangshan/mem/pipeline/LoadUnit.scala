@@ -590,11 +590,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   debugS3CauseReg := Mux( s2_cause_can_transfer && s2_out.fire && !s2_wb_valid, debug_s2_cause, 0.U.asTypeOf(new ReplayInfo))
   dontTouch(debugS3CauseReg)
   val temp_other_cause = debugS3CauseReg.replayCause
-  .updated(LoadReplayCauses.C_TM, false.B)
-  .updated(LoadReplayCauses.C_DM, false.B)
-  .updated(LoadReplayCauses.C_FF, false.B)
-  .updated(LoadReplayCauses.C_DR, false.B)
-  .reduce(_ || _)
+    .updated(LoadReplayCauses.C_TM, false.B)
+    .updated(LoadReplayCauses.C_DM, false.B)
+    .updated(LoadReplayCauses.C_FF, false.B)
+    .updated(LoadReplayCauses.C_DR, false.B)
+    .updated(LoadReplayCauses.C_RAW, false.B)
+    .reduce(_ || _)
   val s3_dcacheMshrID = RegEnable(s2_dcacheMshrID.bits, s2_dcacheMshrID.valid)
 
   dontTouch(s3_dcacheMshrID)
@@ -609,6 +610,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_FF) := debugS3CauseReg.fwd_fail
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DR) := debugS3CauseReg.dcache_rep
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DM) := debugS3CauseReg.dcache_miss
+  io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_RAW) := debugS3CauseReg.raw_nack
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_BC) := temp_other_cause
   io.s3_enq_replayQueue.bits.replay.schedIndex := s3_in.bits.replay.schedIndex
   io.s3_enq_replayQueue.bits.replay.fwd_data_sqIdx := debugS3CauseReg.fwd_data_sqIdx

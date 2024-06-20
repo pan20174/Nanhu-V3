@@ -163,6 +163,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   rawQueue.io.stAddrAllReady := io.stAddrAllReady
   io.rollback := rawQueue.io.rollback
 
+  replayQueue.io.rawIsFull := rawQueue.io.isFull
+
+
   private val uop = Reg(Vec(LoadQueueSize, new MicroOp))
   private val dataModule = Module(new LoadQueueDataWrapper(LoadQueueSize, wbNumRead = LoadPipelineWidth, wbNumWrite = LoadPipelineWidth))
   dataModule.io := DontCare
