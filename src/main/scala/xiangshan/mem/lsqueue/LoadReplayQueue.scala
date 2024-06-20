@@ -147,7 +147,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val degbugInfo = new ReplayQDebugBundle
     val mshrFull = Input(Bool())
     val rawIsFull = Input(Bool())
-    })
+    val loadDeqPtr = Input(new LqPtr)
+  })
 
   val counterRegMax = 32
   val penaltyRegWidth = log2Up(counterRegMax) + 1
@@ -349,7 +350,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     // case read after read
     when(causeReg(i)(LoadReplayCauses.C_RAW)) {
-      blockingReg(i) := Mux(io.rawIsFull, true.B, false.B)
+      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === uopReg(i).lqIdx), false.B, true.B)
     }
   })
 

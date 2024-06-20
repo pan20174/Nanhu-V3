@@ -134,37 +134,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   })
 
   private val replayQueue = Module(new LoadReplayQueue(enablePerf = true))
-  replayQueue.io.redirect := io.brqRedirect
-  replayQueue.io.enq <> io.replayQEnq
-  replayQueue.io.replayQIssue(0).ready := true.B
-  replayQueue.io.replayQIssue(1).ready := true.B
-  replayQueue.io.tlDchannelWakeup := io.tlDchannelWakeup
-  replayQueue.io.stDataReadyVec := io.stDataReadyVec
-  replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
-  replayQueue.io.sqEmpty := io.sqEmpty
-  replayQueue.io.stDataReadySqPtr := io.stDataReadySqPtr
-  replayQueue.io.mshrFull := io.mshrFull
-  replayQueue.io.tlbWakeup := io.tlbWakeup
-
-  io.ldStop := replayQueue.io.ldStop
-  io.replayQIssue <> replayQueue.io.replayQIssue
-  io.replayQFull := replayQueue.io.replayQFull
-  replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr
-  replayQueue.io.degbugInfo.debug_enqPtr := io.debug_enqPtr
-
-  XSPerfAccumulate("replayq", replayQueue.io.replayQIssue(0).fire || replayQueue.io.replayQIssue(1).fire)
-  println("LoadQueue: size:" + LoadQueueSize)
-
   private val rawQueue = Module(new LoadRAWQueue)
-  rawQueue.io.redirect := io.brqRedirect
-  rawQueue.io.stAddrReadyPtr := io.stAddrReadyPtr
-  rawQueue.io.storeQuery := io.stLdViolationQuery
-  rawQueue.io.loadEnq <> io.loadEnqRAW
-  rawQueue.io.stAddrAllReady := io.stAddrAllReady
-  io.rollback := rawQueue.io.rollback
-
-  replayQueue.io.rawIsFull := rawQueue.io.isFull
-
 
   private val uop = Reg(Vec(LoadQueueSize, new MicroOp))
   private val dataModule = Module(new LoadQueueDataWrapper(LoadQueueSize, wbNumRead = LoadPipelineWidth, wbNumWrite = LoadPipelineWidth))
@@ -207,6 +177,39 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   private val release2cycle_valid = RegNext(io.release.valid)
   private val release2cycle_paddr = RegEnable(io.release.bits.paddr, io.release.valid)
   private val release2cycle_paddr_dup_lsu = RegEnable(io.release.bits.paddr, io.release.valid)
+
+
+  replayQueue.io.redirect := io.brqRedirect
+  replayQueue.io.enq <> io.replayQEnq
+  replayQueue.io.replayQIssue(0).ready := true.B
+  replayQueue.io.replayQIssue(1).ready := true.B
+  replayQueue.io.tlDchannelWakeup := io.tlDchannelWakeup
+  replayQueue.io.stDataReadyVec := io.stDataReadyVec
+  replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
+  replayQueue.io.sqEmpty := io.sqEmpty
+  replayQueue.io.stDataReadySqPtr := io.stDataReadySqPtr
+  replayQueue.io.mshrFull := io.mshrFull
+  replayQueue.io.tlbWakeup := io.tlbWakeup
+  replayQueue.io.loadDeqPtr := deqPtrExt
+
+
+  io.ldStop := replayQueue.io.ldStop
+  io.replayQIssue <> replayQueue.io.replayQIssue
+  io.replayQFull := replayQueue.io.replayQFull
+  replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr
+  replayQueue.io.degbugInfo.debug_enqPtr := io.debug_enqPtr
+
+  XSPerfAccumulate("replayq", replayQueue.io.replayQIssue(0).fire || replayQueue.io.replayQIssue(1).fire)
+  println("LoadQueue: size:" + LoadQueueSize)
+
+  rawQueue.io.redirect := io.brqRedirect
+  rawQueue.io.stAddrReadyPtr := io.stAddrReadyPtr
+  rawQueue.io.storeQuery := io.stLdViolationQuery
+  rawQueue.io.loadEnq <> io.loadEnqRAW
+  rawQueue.io.stAddrAllReady := io.stAddrAllReady
+  io.rollback := rawQueue.io.rollback
+
+  replayQueue.io.rawIsFull := rawQueue.io.isFull
 
   /**
     * Enqueue at dispatch
