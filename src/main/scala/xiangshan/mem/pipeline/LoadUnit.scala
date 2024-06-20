@@ -452,18 +452,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.feedbackFast.valid := false.B
   io.feedbackFast.bits := DontCare
 
-  // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
-  io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
-  io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
-  io.lsq.s2_lduUpdateLQ.bits.has_writeback := s2_wb_valid
-  // generate duplicated load queue data wen
-  val s2_wen_dup = RegInit(VecInit(Seq.fill(6)(false.B)))
-  s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))
-  io.lsq.s2_lduUpdateLQ.bits.lq_data_wen_dup := s2_wen_dup
-
-//  val s2_dcache_require_replay = s2_cache_replay && s2_rsFeedback.valid && !s2_dataForwarded && !s2_isSoftPrefetch && s2_out.bits.miss
-//  io.lsq.s2_dcache_require_replay := s2_dcache_require_replay
-
   val exceptionWb = s2_hasException
   val normalWb = !s2_tlb_miss &&
     (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
@@ -474,6 +462,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
     normalWb)
+
+  // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
+  io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
+  io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
+  io.lsq.s2_lduUpdateLQ.bits.has_writeback := s2_wb_valid
+  // generate duplicated load queue data wen
+  val s2_wen_dup = RegInit(VecInit(Seq.fill(6)(false.B)))
+  s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))
+  io.lsq.s2_lduUpdateLQ.bits.lq_data_wen_dup := s2_wen_dup
+
 
   when(s2_in.valid) {
     assert(!(s2_tlb_miss && s2_fullForward),"when s2_tlb_miss,s2_fullForward must be false!!")
