@@ -455,6 +455,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
   io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
   io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
+  io.lsq.s2_lduUpdateLQ.bits.has_writeback := s2_wb_valid
   // generate duplicated load queue data wen
   val s2_wen_dup = RegInit(VecInit(Seq.fill(6)(false.B)))
   s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))

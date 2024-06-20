@@ -113,6 +113,7 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
   // queue entry data, except flag bits, will be updated if writeQueue is true,
   // valid bit in LqWriteBundle will be ignored
   val lq_data_wen_dup = Vec(6, Bool()) // dirty reg dup
+  val has_writeback = Bool()
 
   def fromLsPipelineBundle(input: LsPipelineBundle) : Unit = {
     vaddr := input.vaddr

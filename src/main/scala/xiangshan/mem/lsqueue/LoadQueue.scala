@@ -310,7 +310,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       datavalid(loadWbIndex) := (!io.loadIn(i).bits.miss || io.s2_load_data_forwarded(i)) &&
         !io.loadIn(i).bits.mmio // mmio data is not valid until we finished uncache access
 
-      writebacked(loadWbIndex) := !io.loadIn(i).bits.miss && !io.loadIn(i).bits.mmio
+      writebacked(loadWbIndex) := io.loadIn(i).bits.has_writeback
 
       debug_mmio(loadWbIndex) := io.loadIn(i).bits.mmio
       debug_paddr(loadWbIndex) := io.loadIn(i).bits.paddr
