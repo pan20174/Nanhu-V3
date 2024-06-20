@@ -148,8 +148,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val mshrFull = Input(Bool())
     })
 
-  val counterRegMax = 16
-  val penaltyRegWidth = log2Up(counterRegMax)
+  val counterRegMax = 32
+  val penaltyRegWidth = log2Up(counterRegMax) + 1
 
   // replayQueue state signs define
   // allocated: the entry has been enqueued
