@@ -197,13 +197,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   io.replayQFull := lqFull
 
   // enq req control
-  val enqReqValid = io.enq.map(_.valid)
+  val enqReqFire = io.enq.map(_.fire)
   val enqReqBits = io.enq.map(_.bits)
   val enqReqNeedReplay = io.enq.map(req => req.bits.replay.need_rep && req.valid)
   val cancelEnq = io.enq.map(enq => enq.bits.uop.robIdx.needFlush(io.redirect))
   val hasExceptions = io.enq.map(enq => ExceptionNO.selectByFu(enq.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR && !enq.bits.tlbMiss)
   val needEnqueue = VecInit((0 until LoadPipelineWidth).map(i => {
-    enqReqValid(i) && !cancelEnq(i) && enqReqNeedReplay(i) && !hasExceptions(i)
+    enqReqFire(i) && !cancelEnq(i) && enqReqNeedReplay(i) && !hasExceptions(i)
   }))
   val enqIndexOH =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   val enqIndex =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))

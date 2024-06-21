@@ -547,9 +547,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
   // feedback tlb miss / dcache miss queue full
-  io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
-  io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
-  io.feedbackSlow.bits.sourceType := RegNext(s2_rsFeedback.bits.sourceType)
+  // io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
+  // io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
+  // io.feedbackSlow.bits.sourceType := RegNext(s2_rsFeedback.bits.sourceType)
+  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
+  io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
+  io.feedbackSlow.bits.sourceType :=  Mux(!io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
 
   assert(!(RegNext(io.feedbackFast.valid) && io.feedbackSlow.valid))
 
