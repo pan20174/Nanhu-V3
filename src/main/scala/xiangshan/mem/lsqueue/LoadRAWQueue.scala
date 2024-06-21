@@ -123,7 +123,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
   //allocate entry
   needAllocateEntryVec.map(_.valid).zip(io.loadEnq).foreach({case (valid,req) =>
     valid := req.s2_enq.valid && !req.s2_enq.bits.robIdx.needFlush(io.redirect) &&
-      Mux(io.stAddrAllReady,false.B,(io.stAddrReadyPtr <= req.s2_enq.bits.sqIdx))
+      Mux(io.stAddrAllReady,false.B,(io.stAddrReadyPtr < req.s2_enq.bits.sqIdx))
   })
 
   for ((enq, idx) <- io.loadEnq.zipWithIndex) {
