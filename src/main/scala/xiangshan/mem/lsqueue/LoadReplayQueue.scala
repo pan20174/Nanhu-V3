@@ -290,7 +290,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       when(enqNeedAlloacteNew(j) && (enqIndex(j) === i.asUInt)){
         // case TLB MISS
         when(io.enq(j).bits.replay.tlb_miss){
-          hintIDReg(i) := (1.U << reqIdWidth).asUInt - 1.U
+          counterReg(i) := 1.U << penaltyReg(i)
+          penaltyReg(i) := penaltyReg(i) + 1.U
+          blockingReg(i) := true.B
         }
         // case Forward Fail
         when(io.enq(j).bits.replay.fwd_fail){
@@ -324,7 +326,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     // otherwise listening the casue whether has been solved
     // case TLB MISS
     when(causeReg(i)(LoadReplayCauses.C_TM)) {
-      blockingReg(i) := Mux(hintIDReg(i) =/= 0.U, true.B, false.B)
+      blockingReg(i) := !(counterReg(i) === 0.U)
     }
     // case Forward Fail
     when(causeReg(i)(LoadReplayCauses.C_FF)) {

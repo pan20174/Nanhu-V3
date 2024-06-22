@@ -356,15 +356,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s2_cancel_inner = RegEnable(s1_cancel_inner,s1_out.fire)
   val s2_enableMem = s2_in.bits.uop.loadStoreEnable && s2_in.valid
   val s2_isSoftPrefetch = s2_in.bits.isSoftPrefetch
-//  val s2_exceptionVec = WireInit(s2_in.bits.uop.cf.exceptionVec)
   when(!s2_tlb_miss){
     s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_in.bits.uop.cf.exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
   }
-
   //don't need tlb
   s2_out.bits.uop.cf.exceptionVec(fdiULoadAccessFault) := (io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault) && s2_enableMem  //FDI load access fault
-  val s2_hasException = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR,false.B)
 
+  val s2_hasException = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR,false.B)
   val s2_dcacheResp = io.dcache.resp
   val s2_dcacheMshrID = io.loadReqHandledResp
   dontTouch(s2_dcacheMshrID)
@@ -551,10 +549,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.ldout.bits := s3_load_wb_meta_reg
   io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
-  // feedback tlb miss / dcache miss queue full
-  // io.feedbackSlow.valid := RegNext(s2_rsFeedback.valid && !s2_out.bits.uop.robIdx.needFlush(io.redirect), false.B)
-  // io.feedbackSlow.bits.rsIdx := RegNext(s2_rsFeedback.bits.rsIdx)
-  // io.feedbackSlow.bits.sourceType := RegNext(s2_rsFeedback.bits.sourceType)
   io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
   io.feedbackSlow.bits.sourceType :=  Mux(!io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
@@ -608,7 +602,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   dontTouch(s3_dcacheMshrID)
   //write back control info to replayQueue in S3
-//  val hasOtherCause = s2_out.valid && (s2_need_replay_from_rs)
   io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
   io.s3_enq_replayQueue.bits.vaddr := s3_in.bits.vaddr
   io.s3_enq_replayQueue.bits.paddr := DontCare
