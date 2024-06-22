@@ -300,10 +300,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_out.valid        := s1_in.valid && s1_enableMem
   s1_out.bits.paddr   := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
-  val s1_exceptionVec = WireInit(s1_in.bits.uop.cf.exceptionVec)
-  s1_out.bits.uop.cf.exceptionVec(loadPageFault)   := (s1_dtlbResp.bits.excp(0).pf.ld || s1_exceptionVec(loadPageFault)) && s1_enableMem && !s1_isSoftPrefetch
-  s1_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s1_dtlbResp.bits.excp(0).af.ld || s1_exceptionVec(loadAccessFault)) && s1_enableMem && !s1_isSoftPrefetch
-  s1_out.bits.uop.cf.exceptionVec := s1_exceptionVec
+//  val s1_exceptionVec = WireInit(s1_in.bits.uop.cf.exceptionVec)
+//  s1_out.bits.uop.cf.exceptionVec(loadPageFault)   := (s1_dtlbResp.bits.excp(0).pf.ld || s1_exceptionVec(loadPageFault)) && s1_enableMem && !s1_isSoftPrefetch
+//  s1_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s1_dtlbResp.bits.excp(0).af.ld || s1_exceptionVec(loadAccessFault)) && s1_enableMem && !s1_isSoftPrefetch
+  s1_out.bits.uop.cf.exceptionVec(loadPageFault) := (s1_dtlbResp.bits.excp(0).pf.ld || s1_in.bits.uop.cf.exceptionVec(loadPageFault)) && s1_enableMem && !s1_isSoftPrefetch
+  s1_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s1_dtlbResp.bits.excp(0).af.ld || s1_in.bits.uop.cf.exceptionVec(loadAccessFault)) && s1_enableMem && !s1_isSoftPrefetch
+//  s1_out.bits.uop.cf.exceptionVec := s1_exceptionVec
   s1_out.bits.ptwBack := s1_dtlbResp.bits.ptwBack
   s1_out.bits.rsIdx   := s1_in.bits.rsIdx
   s1_out.bits.isSoftPrefetch := s1_isSoftPrefetch
@@ -355,10 +357,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s2_cancel_inner = RegEnable(s1_cancel_inner,s1_out.fire)
   val s2_enableMem = s2_in.bits.uop.loadStoreEnable && s2_in.valid
   val s2_isSoftPrefetch = s2_in.bits.isSoftPrefetch
-  val s2_exceptionVec = WireInit(s2_in.bits.uop.cf.exceptionVec)
-  s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
+//  val s2_exceptionVec = WireInit(s2_in.bits.uop.cf.exceptionVec)
+  s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_in.bits.uop.cf.exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
   s2_out.bits.uop.cf.exceptionVec(fdiULoadAccessFault) := (io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault) && s2_enableMem  //FDI load access fault
-  val s2_hasException = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_exceptionVec, lduCfg).asUInt.orR,false.B)
+  val s2_hasException = Mux(s2_enableMem, ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR,false.B)
 
   val s2_dcacheResp = io.dcache.resp
   val s2_dcacheMshrID = io.loadReqHandledResp
