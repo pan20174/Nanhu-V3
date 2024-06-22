@@ -153,7 +153,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   private val writebacked = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // inst has been writebacked to CDB
   private val released = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load data has been released by dcache
   private val error = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load data has been corrupted
-  private val miss = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load inst missed, waiting for miss queue to accept miss request
   private val pending = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // mmio pending: inst is an mmio inst, it will not be executed until it reachs the end of rob
 
   private val debug_mmio = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // mmio: inst is an mmio inst
@@ -246,7 +245,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       datavalid(index) := false.B
       writebacked(index) := false.B
       released(index) := false.B
-      miss(index) := false.B
       pending(index) := false.B
       error(index) := false.B
       XSError(!io.enq.canAccept || !io.enq.sqCanAccept, s"must accept $i\n")
@@ -321,12 +319,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       debug_mmio(loadWbIndex) := io.loadIn(i).bits.mmio
       debug_paddr(loadWbIndex) := io.loadIn(i).bits.paddr
 
-      val dcacheMissed = io.loadIn(i).bits.miss && !io.loadIn(i).bits.mmio
-      if(EnableFastForward){
-        miss(loadWbIndex) := dcacheMissed && !io.s2_load_data_forwarded(i)
-      } else {
-        miss(loadWbIndex) := dcacheMissed && !io.s2_load_data_forwarded(i)
-      }
       pending(loadWbIndex) := io.loadIn(i).bits.mmio
       released(loadWbIndex) := release2cycle_valid &&
         io.loadIn(i).bits.paddr(PAddrBits-1, DCacheLineOffset) === release2cycle_paddr(PAddrBits-1, DCacheLineOffset) ||
@@ -432,7 +424,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       ldToEnqPtrMask(j) && // the load is younger than current load
       allocated(j) && // entry is valid
       released(j) && // cacheline is released
-      (datavalid(j) || miss(j)) // paddr is valid
+      datavalid(j) // paddr is valid
     })))
     val ldld_violation_mask_gen_2 = WireInit(VecInit((0 until LoadQueueSize).map(j => {
       dataModule.io.release_violation(i).match_mask(j)// addr match
@@ -698,10 +690,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("rollback", io.rollback.valid) // rollback redirect generated
   XSPerfAccumulate("mmioCycle", uncache_Order_State =/= s_idle) // lq is busy dealing with uncache req
   XSPerfAccumulate("mmioCnt", io.uncache.req.fire)
-//  XSPerfAccumulate("refill", io.dcache.valid)
-//  XSPerfAccumulate("writeback_success", PopCount(VecInit(io.ldout.map(i => i.fire))))
-//  XSPerfAccumulate("writeback_blocked", PopCount(VecInit(io.ldout.map(i => i.valid && !i.ready))))
-  XSPerfAccumulate("utilization_miss", PopCount((0 until LoadQueueSize).map(i => allocated(i) && miss(i))))
 
   val perfValidCount = RegNext(validCount)
 
@@ -735,7 +723,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     PrintFlag(allocated(i), "a")
     PrintFlag(allocated(i) && datavalid(i), "v")
     PrintFlag(allocated(i) && writebacked(i), "w")
-    PrintFlag(allocated(i) && miss(i), "m")
     PrintFlag(allocated(i) && pending(i), "p")
     XSDebug(false, true.B, "\n")
   }
