@@ -273,7 +273,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
     // Upon replay success, need to deallocate the entry; otherwise, need to replay again
     when(enq.valid && enq.bits.replay.isReplayQReplay){
-      when(!enqReqNeedReplay(i) || hasExceptions(i)){
+      when((!enqReqIsMMIO(i) && !enqReqNeedReplay(i)) || hasExceptions(i)){//todo
         allocatedReg(enq.bits.replay.schedIndex) := false.B
         freeMaskVec(enq.bits.replay.schedIndex) := true.B
         penaltyReg(enq.bits.replay.schedIndex) := 0.U
