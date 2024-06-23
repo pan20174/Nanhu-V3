@@ -466,6 +466,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     normalWb)
 
   // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
+  //update exceptionGen
   io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
   io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
   io.lsq.s2_lduUpdateLQ.bits.has_writeback := s2_wb_valid
@@ -604,7 +605,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   //write back control info to replayQueue in S3
   io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
   io.s3_enq_replayQueue.bits.vaddr := s3_in.bits.vaddr
-  io.s3_enq_replayQueue.bits.paddr := DontCare
+  io.s3_enq_replayQueue.bits.paddr := s3_in.bits.paddr
+  io.s3_enq_replayQueue.bits.isMMIO := s3_in.bits.mmio
+  io.s3_enq_replayQueue.bits.paddr := s3_in.bits.paddr
   io.s3_enq_replayQueue.bits.replay.isReplayQReplay := s3_in.bits.replay.isReplayQReplay
   io.s3_enq_replayQueue.bits.replay.replayCause := DontCare
   io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM) := debugS3CauseReg.tlb_miss

@@ -140,20 +140,20 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   private val dataModule = Module(new LoadQueueDataWrapper(LoadQueueSize, wbNumRead = LoadPipelineWidth, wbNumWrite = LoadPipelineWidth))
   dataModule.io := DontCare
 
-  private val vaddrTriggerResultModule = Module(new vaddrTriggerResultDataModule(Vec(TriggerNum, Bool()), LoadQueueSize, numRead = LoadPipelineWidth, numWrite = LoadPipelineWidth, "LqTrigger"))
-  vaddrTriggerResultModule.io := DontCare
-
   private val exceptionGen = Module(new LSQExceptionGen(LoadPipelineWidth, FuConfigs.lduCfg))
   exceptionGen.io.redirect := io.brqRedirect
   private val exceptionInfo = exceptionGen.io.out
 
   private val allocated = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // lq entry has been allocated
   private val readyToLeave = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // lq entry is ready to leave
-  private val datavalid = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // data is valid
   private val writebacked = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // inst has been writebacked to CDB
   private val released = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load data has been released by dcache
+
+  //todo: remove below
+  private val datavalid = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // data is valid //todo: change it to dataFromDCache
   private val error = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // load data has been corrupted
   private val pending = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // mmio pending: inst is an mmio inst, it will not be executed until it reachs the end of rob
+
 
   private val debug_mmio = RegInit(VecInit(List.fill(LoadQueueSize)(false.B))) // mmio: inst is an mmio inst
   private val debug_paddr = RegInit(VecInit(List.fill(LoadQueueSize)(0.U(PAddrBits.W)))) // mmio: inst is an mmio inst
@@ -180,8 +180,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   replayQueue.io.redirect := io.brqRedirect
   replayQueue.io.enq <> io.replayQEnq
-  replayQueue.io.replayQIssue(0).ready := true.B
-  replayQueue.io.replayQIssue(1).ready := true.B
+  replayQueue.io.replayQIssue.foreach(_.ready := true.B)
   replayQueue.io.tlDchannelWakeup := io.tlDchannelWakeup
   replayQueue.io.stDataReadyVec := io.stDataReadyVec
   replayQueue.io.storeDataWbPtr := io.storeDataWbPtr
@@ -190,8 +189,11 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.mshrFull := io.mshrFull
   replayQueue.io.tlbWakeup := io.tlbWakeup
   replayQueue.io.loadDeqPtr := deqPtrExt
+  replayQueue.io.robHead := io.robHead
 
 
+  io.mmioWb <> replayQueue.io.mmioWb
+  io.uncache <> replayQueue.io.mmioReq
   io.ldStop := replayQueue.io.ldStop
   io.replayQIssue <> replayQueue.io.replayQIssue
   io.replayQFull := replayQueue.io.replayQFull
@@ -246,6 +248,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       writebacked(index) := false.B
       released(index) := false.B
       pending(index) := false.B
+
       error(index) := false.B
       XSError(!io.enq.canAccept || !io.enq.sqCanAccept, s"must accept $i\n")
       XSError(index =/= lqIdx.value, s"must be the same entry $i\n")
@@ -282,7 +285,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   for (i <- 0 until LoadPipelineWidth) {
     dataModule.io.wb.wen(i) := false.B
     dataModule.io.paddr.wen(i) := false.B
-    vaddrTriggerResultModule.io.wen(i) := false.B
     val loadWbIndex = io.loadIn(i).bits.uop.lqIdx.value
 
     // most lq status need to be updated immediately after load writeback to lq
@@ -326,6 +328,11 @@ class LoadQueue(implicit p: Parameters) extends XSModule
         io.loadIn(i).bits.paddr(PAddrBits-1, DCacheLineOffset) === release1cycle.bits.paddr(PAddrBits-1, DCacheLineOffset)
     }
 
+    when(replayQueue.io.mmioWb.fire){
+      val lqIdx = replayQueue.io.mmioWb.bits.uop.lqIdx.value
+      writebacked(lqIdx) := true.B
+    }
+
     // dirty code to reduce load_s2.valid fanout
     when(io.loadIn(i).bits.lq_data_wen_dup(0)){
       val loadWbData = Wire(new LQDataEntry)
@@ -356,12 +363,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
       uop(loadWbIndex).vCsrInfo := io.loadIn(i).bits.uop.vCsrInfo
       uop(loadWbIndex).vctrl := io.loadIn(i).bits.uop.vctrl
     }
-    when(io.loadIn(i).bits.lq_data_wen_dup(5)){
-      vaddrTriggerResultModule.io.waddr(i) := loadWbIndex
-      vaddrTriggerResultModule.io.wdata(i) := io.trigger(i).hitLoadAddrTriggerHitVec
-      vaddrTriggerResultModule.io.wen(i) := true.B
-    }
-
 
     when(io.loadMMIOPaddrIn(i).valid) {
       dataModule.io.paddr.wen(i) := true.B
@@ -479,108 +480,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     }
   })
 
-  /**
-    * Memory mapped IO / other uncached operations
-    *
-    * States:
-    * (1) writeback from store units: mark as pending
-    * (2) when they reach ROB's head, they can be sent to uncache channel
-    * (3) response from uncache channel: mark as datavalid
-    * (4) writeback to ROB (and other units): mark as writebacked
-    * (5) ROB commits the instruction: same as normal instructions
-    */
-  //(2) when they reach ROB's head, they can be sent to uncache channel
-  dataModule.io.uncache.ren := false.B
 
-  private val lqTailMmioPending = WireInit(pending(deqPtr))
-  private val lqTailAllocated = WireInit(allocated(deqPtr))
-  private val ldTailReadyToLeave = WireInit(readyToLeave(deqPtr))
-  private val ldTailWritebacked = WireInit(writebacked(deqPtr))
-  private val pendingHead = uop(deqPtrExt.value).robIdx === io.robHead
-  val s_idle :: s_req :: s_resp :: s_wait :: Nil = Enum(4)
-  private val uncache_Order_State = RegInit(s_idle)
-  switch(uncache_Order_State) {
-    is(s_idle) {
-      when(RegNext(ldTailReadyToLeave && lqTailMmioPending && lqTailAllocated && pendingHead && !ldTailWritebacked)) {
-        dataModule.io.uncache.ren := true.B
-        uncache_Order_State := s_req
-      }
-    }
-    is(s_req) {
-      when(io.uncache.req.fire) {
-        uncache_Order_State := s_resp
-      }
-    }
-    is(s_resp) {
-      when(io.uncache.resp.fire) {
-        uncache_Order_State := s_wait
-      }
-    }
-    is(s_wait) {
-      when(RegNext(ldTailWritebacked)) {
-        uncache_Order_State := s_idle // ready for next mmio
-      }
-    }
-  }
-
-  //S0
-  private val mmioLdWbSel = Wire(UInt(log2Up(LoadQueueSize).W))
-  private val mmioLdWbSelV = Wire(Bool())
-  mmioLdWbSel := deqPtrExt.value
-  mmioLdWbSelV := !writebacked(mmioLdWbSel) && !(io.mmioWb.fire) && uncache_Order_State === s_wait
-  dataModule.io.wb.raddr(0) := mmioLdWbSel
-
-
-  //S1
-  private val s1_mmioLdWbSel = RegNext(mmioLdWbSel)
-  private val s1_mmioLdWbSelV = RegNext(mmioLdWbSelV, false.B)
-  private val s1_mmioData = dataModule.io.wb.rdata(0).data
-  private val s1_mmioPaddr = dataModule.io.wb.rdata(0).paddr
-  private val s1_mmioUop = uop(s1_mmioLdWbSel)
-
-  private val s1_mmioDataSel = LookupTree(s1_mmioPaddr(2,0), List(
-    "b000".U -> s1_mmioData(63, 0),
-    "b001".U -> s1_mmioData(63, 8),
-    "b010".U -> s1_mmioData(63, 16),
-    "b011".U -> s1_mmioData(63, 24),
-    "b100".U -> s1_mmioData(63, 32),
-    "b101".U -> s1_mmioData(63, 40),
-    "b110".U -> s1_mmioData(63, 48),
-    "b111".U -> s1_mmioData(63, 56)
-  ))
-
-  private val s1_mmioDataPartialLoad = rdataHelper(s1_mmioUop, s1_mmioDataSel)
-
-  private val defaultEVec = Wire(ExceptionVec())
-  defaultEVec.foreach(_ := false.B)
-  private val excptCond = exceptionInfo.valid && s1_mmioUop.robIdx === exceptionInfo.bits.robIdx && s1_mmioUop.uopIdx === exceptionInfo.bits.uopIdx
-
-  io.mmioWb.valid := s1_mmioLdWbSelV && !uop(deqPtrExt.value).robIdx.needFlush(lastCycleRedirect)
-  io.mmioWb.bits := DontCare
-  io.mmioWb.bits.uop := s1_mmioUop
-  io.mmioWb.bits.uop.cf.exceptionVec := Mux(excptCond, exceptionInfo.bits.eVec, defaultEVec)
-  io.mmioWb.bits.data := s1_mmioDataPartialLoad
-  io.mmioWb.bits.redirectValid := false.B
-  io.mmioWb.bits.debug.isMMIO := debug_mmio(s1_mmioLdWbSel)
-  io.mmioWb.bits.debug.paddr := debug_paddr(s1_mmioLdWbSel)
-
-  when(io.mmioWb.fire){
-    writebacked(s1_mmioLdWbSel) := true.B
-  }
-
-  io.uncache.req.valid := uncache_Order_State === s_req
-
-  dataModule.io.uncache.raddr := deqPtrExtNext.value  //todo
-
-  io.uncache.req.bits.cmd  := MemoryOpConstants.M_XRD
-  io.uncache.req.bits.addr := dataModule.io.uncache.rdata.paddr
-  io.uncache.req.bits.data := dataModule.io.uncache.rdata.data
-  io.uncache.req.bits.mask := dataModule.io.uncache.rdata.mask
-  io.uncache.req.bits.robIdx := DontCare
-  io.uncache.req.bits.id   := DontCare
-  io.uncache.req.bits.instrtype := DontCare
-
-  io.uncache.resp.ready := true.B
 
   when (io.uncache.req.fire) {
     pending(deqPtr) := false.B
@@ -595,17 +495,16 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   }
 
   // (3) response from uncache channel: mark as datavalid
-  dataModule.io.uncache.wen := false.B
+//  dataModule.io.uncache.wen := false.B
   when(io.uncache.resp.fire){
     datavalid(deqPtr) := true.B
-    dataModule.io.uncacheWrite(deqPtr, io.uncache.resp.bits.data(XLEN-1, 0))
-    dataModule.io.uncache.wen := true.B
+//    dataModule.io.uncacheWrite(deqPtr, io.uncache.resp.bits.data(XLEN-1, 0))
+//    dataModule.io.uncache.wen := true.B
 
 //    XSDebug("uncache resp: data %x\n", io.dcache.bits.data)
   }
 
   // Read vaddr for mem exception
-  // no inst will be commited 1 cycle before tval update
   exceptionGen.io.in.zipWithIndex.foreach({ case (d, i) =>
     val validCond = io.loadIn(i).valid && !io.loadIn(i).bits.uop.robIdx.needFlush(io.brqRedirect)
     val writebackCond = !io.loadIn(i).bits.miss && !io.loadIn(i).bits.mmio
@@ -622,7 +521,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   exceptionGen.io.mmioUpdate.valid := io.uncache.resp.fire && io.uncache.resp.bits.error
   exceptionGen.io.mmioUpdate.bits.eVec := mmioEvec
   exceptionGen.io.mmioUpdate.bits.robIdx := io.robHead
-  exceptionGen.io.mmioUpdate.bits.vaddr := dataModule.io.uncache.rdata.paddr
+  exceptionGen.io.mmioUpdate.bits.vaddr := replayQueue.io.mmioPaddr
   exceptionGen.io.mmioUpdate.bits.uopIdx := uop(deqPtr).uopIdx
 
 //  private val ffCleanConds = io.ldout.map(lo => {
@@ -688,14 +587,14 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   QueuePerf(LoadQueueSize, validCount, !allowEnqueue)
   io.lqFull := !allowEnqueue
   XSPerfAccumulate("rollback", io.rollback.valid) // rollback redirect generated
-  XSPerfAccumulate("mmioCycle", uncache_Order_State =/= s_idle) // lq is busy dealing with uncache req
+//  XSPerfAccumulate("mmioCycle", uncache_Order_State =/= s_idle) // lq is busy dealing with uncache req
   XSPerfAccumulate("mmioCnt", io.uncache.req.fire)
 
   val perfValidCount = RegNext(validCount)
 
   val perfEvents = Seq(
     ("rollback         ", io.rollback.valid),
-    ("mmioCycle        ", uncache_Order_State =/= s_idle),
+//    ("mmioCycle        ", uncache_Order_State =/= s_idle),
     ("mmio_Cnt         ", io.uncache.req.fire),
 //    ("refill           ", io.dcache.valid),
 //    ("writeback_success", PopCount(VecInit(io.ldout.map(i => i.fire)))),

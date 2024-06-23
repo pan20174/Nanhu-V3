@@ -9,9 +9,10 @@ import xiangshan._
 import xs.utils.perf.HasPerfLogging
 import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
+import xiangshan.ExceptionNO.loadAccessFault
 import xiangshan.backend.issue.RsIdx
 import xiangshan.backend.rob.RobPtr
-import xiangshan.cache.{DCacheTLDBypassLduIO, HasDCacheParameters}
+import xiangshan.cache.{DCacheTLDBypassLduIO, DCacheWordReq, HasDCacheParameters, UncacheWordIO}
 import xiangshan.cache.mmu.HasTlbConst
 
 object LoadReplayCauses {
@@ -73,6 +74,10 @@ class LoadTLBWakeUpBundle(implicit p: Parameters) extends XSBundle with HasTlbCo
   val vpn = UInt(vpnLen.W)
 }
 
+class ReplayQUopEntry(implicit p: Parameters) extends XSBundle{
+  val uop = new MicroOp
+}
+
 
 class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle with HasDCacheParameters{
   val vaddr = UInt(VAddrBits.W)
@@ -80,6 +85,7 @@ class LoadToReplayQueueBundle(implicit p: Parameters) extends XSBundle with HasD
   val mask = UInt(8.W)
   val uop = new MicroOp
 
+  val isMMIO = Bool()
   val tlbMiss = Bool()
   val mshrMissIDResp = (UInt(log2Up(cfg.nMissEntries).W))
   val replay = new ReplayInfo
@@ -110,6 +116,7 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
       data(io.waddr(i)) := io.wdata(i)
     }
   }
+
 
   for(i <- 0 until numWrite){
     for(j <- (i + 1) until numWrite){
@@ -148,6 +155,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val mshrFull = Input(Bool())
     val rawIsFull = Input(Bool())
     val loadDeqPtr = Input(new LqPtr)
+    val robHead = Input(new RobPtr)
+    val mmioReq = new UncacheWordIO
+    val mmioWb = DecoupledIO(new ExuOutput)
+    val mmioPaddr = UInt(PAddrBits.W)
   })
 
   val counterRegMax = 32
@@ -163,7 +174,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   // replayCause: the reason for replaying, monitor whether the exception is solved
   val causeReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(LoadReplayCauses.allCauses.W))))
   // uop: micro op per entry
-  val uopReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U.asTypeOf(new MicroOp))))
+  val entryReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U.asTypeOf(new ReplayQUopEntry))))
+  val mmioReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(false.B)))
   // replay penalty, prevent dead block
   val penaltyReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(penaltyRegWidth.W))))
   val counterReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(log2Up(counterRegMax).W))))
@@ -186,10 +198,16 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     enablePreAlloc = true,
     moduleName = "LoadReplayQueue freelist"
   ))
-  val vaddrModule = Module(new RawDataModule(
-    gen = UInt(VAddrBits.W),
+
+  //paddr for uncache,vaddr for cache
+  //read Port: LoadPipelineWidth,mmio
+  //write Port: LoadPipelineWidth
+
+  private val mmioReadPortNum = LoadPipelineWidth
+  val addrModule = Module(new RawDataModule(
+    gen = UInt((VAddrBits.max(PAddrBits)).W),
     numEntries = LoadReplayQueueSize,
-    numRead = LoadPipelineWidth,
+    numRead = LoadPipelineWidth + 1,
     numWrite = LoadPipelineWidth))
   // replayQueue Full Backpressure Logic
   val lqFull = freeList.io.empty
@@ -200,10 +218,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val enqReqFire = io.enq.map(_.fire)
   val enqReqBits = io.enq.map(_.bits)
   val enqReqNeedReplay = io.enq.map(req => req.bits.replay.need_rep && req.valid)
+  val enqReqIsMMIO = io.enq.map(req => req.bits.isMMIO && req.valid)
   val cancelEnq = io.enq.map(enq => enq.bits.uop.robIdx.needFlush(io.redirect))
   val hasExceptions = io.enq.map(enq => ExceptionNO.selectByFu(enq.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR && !enq.bits.tlbMiss)
   val needEnqueue = VecInit((0 until LoadPipelineWidth).map(i => {
-    enqReqFire(i) && !cancelEnq(i) && enqReqNeedReplay(i) && !hasExceptions(i)
+    enqReqFire(i) && !cancelEnq(i) && (enqReqIsMMIO(i) || enqReqNeedReplay(i)) && !hasExceptions(i)
   }))
   val enqIndexOH =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   val enqIndex =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
@@ -217,32 +236,36 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   // freeList enq/deq logic + entry allocate logic
   val freeMaskVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
   for ((enq, i) <- io.enq.zipWithIndex) {
-    vaddrModule.io.wen(i) := false.B
-    vaddrModule.io.waddr(i) := 0.U
-    vaddrModule.io.wdata(i) := 0.U
+    addrModule.io.wen(i) := false.B
+    addrModule.io.waddr(i) := 0.U
+    addrModule.io.wdata(i) := 0.U
     freeList.io.doAllocate(i) := false.B
     freeList.io.allocateReq(i) := true.B
 
     val offset = PopCount(newEnqueue.take(i))
     // freeList allocated ready
     val canAccept = Mux(enq.bits.replay.isReplayQReplay, true.B, freeList.io.canAllocate(offset))
-    enqIndex(i) := Mux(enq.bits.replay.isReplayQReplay, enq.bits.replay.schedIndex, freeList.io.allocateSlot(offset))
+    enqIndex(i) := Mux(enq.bits.replay.isReplayQReplay , enq.bits.replay.schedIndex, freeList.io.allocateSlot(offset))
     enq.ready := canAccept
     enqIndexOH(i) := UIntToOH(enqIndex(i))
-    enqNeedAlloacteNew(i) := enqReqNeedReplay(i) && canAccept
+    enqNeedAlloacteNew(i) := (enqReqNeedReplay(i) || enqReqIsMMIO(i)) && canAccept
     when(enqNeedAlloacteNew(i)){
       // freelist actually allocate new entry
       freeList.io.doAllocate(i) := !enq.bits.replay.isReplayQReplay
       // allocate new entry
       allocatedReg(enqIndex(i)) := true.B
       scheduledReg(enqIndex(i)) := false.B
-      uopReg(enqIndex(i))       := enq.bits.uop
-      causeReg(enqIndex(i))     := enq.bits.replay.replayCause.asUInt
-      hintIDReg(enqIndex(i))    := 0.U
+      entryReg(enqIndex(i)).uop := enq.bits.uop
+      hintIDReg(enqIndex(i)) := 0.U
       vaddrReg(enqIndex(i)) := enq.bits.vaddr
-      vaddrModule.io.wen(i)   := true.B
-      vaddrModule.io.waddr(i) := enqIndex(i)
-      vaddrModule.io.wdata(i) := enq.bits.vaddr
+      causeReg(enqIndex(i)) := Mux(enqReqIsMMIO(i), 0.U, enq.bits.replay.replayCause.asUInt)
+
+      addrModule.io.wen(i) := true.B
+      addrModule.io.waddr(i) := enqIndex(i)
+      addrModule.io.wdata(i) := Mux(enqReqIsMMIO(i), enq.bits.paddr, enq.bits.vaddr)
+
+      mmioReg(enqIndex(i)) := enqReqIsMMIO(i)
+
       if(enablePerf){for(j <- 0 until(LoadReplayQueueSize)) {
         XSPerfAccumulate(s"LoadReplayQueue_entry_${i}_used", enqIndex(i) === j.asUInt)
       }}
@@ -258,6 +281,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
         scheduledReg(enq.bits.replay.schedIndex) := false.B
       }
     }
+
+    assert(!(enq.valid && enq.bits.isMMIO && enq.bits.replay.isReplayQReplay))
   }
 
   // val storeAddrInSameCycleVec = Wire(Vec(LoadReplayQueueSize, Bool()))
@@ -318,6 +343,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
         when(io.enq(j).bits.replay.raw_nack) {
           blockingReg(i) := Mux(io.rawIsFull,true.B,false.B)
         }
+
+        // case MMIO
+        when(io.enq(j).bits.isMMIO){
+          blockingReg(i) := true.B
+        }
       }
     })
   })
@@ -350,9 +380,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     when(causeReg(i)(LoadReplayCauses.C_BC)) {
       blockingReg(i) := !(counterReg(i) === 0.U)
     }
-    // case read after read
+    // case read after write
     when(causeReg(i)(LoadReplayCauses.C_RAW)) {
-      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === uopReg(i).lqIdx), false.B, true.B)
+      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === entryReg(i).uop.lqIdx), false.B, true.B)
     }
   })
 
@@ -366,7 +396,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   // misprediction recovery / exception redirect
   val needCancel = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
   for (i <- 0 until LoadReplayQueueSize) {
-    needCancel(i) := uopReg(i).robIdx.needFlush(io.redirect) && allocatedReg(i)
+    needCancel(i) := entryReg(i).uop.robIdx.needFlush(io.redirect) && allocatedReg(i)
     when (needCancel(i)) {
       allocatedReg(i) := false.B
       freeMaskVec(i) := true.B
@@ -392,7 +422,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }))
   dontTouch(s0_readyToReplay_mask)
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem =>
-    val s0_remReadyToReplay_uop = getRemUop(uopReg, rem)
+    val s0_remReadyToReplay_uop = getRemUop(VecInit(entryReg.map(_.uop)), rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
     dontTouch(s0_remReadyToReplay_mask)
     val s0_remReadyToReplay_seq = (0 until LoadReplayQueueSize/LoadPipelineWidth).map{ i =>
@@ -431,14 +461,14 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   for (i <- 0 until LoadPipelineWidth) {
     s1_SelReplayIdx(i) := OHToUInt(s1_robOldestSelOH(i))
     dontTouch(s1_SelReplayIdx)
-    vaddrModule.io.ren(i) := s1_selResSeq(i).valid
-    vaddrModule.io.raddr(i) := s1_SelReplayIdx(i)
+    addrModule.io.ren(i) := s1_selResSeq(i).valid
+    addrModule.io.raddr(i) := s1_SelReplayIdx(i)
 
     val s2_replay_req_schedIndex = RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid)
-    val s2_replay_req_uop = uopReg(s2_replay_req_schedIndex)
+    val s2_replay_req_uop = entryReg.map(_.uop)(s2_replay_req_schedIndex)
 
     s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid) && !s2_replay_req_uop.robIdx.needFlush(io.redirect) // s2 out valid
-    s2_replay_req(i).bits.vaddr := vaddrModule.io.rdata(i)   // s2 read vaddr
+    s2_replay_req(i).bits.vaddr := addrModule.io.rdata(i)   // s2 read vaddr
     s2_replay_req(i).bits.schedIndex := s2_replay_req_schedIndex   // s2 out idx
     s2_replay_req(i).bits.uop := s2_replay_req_uop // s2 read uop reg
 
@@ -449,6 +479,109 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 //    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
   }
   io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
+
+
+  /*
+    MMIO will write back from ReplayQueue
+   */
+
+  //select the oldest MMIO(rob Head)
+  private val mmioEntry = Wire(Valid(UInt(log2Up(LoadReplayQueueSize).W)))
+  private val mmioData = Reg(UInt(XLEN.W))
+  private val mmioRespHasException = RegInit(false.B)
+
+  private val headMMIOOH = Wire(Vec(LoadReplayQueueSize, Bool()))
+  private val mmioHasReq = scheduledReg //reuse,The request to the bus has been made
+
+  private val s_idle :: s_req :: s_resp :: s_waitWb :: Nil = Enum(4)
+  private val MMIO_State = RegInit(s_idle)
+
+  switch(MMIO_State) {
+    is(s_idle) {
+      when(mmioEntry.valid) {
+        MMIO_State := s_req
+      }
+    }
+    is(s_req) {
+      when(io.mmioReq.req.fire) {
+        MMIO_State := s_resp
+      }
+    }
+    is(s_resp) {
+      when(io.mmioReq.resp.fire) {
+        MMIO_State := s_waitWb
+      }
+    }
+    is(s_waitWb) {
+      when(io.mmioWb.fire) {
+        MMIO_State := s_idle
+      }
+    }
+  }
+
+  //S0: select mmio,read paddr
+  allocatedReg.zipWithIndex.foreach({case (valid,idx) =>
+    headMMIOOH(idx) := valid && (io.robHead === entryReg(idx).uop.robIdx) && mmioReg(idx) && !mmioHasReq(idx)
+  })
+  assert(PopCount(headMMIOOH) <= 1.U)
+
+  mmioEntry.valid := headMMIOOH.reduce(_|_)
+  mmioEntry.bits := OHToUInt(headMMIOOH)
+  addrModule.io.ren(mmioReadPortNum) := mmioEntry.valid
+  addrModule.io.raddr(mmioReadPortNum) := mmioEntry.bits
+
+  //S1: req unCache
+  private val s1_mmioValid = RegNext(mmioEntry.valid, false.B)
+  private val s1_mmioEntryIdx = RegEnable(mmioEntry.bits, mmioEntry.valid)
+  private val s1_mmioPaddr = addrModule.io.rdata(mmioReadPortNum)
+  private val s1_mmioUop = entryReg(s1_mmioEntryIdx).uop
+  io.mmioReq.req.valid := s1_mmioValid && MMIO_State === s_req
+  io.mmioReq.req.bits := DontCare
+  io.mmioReq.req.bits.addr := s1_mmioPaddr
+  io.mmioReq.req.bits.mask := genWmask(s1_mmioPaddr,s1_mmioUop.ctrl.fuOpType(1,0))
+  when(io.mmioReq.req.fire){
+    mmioHasReq(s1_mmioEntryIdx) := true.B
+  }
+
+  io.mmioPaddr := s1_mmioPaddr
+
+  private val mmioDataSel = LookupTree(s1_mmioPaddr(2, 0), List(
+    "b000".U -> mmioData(63, 0),
+    "b001".U -> mmioData(63, 8),
+    "b010".U -> mmioData(63, 16),
+    "b011".U -> mmioData(63, 24),
+    "b100".U -> mmioData(63, 32),
+    "b101".U -> mmioData(63, 40),
+    "b110".U -> mmioData(63, 48),
+    "b111".U -> mmioData(63, 56)
+  ))
+
+  io.mmioReq.resp.ready := true.B
+  when(io.mmioReq.resp.fire){
+    mmioData := io.mmioReq.resp.bits.data(XLEN - 1, 0)
+    mmioRespHasException := io.mmioReq.resp.bits.error
+  }
+
+  //don't need rob.needFlush
+  io.mmioWb.valid := MMIO_State === s_waitWb
+  io.mmioWb.bits := DontCare
+  io.mmioWb.bits.uop := s1_mmioUop
+  io.mmioWb.bits.uop.cf.exceptionVec(loadAccessFault) := mmioRespHasException
+  io.mmioWb.bits.data := mmioDataSel
+  io.mmioWb.bits.redirectValid := false.B
+  io.mmioWb.bits.debug.isMMIO := mmioReg(s1_mmioEntryIdx)
+  io.mmioWb.bits.debug.paddr := s1_mmioPaddr
+
+  assert(!(io.mmioWb.valid && io.mmioWb.bits.uop.robIdx.needFlush(io.redirect)))
+  when(io.mmioWb.fire){
+    allocatedReg(s1_mmioEntryIdx) := false.B  //release Entry
+    freeMaskVec(s1_mmioEntryIdx) := true.B
+
+    assert(mmioReg(s1_mmioEntryIdx))
+    assert(allocatedReg(s1_mmioEntryIdx))
+    assert(mmioHasReq(s1_mmioEntryIdx))
+  }
+
   //  perf cnt
   val enqNumber               = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay))
   val deqNumber               = PopCount(io.replayQIssue.map(_.fire))
