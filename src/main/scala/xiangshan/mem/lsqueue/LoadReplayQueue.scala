@@ -282,7 +282,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       }
     }
 
-    assert(!(enq.valid && enq.bits.isMMIO && enq.bits.replay.isReplayQReplay))
   }
 
   // val storeAddrInSameCycleVec = Wire(Vec(LoadReplayQueueSize, Bool()))
