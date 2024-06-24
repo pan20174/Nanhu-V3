@@ -565,6 +565,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val accept = alloc || merge
 
   val should_block_d = WireInit(false.B)
+  val should_block_d_reg = RegNext(should_block_d)
 
   when(io.req.valid){
     assert(PopCount(secondary_ready_vec) <= 1.U)
@@ -593,7 +594,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   io.refill_to_sbuffer.bits := DontCare
 
   val refill_row_data = io.mem_grant.bits.data
-  val (_, _, _, refill_count) = edge.count(io.mem_grant)
+  val (_, _, refill_done, refill_count) = edge.count(io.mem_grant)
 
   when(io.req.bits.isAMO && io.req.valid){
     refill_data_raw(0) := Cat(io.req.bits.amo_mask, io.req.bits.word_idx)
@@ -640,6 +641,10 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
             refill_data_raw(refill_count) := refill_row_data
             difftest_data_raw(refill_count) := refill_row_data
             refill_ldq_data_raw(refill_count) := refill_row_data
+
+            when(refill_done){
+              should_block_d_reg := true.B
+            }
           }
         }
         e.io.mem_grant.bits := io.mem_grant.bits
@@ -677,11 +682,13 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   fastArbiter(entries.map(_.io.replace_pipe_req), io.replace_pipe_req, Some("replace_pipe_req"))
   io.replace_pipe_req.bits.store_data := refill_data_raw.asUInt
   //load MSHR should wait replace.fire
-  when(io.replace_pipe_req.valid && !io.replace_pipe_req.ready && io.replace_pipe_req.bits.source === LOAD_SOURCE.U){
-    should_block_d := true.B
-  }.elsewhen(io.replace_pipe_req.fire && io.replace_pipe_req.bits.source === LOAD_SOURCE.U){
+  when(io.replace_pipe_req.fire && io.replace_pipe_req.bits.source === LOAD_SOURCE.U){
     should_block_d := false.B
+  }.otherwise {
+    should_block_d := should_block_d_reg
   }
+
+
 
   fastArbiter(entries.map(_.io.main_pipe_req), io.main_pipe_req, Some("main_pipe_req"))
   io.main_pipe_req.bits.word_idx := refill_data_raw(0)(log2Up(blockWords) - 1, 0)

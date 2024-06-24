@@ -1584,7 +1584,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
 
   io.wb.valid := s3_valid_dup_for_wb_valid && (
     // replace
-    s3_req_replace_dup_for_wb_valid ||     //need todo ready?
+    s3_req_replace_dup_for_wb_valid && !(s3_coh_dup_for_wb_valid.state === ClientStates.Nothing)||     //need todo ready?
     // probe can go to wbq
     s3_req_probe_dup_for_wb_valid && (io.meta_write.ready || !probe_update_meta_dup_for_wb_valid) ||
       // amo miss can go to wbq
