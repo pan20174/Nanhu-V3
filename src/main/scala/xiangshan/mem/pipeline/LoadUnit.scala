@@ -35,7 +35,6 @@ import xs.utils.perf.HasPerfLogging
 class LoadToLsqIO(implicit p: Parameters) extends XSBundle {
   val s1_lduMMIOPAddr = ValidIO(new LoadMMIOPaddrWriteBundle)
   val s2_lduUpdateLQ = ValidIO(new LqWriteBundle)
-  val s2_load_data_forwarded = Output(Bool())
   val s2_UpdateLoadQueue = ValidIO(new LoadQueueDataUpdateBundle)
 
   val forwardFromSQ = new PipeLoadForwardFromSQ
@@ -444,7 +443,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.lsq.s1_lduMMIOPAddr.valid := s1_out.valid && !s1_tlb_miss
   io.lsq.s1_lduMMIOPAddr.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduMMIOPAddr.bits.paddr := s1_paddr_dup_lsu
-  io.lsq.s2_load_data_forwarded := s2_dataForwarded
 
   // provide prefetcher train data
   io.prefetch_train.bits := s2_in.bits
@@ -478,12 +476,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.lsq.s2_UpdateLoadQueue.bits.wayIdx := s2_dcacheResp.bits.wayIdx
   io.lsq.s2_UpdateLoadQueue.bits.paddr := s2_out.bits.paddr
   io.lsq.s2_UpdateLoadQueue.bits.debug_mmio := s2_out.bits.mmio
-
-  // generate duplicated load queue data wen
-  val s2_wen_dup = RegInit(VecInit(Seq.fill(6)(false.B)))
-  s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))
-  io.lsq.s2_lduUpdateLQ.bits.lq_data_wen_dup := s2_wen_dup
-
 
   when(s2_in.valid) {
     assert(!(s2_tlb_miss && s2_fullForward),"when s2_tlb_miss,s2_fullForward must be false!!")
