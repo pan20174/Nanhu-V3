@@ -108,6 +108,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
     val mshrFull = Input(Bool())
+    val lduUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
   })
 
   val loadQueue = Module(new LoadQueue)
@@ -151,6 +152,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   // load queue wiring
   loadQueue.io.loadMMIOPaddrIn <> io.loadMMIOPaddrIn
+  loadQueue.io.lduUpdate := io.lduUpdate
   loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.brqRedirect <> io.brqRedirect
   loadQueue.io.loadIn <> io.loadIn

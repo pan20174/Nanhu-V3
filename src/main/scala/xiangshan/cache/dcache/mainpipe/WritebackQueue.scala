@@ -48,6 +48,7 @@ class WritebackReqData(implicit p: Parameters) extends DCacheBundle {
 
 class WritebackReq(implicit p: Parameters) extends WritebackReqWodata {
   val data = UInt((cfg.blockBytes * 8).W)
+  val wayIdx = UInt(log2Up(DCacheWays).W)
 
   override def dump() = {
   }

@@ -210,8 +210,10 @@ class LoadViolationQueryResp(implicit p: Parameters) extends XSBundle {
 }
 
 class LoadViolationQueryIO(implicit p: Parameters) extends XSBundle {
-  val s1_req = Decoupled(new LoadViolationQueryReq)
-  val s2_resp = Flipped(Valid(new LoadViolationQueryResp))
+//  val s1_req = Decoupled(new LoadViolationQueryReq)
+//  val s2_resp = Flipped(Valid(new LoadViolationQueryResp))
+
+  val s3_resp = Flipped(Valid(new LoadViolationQueryResp))
 }
 
 // Store byte valid mask write bundle

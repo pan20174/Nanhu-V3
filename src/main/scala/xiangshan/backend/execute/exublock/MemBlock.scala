@@ -555,7 +555,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   XSDebug(tEnable.asUInt.orR, "Debug Mode: At least one store trigger is enabled\n")
 
-  def PrintTriggerInfo(enable: Bool, trigger: MatchTriggerIO)(implicit p: Parameters) = {
+  private def PrintTriggerInfo(enable: Bool, trigger: MatchTriggerIO)(implicit p: Parameters) = {
     XSDebug(enable, p"Debug Mode: Match Type is ${trigger.matchType}; select is ${trigger.select};" +
       p"timing is ${trigger.timing}; action is ${trigger.action}; chain is ${trigger.chain};" +
       p"tdata2 is ${Hexadecimal(trigger.tdata2)}")
@@ -569,8 +569,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
 
     lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
-
-
+    lsq.io.lduUpdate(i) := loadUnits(i).io.lsq.s2_UpdateLoadQueue
 
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
     slduIssues(i).rsFeedback := DontCare
