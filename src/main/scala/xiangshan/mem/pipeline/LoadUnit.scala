@@ -315,7 +315,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   debug_s1_cause.fwd_data_sqIdx := 0.U.asTypeOf(new SqPtr)
   debug_s1_cause.tlb_miss := s1_tlb_miss  // tlb resp miss
   debug_s1_cause.raw_nack := s1_hasStLdViolation
-  debug_s1_cause.rar_nack := false.B  // rar query fail
   debug_s1_cause.bank_conflict := s1_bank_conflict || s1_cancel_inner  // bank read has conflict
   dontTouch(debug_s1_cause)
   /*

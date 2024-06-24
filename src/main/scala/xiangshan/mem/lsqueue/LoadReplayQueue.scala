@@ -37,14 +37,12 @@ object LoadReplayCauses {
   val C_DM  = 4
   // dcache bank conflict check
   val C_BC  = 5
-  // RAR queue accept check
-  val C_RAR = 6
   // RAW queue accept check
-  val C_RAW = 7
+  val C_RAW = 6
   // st-ld violation
-  val C_NK  = 8
+  val C_NK  = 7
   // total causes
-  val allCauses = 9
+  val allCauses = 8
 }
 class ReplayInfo(implicit p: Parameters) extends XSBundle{
   val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
@@ -59,7 +57,6 @@ class ReplayInfo(implicit p: Parameters) extends XSBundle{
   def dcache_rep    = replayCause(LoadReplayCauses.C_DR)
   def dcache_miss   = replayCause(LoadReplayCauses.C_DM)
   def bank_conflict = replayCause(LoadReplayCauses.C_BC)
-  def rar_nack      = replayCause(LoadReplayCauses.C_RAR)
   def raw_nack      = replayCause(LoadReplayCauses.C_RAW)
   def nuke          = replayCause(LoadReplayCauses.C_NK)
   def need_rep      = replayCause.asUInt.orR
@@ -588,7 +585,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val replayTlbMissCount      = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_TM)))
   val replayMemAmbCount       = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_MA)))
   val replayNukeCount         = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_NK)))
-  val replayRARRejectCount    = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_RAR)))
   val replayRAWRejectCount    = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_RAW)))
   val replayBankConflictCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_BC)))
   val replayDCacheReplayCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_DR)))
@@ -613,7 +609,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   XSPerfAccumulate("deq", deqNumber)
   XSPerfAccumulate("deq_block", deqBlockCount)
   XSPerfAccumulate("replay_full", io.replayQFull)
-  XSPerfAccumulate("replay_rar_nack", replayRARRejectCount)
   XSPerfAccumulate("replay_raw_nack", replayRAWRejectCount)
   XSPerfAccumulate("replay_nuke", replayNukeCount)
   XSPerfAccumulate("replay_mem_amb", replayMemAmbCount)
