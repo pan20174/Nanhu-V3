@@ -882,4 +882,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val allPerfInc = allPerfEvents.map(_._2.asTypeOf(new PerfEvent))
   val perfEvents = HPerfMonitor(csrevents, allPerfInc).getPerfEvents
   generatePerfEvent()
+
+  val clock_debug = RegInit(false.B)
+  clock_debug := ~clock_debug
+  dontTouch(clock_debug)
 }
