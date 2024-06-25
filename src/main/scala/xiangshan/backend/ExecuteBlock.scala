@@ -181,14 +181,16 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
 
   intRs.io.redirect := Pipe(localRedirect)
   intRs.io.loadEarlyWakeup := memRs.io.loadEarlyWakeup
-  intRs.io.earlyWakeUpCancel := memBlk.io.earlyWakeUpCancel(0)
+//  intRs.io.earlyWakeUpCancel := memBlk.io.earlyWakeUpCancel(0)
+  intRs.io.earlyWakeUpCancel := memBlk.io.lduEarlyWakeUp.map(_.cancel)
   intRs.io.integerAllocPregs := io.integerAllocPregs
   intRs.io.safeTargetPtr := io.safeTargetPtr
   intRs.io.mmioFetchPending := io.mmioFetchPending
 
   fpRs.io.redirect := Pipe(localRedirect)
   fpRs.io.loadEarlyWakeup := memRs.io.loadEarlyWakeup
-  fpRs.io.earlyWakeUpCancel := memBlk.io.earlyWakeUpCancel(1)
+//  fpRs.io.earlyWakeUpCancel := memBlk.io.earlyWakeUpCancel(1)
+  fpRs.io.earlyWakeUpCancel := memBlk.io.lduEarlyWakeUp.map(_.cancel)
   fpRs.io.floatingAllocPregs := io.floatingAllocPregs
   fpRs.io.mulSpecWakeUp.zip(intRs.io.mulSpecWakeup).foreach({ case (a, b) => a := Pipe(b) })
   fpBlk.io.csr_frm := intBlk.io.csrio.fpu.frm
@@ -197,12 +199,14 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
   memRs.io.aluJmpSpecWakeup := intRs.io.aluJmpSpecWakeup
   memRs.io.mulSpecWakeup.zip(intRs.io.mulSpecWakeup).foreach({ case (a, b) => a := Pipe(b) })
   memRs.io.fmaSpecWakeup := fpRs.io.fmacSpecWakeUp
-  memRs.io.earlyWakeUpCancel := memBlk.io.earlyWakeUpCancel(2)
+//  memRs.io.earlyWakeUpCancel := memBlk.io.earlyWakeUpCancel(2)
+  memRs.io.earlyWakeUpCancel := memBlk.io.lduEarlyWakeUp.map(_.cancel)
   memRs.io.integerAllocPregs := io.integerAllocPregs
   memRs.io.floatingAllocPregs := io.floatingAllocPregs
   memRs.io.vectorAllocPregs := io.vectorAllocPregs
   memRs.io.stLastCompelet := memBlk.io.stIssuePtr
   memRs.io.ldStopMemRS := memBlk.io.ldStopMemBlock
+  memRs.io.lduEarlyWakeUpIn := memBlk.io.lduEarlyWakeUp.map(_.wakeUp)
 
   vRs.io.redirect := Pipe(localRedirect)
   vRs.io.intAllocPregs := io.integerAllocPregs

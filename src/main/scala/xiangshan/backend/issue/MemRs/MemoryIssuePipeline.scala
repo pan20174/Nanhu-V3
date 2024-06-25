@@ -118,18 +118,26 @@ class MemoryIssuePipelineBlock(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth:In
   io.isLoad := deqDataDriverReg.info.fuType === FuType.ldu
 
   val enqFire = io.enq.valid && io.deq.ready && !io.ldStop
+
+  //----------DO NOT CHANGE THE ORDER OF THE FOLLOWING STATEMENTS!!
   when(io.deq.fire){ deqValidDriverReg := false.B }
-  when(enqFire){ deqValidDriverReg := true.B }
   when(shouldBeFlushed | shouldBeCanceled) {
     deqValidDriverReg := false.B
   }
+
+  when(io.ldStop) {
+    deqDataDriverReg.info.lpv.foreach({ case v => v := LogicShiftRight(v, 1) })
+  }
+
   when(enqFire){
+    deqValidDriverReg := true.B
     deqDataDriverReg := io.enq.bits.selectResp
     deqChosenNumReg := io.enq.bits.chosen
     deqStaSel := io.enq.bits.staSel
     deqStdSel := io.enq.bits.stdSel
     deqLoadSel := io.enq.bits.loadSel
   }
+
 
   private val timer = GTimer()
   io.deq.valid := deqValidDriverReg && !shouldBeCanceled && !io.ldStop

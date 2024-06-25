@@ -32,6 +32,7 @@ import xiangshan.backend.execute.fu.csr.CSRConst.ModeS
 import xiangshan.backend.execute.fu.{FuConfigs, FunctionUnit, PMP, PMPChecker, PMPCheckerv2}
 import xiangshan.backend.execute.fu.csr.{PFEvent, SdtrigExt}
 import xiangshan.backend.execute.fu.fence.{FenceToSbuffer, SfenceBundle}
+import xiangshan.backend.issue.EarlyWakeUpInfo
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
 import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, TLB, TlbIO, TlbReplace}
@@ -271,7 +272,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       val dcacheMSHRFull = Output(Bool())
     }
 
-    val earlyWakeUpCancel = Output(Vec(3, Vec(lduIssues.length, Bool())))
+//    val earlyWakeUpCancel = Output(Vec(3, Vec(lduIssues.length, Bool())))
     val issueToMou = Flipped(Decoupled(new ExuInput))
     val writebackFromMou = Decoupled(new ExuOutput)
 
@@ -285,6 +286,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val lsqVecDeqCnt = Output(new LsqVecDeqIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val ldStopMemBlock = Output(Bool())
+
+    val lduEarlyWakeUp = Output(Vec(loadUnitNum, new Bundle() {
+      val cancel = Bool()
+      val wakeUp = Valid(new EarlyWakeUpInfo)
+    }))
   })
   io.lsqVecDeqCnt := DontCare
 
@@ -604,8 +610,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //replayQueue
     lsq.io.replayQEnq(i) <> loadUnits(i).io.s3_enq_replayQueue
     loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
-    //cancel
-    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
+//    //cancel
+//    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
+    //earlyWakeup and cancel
+    io.lduEarlyWakeUp(i).cancel := RegNext(loadUnits(i).io.earlyWakeUp.cancel, false.B)
+    io.lduEarlyWakeUp(i).wakeUp := loadUnits(i).io.earlyWakeUp.wakeUp
     // prefetch
     val pcDelay1Valid = RegNext(loadUnits(i).io.rsIssueIn.fire, false.B)
     val pcDelay1Bits = RegEnable(loadUnits(i).io.rsIssueIn.bits.uop.cf.pc, loadUnits(i).io.rsIssueIn.fire)
