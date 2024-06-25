@@ -26,7 +26,7 @@ import xiangshan._
 import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import xiangshan.backend.execute.fu._
 import xiangshan.backend.execute.fu.csr.SdtrigExt
-import xiangshan.backend.issue.{RSFeedback, RSFeedbackType, RsIdx}
+import xiangshan.backend.issue.{EarlyWakeUpInfo, RSFeedback, RSFeedbackType, RsIdx}
 import xiangshan.backend.rob.RobPtr
 import xiangshan.cache._
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
@@ -74,8 +74,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val dcache = new DCacheLoadIO
     // S1/S2: forward query to sbuffer and response in next cycle
     val forwardFromSBuffer = new LoadForwardQueryIO
-    // S1/S2: lpv cancel feedback
-    val cancel = Output(Bool())
+//    // S1/S2: lpv cancel feedback
+//    val cancel = Output(Bool())
     // S1/S2: FDI req and response in next cycle
     val fdiReq = ValidIO(new  FDIReqBundle())
     val fdiResp = Flipped(new FDIRespBundle())
@@ -109,6 +109,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
     // Global: csr control
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
+    // Load EarlyWakeUp
+    val earlyWakeUp = Output(new Bundle() {
+      val cancel = Bool() //s2 cancel
+      val wakeUp = Valid(new EarlyWakeUpInfo) //s1 wakeup
+    })
   })
 
   /*
@@ -317,6 +322,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   debug_s1_cause.raw_nack := s1_hasStLdViolation
   debug_s1_cause.bank_conflict := s1_bank_conflict || s1_cancel_inner  // bank read has conflict
   dontTouch(debug_s1_cause)
+
+  io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_tlb_miss
+  io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
+  io.earlyWakeUp.wakeUp.bits.pdest := s1_in.bits.uop.pdest
+  io.earlyWakeUp.wakeUp.bits.destType := MuxCase(SrcType.default, Seq(
+    s1_in.bits.uop.ctrl.rfWen -> SrcType.reg,
+    s1_in.bits.uop.ctrl.fpWen -> SrcType.fp,
+  ))
+  io.earlyWakeUp.wakeUp.bits.robPtr := s1_in.bits.uop.robIdx
+
   /*
     LOAD S2: cache miss control; forward data merge; mmio check; feedback to reservationStation
   */
@@ -580,11 +595,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   }}
   io.lsq.trigger.hitLoadAddrTriggerHitVec := hitLoadAddrTriggerHitVec
 
-  // lvp cancel feedback to reservationStation
-  private val s1_cancel = RegInit(false.B)
-  s1_cancel := s1_in.valid && (!s1_out.valid)
-  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss || s2_cache_replay)
-  io.cancel := s1_cancel || s2_lpvCancel
+//  // lvp cancel feedback to reservationStation
+//  private val s1_cancel = RegInit(false.B)
+//  s1_cancel := s1_in.valid && (!s1_out.valid)
+//  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss || s2_cache_replay)
+//  io.cancel := s1_cancel || s2_lpvCancel
+  io.earlyWakeUp.cancel := s2_in.valid && !s2_wb_valid
 
   val debugS3CauseReg = RegInit(0.U.asTypeOf(new ReplayInfo))
   debugS3CauseReg := Mux( s2_cause_can_transfer && s2_out.fire && !s2_wb_valid, debug_s2_cause, 0.U.asTypeOf(new ReplayInfo))
