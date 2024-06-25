@@ -556,7 +556,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
-  io.feedbackSlow.bits.sourceType :=  Mux(!io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
+  io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
 
   assert(!(RegNext(io.feedbackFast.valid) && io.feedbackSlow.valid))
 
