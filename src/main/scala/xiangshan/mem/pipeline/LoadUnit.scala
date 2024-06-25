@@ -344,20 +344,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s2_allStLdViolation = s2_hasStLdViolation | RegNext(s1_hasStLdViolation,false.B)
   dontTouch(s2_hasStLdViolation)
 
-  val s2_pmp = WireInit(io.pmp)
-  val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm, io.tlb.resp.valid)
-  when(s2_static_pm.valid) {
-    s2_pmp.ld := false.B
-    s2_pmp.st := false.B
-    s2_pmp.instr := false.B
-    s2_pmp.mmio := s2_static_pm.bits
-  }
+  val pmp = WireInit(io.pmp)
 
   val s2_cancel_inner = RegEnable(s1_cancel_inner,s1_out.fire)
   val s2_enableMem = s2_in.bits.uop.loadStoreEnable && s2_in.valid
   val s2_isSoftPrefetch = s2_in.bits.isSoftPrefetch
   when(!s2_tlb_miss){
-    s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_in.bits.uop.cf.exceptionVec(loadAccessFault) || s2_pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
+    s2_out.bits.uop.cf.exceptionVec(loadAccessFault) := (s2_in.bits.uop.cf.exceptionVec(loadAccessFault) || pmp.ld) && s2_enableMem && !s2_isSoftPrefetch
   }
   //don't need tlb
   s2_out.bits.uop.cf.exceptionVec(fdiULoadAccessFault) := (io.fdiResp.fdi_fault === FDICheckFault.UReadDascisFault) && s2_enableMem  //FDI load access fault
@@ -387,7 +380,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   s2_loadViolationQueryResp := io.lsq.loadViolationQuery.s2_resp
 
-  val s2_actually_mmio = s2_pmp.mmio && !s2_tlb_miss
+  val s2_actually_mmio = pmp.mmio && !s2_tlb_miss
   val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
   val s2_cache_miss = s2_dcacheResp.bits.miss
   val s2_cache_replay = s2_dcacheResp.bits.replay
@@ -396,7 +389,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     RegNext(io.csrCtrl.ldld_vio_check_enable)
   val s2_data_invalid = s2_LSQ_LoadForwardQueryIO.dataInvalid && !s2_ldld_violation && !s2_hasException
 
-  val s2_dcache_kill = s2_pmp.ld || s2_pmp.mmio // move pmp resp kill to outside
+  val s2_dcache_kill = pmp.ld || pmp.mmio // move pmp resp kill to outside
   // to kill mmio resp which are redirected
   io.dcache.s2_kill := s2_dcache_kill
 

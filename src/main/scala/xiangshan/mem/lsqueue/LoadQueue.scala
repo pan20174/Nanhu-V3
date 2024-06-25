@@ -31,6 +31,7 @@ import xiangshan.backend.execute.fu.FuConfigs
 import xiangshan.backend.issue.SelectPolicy
 import xiangshan.mem.lsqueue.{LSQExceptionGen, LoadRAWQueueDataModule}
 import xs.utils.perf.HasPerfLogging
+import xiangshan.cache.mmu.TlbHintIO
 
 class LqPtr(implicit p: Parameters) extends CircularQueuePtr[LqPtr](
   p => p(XSCoreParamsKey).LoadQueueSize
@@ -95,6 +96,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 {
   val io = IO(new Bundle() {
     val enq = new LqEnqIO
+    val tlb_hint = Flipped(new TlbHintIO)
     val brqRedirect = Flipped(ValidIO(new Redirect))
     val loadMMIOPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LoadMMIOPaddrWriteBundle)))
     val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
@@ -135,6 +137,9 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   private val replayQueue = Module(new LoadReplayQueue(enablePerf = true))
   private val rawQueue = Module(new LoadRAWQueue)
+  io.tlb_hint := DontCare
+
+  println("LoadQueue: size:" + LoadQueueSize)
 
   private val uop = Reg(Vec(LoadQueueSize, new MicroOp))
   private val dataModule = Module(new LoadQueueDataWrapper(LoadQueueSize, wbNumRead = LoadPipelineWidth, wbNumWrite = LoadPipelineWidth))

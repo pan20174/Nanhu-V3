@@ -40,6 +40,7 @@ import xiangshan.mem.prefetch.{BasePrefecher, SMSParams, SMSPrefetcher}
 import xs.utils.mbist.MBISTPipeline
 import xs.utils.perf.HasPerfLogging
 import xs.utils.{DelayN, ParallelPriorityMux, RegNextN, ValidIODelay}
+import xiangshan.cache.mmu.TlbHintIO
 
 class Std(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle{
@@ -253,6 +254,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     // misc
     val stIn = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
     val ptw = new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt)
+    val tlb_hint = Flipped(new TlbHintIO)
     val sfence = Input(new SfenceBundle)
     val tlbCsr = Input(new TlbCsrBundle)
     val fenceToSbuffer = Flipped(new FenceToSbuffer)
@@ -355,6 +357,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   // TODO: fast load wakeup
   val lsq     = Module(new LsqWrappper)
   val sbuffer = Module(new Sbuffer)
+
+  lsq.io.tlb_hint <> io.tlb_hint
 
   io.lqDeq := lsq.io.lqDeq
   io.ldStopMemBlock := lsq.io.ldStop
@@ -493,7 +497,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       else if (i < ld_tlb_ports) Cat(ptw_resp_next.vector.take(ld_tlb_ports)).orR
       else Cat(ptw_resp_next.vector.drop(ld_tlb_ports)).orR
     io.ptw.req(i).valid := tlb.valid && !(ptw_resp_v && vector_hit &&
-      ptw_resp_next.data.entry.hit(tlb.bits.vpn, RegNext(tlbcsr_dup(i).satp.asid), allType = true, ignoreAsid = true))
+      ptw_resp_next.data.hit(tlb.bits.vpn, RegNext(tlbcsr_dup(i).satp.asid), allType = true, ignoreAsid = true))
   }
   dtlb.foreach(_.ptw.resp.bits := ptw_resp_next.data)
   if (refillBothTlb || UseOneDtlb) {
@@ -533,15 +537,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
             pmp.io.spmp, tlbcsr_pmp(i).priv.sum, csrCtrl.spmp_enable)
     require(p.req.bits.size.getWidth == d.bits.size.getWidth)
   }
-  val pmp_check_ptw = Module(new PMPCheckerv2(lgMaxSize = 3, sameCycle = false, leaveHitMux = true))
-  pmp_check_ptw.io.apply(
-    ModeS,
-    8.U,
-    pmp.io.pmp, pmp.io.pma, io.ptw.resp.valid,
-    Cat(io.ptw.resp.bits.data.entry.ppn, 0.U(12.W)).asUInt,
-    pmp.io.spmp, tlbcsr_pmp.last.priv.sum, csrCtrl.spmp_enable
-  )
-  dtlb.foreach(_.ptw_replenish := pmp_check_ptw.io.resp)
 
   val tdata = RegInit(VecInit(Seq.fill(TriggerNum)(0.U.asTypeOf(new MatchTriggerIO))))
   val tEnable = RegInit(VecInit(Seq.fill(TriggerNum)(false.B)))

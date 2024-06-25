@@ -163,13 +163,6 @@ class StoreUnit(implicit p: Parameters) extends XSModule with HasPerfLogging {
 
   val s2_enableMem = s2_in.bits.uop.loadStoreEnable
   val s2_pmp = WireInit(io.pmp)
-  val s2_static_pm = RegEnable(io.tlb.resp.bits.static_pm,io.tlb.resp.valid)
-  when(s2_static_pm.valid) {
-    s2_pmp.ld := false.B
-    s2_pmp.st := false.B
-    s2_pmp.instr := false.B
-    s2_pmp.mmio := s2_static_pm.bits
-  }
 
   val s2_exception = ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR && s2_enableMem
   val s2_is_mmio = (s2_in.bits.mmio || s2_pmp.mmio) && s2_enableMem

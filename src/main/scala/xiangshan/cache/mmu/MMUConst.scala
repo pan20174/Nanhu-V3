@@ -33,15 +33,10 @@ case class TLBParameters
   useDmode: Boolean = true,
   sameCycle: Boolean = false,
   missSameCycle: Boolean = false,
-  normalNSets: Int = 1, // when da or sa
-  normalNWays: Int = 8, // when fa or sa
-  superNSets: Int = 1,
-  superNWays: Int = 2,
-  normalReplacer: Option[String] = Some("random"),
-  superReplacer: Option[String] = Some("plru"),
-  normalAssociative: String = "fa", // "fa", "sa", "da", "sa" is not supported
-  superAssociative: String = "fa", // must be fa
-  normalAsVictim: Boolean = false, // when get replace from fa, store it into sram
+  nWays: Int = 48,
+  // To avoid issues with unexpected nSets values in FA Cache, 
+  // we hardcode nSets to 1 and restrict user modifications
+  replacer: Option[String] = Some("plru"),
   outReplace: Boolean = false,
   shouldBlock: Boolean = false, // only for perf, not support for io
   partialStaticPMP: Boolean = false, // partila static pmp result stored in entries
@@ -67,7 +62,8 @@ case class L2TLBParameters
   spSize: Int = 16,
   spReplacer: Option[String] = Some("plru"),
   // dtlb filter
-  filterSize: Int = 8,
+  // filterSize: Int = 8,
+
   // miss queue, add more entries than 'must require'
   // 0 for easier bug trigger, please set as big as u can, 8 maybe
   missqueueExtendSize: Int = 0,
@@ -90,6 +86,18 @@ trait HasTlbConst extends HasXSParameter {
   val vpnLen  = VAddrBits - offLen
   val flagLen = 8
   val pteResLen = XLEN - ppnLen - 2 - flagLen
+
+  val tlbContiguous = 8
+  val sectorTlbWidth = log2Up(tlbContiguous)
+  val sectorPpnLen = ppnLen - sectorTlbWidth
+  val sectorVpnLen = vpnLen - sectorTlbWidth
+
+  val loadfiltersize = 16
+  val storefiltersize = 8
+  val prefetchfiltersize = 8
+
+  val dfiltersize = loadfiltersize + storefiltersize
+  // val dfiltersize = loadfiltersize + storefiltersize + prefetchfiltersize
 
   val sramSinglePort = true
 
@@ -133,7 +141,7 @@ trait HasPtwConst extends HasTlbConst with MemoryOpConstants{
   val PtwWidth = 2
   val sourceWidth = { if (l2tlbParams.enablePrefetch) PtwWidth + 1 else PtwWidth}
   val prefetchID = PtwWidth
-  val maxPrefetchNum = l2tlbParams.filterSize
+  // val maxPrefetchNum = l2tlbParams.filterSize
 
   val blockBits = l2tlbParams.blockBytes * 8
 
@@ -148,7 +156,7 @@ trait HasPtwConst extends HasTlbConst with MemoryOpConstants{
    */
   // ptwl2: 8-way group-associated
   val PtwL2SetNum = l2tlbParams.l2nSets
-  val PtwL2SectorSize = blockBits /XLEN
+  val PtwL2SectorSize = blockBits / XLEN
   val PtwL2IdxLen = log2Up(PtwL2SetNum * PtwL2SectorSize)
   val PtwL2SectorIdxLen = log2Up(PtwL2SectorSize)
   val PtwL2SetIdxLen = log2Up(PtwL2SetNum)
@@ -166,7 +174,8 @@ trait HasPtwConst extends HasTlbConst with MemoryOpConstants{
   val SPTagLen = vpnnLen * 2
 
   // miss queue
-  val MSHRBaseSize = 1 + l2tlbParams.filterSize + l2tlbParams.missqueueExtendSize
+  // 1 for itlb block request
+  val MSHRBaseSize = 1 + dfiltersize + l2tlbParams.missqueueExtendSize
   val MSHRSize =  { if (l2tlbParams.enablePrefetch) (MSHRBaseSize + 1) else MSHRBaseSize }
   val MemReqWidth = l2tlbParams.llptwsize + 1
   val FsmReqID = l2tlbParams.llptwsize
