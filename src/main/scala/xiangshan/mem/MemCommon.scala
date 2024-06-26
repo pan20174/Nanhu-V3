@@ -237,6 +237,18 @@ class LoadDataFromLQBundle(implicit p: Parameters) extends XSBundle {
   }
 }
 
+object RedirectRegDup{
+  def apply(name: List[String], redirect: ValidIO[Redirect]): Map[String, ValidIO[Redirect]] = {
+    val len = name.length
+    var map: Map[String, ValidIO[Redirect]] = Map()
+
+    for (i <- 0 until len) {
+      map += (name(i) -> Pipe(redirect).suggestName("redirect_dup_" + name(i)))
+    }
+    map
+  }
+}
+
 object AddPipelineReg {
   class PipelineRegModule[T <: Data](gen: T) extends Module {
     val io = IO(new Bundle() {

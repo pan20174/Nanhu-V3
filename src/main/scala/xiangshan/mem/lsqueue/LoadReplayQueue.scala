@@ -81,6 +81,10 @@ class ReplayQUopEntry(implicit p: Parameters) extends XSBundle{
 
   def getFromUop(input: MicroOp): Unit = {
     uop := input
+
+    uop.cf.exceptionVec := DontCare
+    uop.cf.trigger := DontCare
+
 //    lqIdx := input.lqIdx
 //    robIdx := input.robIdx
 //    fuOpType := input.ctrl.fuOpType
@@ -91,6 +95,7 @@ class ReplayQUopEntry(implicit p: Parameters) extends XSBundle{
 
   def toIssueUop: MicroOp = {
     val issueUop = WireInit(uop)
+    issueUop.cf.exceptionVec := DontCare
 
 
     issueUop
@@ -106,6 +111,7 @@ class ReplayQUopEntry(implicit p: Parameters) extends XSBundle{
   def toMMIOWbUop: MicroOp = {
     val mmioUop = WireInit(uop)
 
+    mmioUop.cf.exceptionVec := DontCare
 
     mmioUop
   }
