@@ -651,12 +651,17 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.enqRAWQueue.s3_cancel := RegNext(io.enqRAWQueue.s2_enq.valid && io.enqRAWQueue.s2_enqSuccess,false.B) && s3_needReplay
 
   val perfEvents = Seq(
-    ("load_s0_in_fire         ", s0_valid),
+    ("load_rs_issue_fire         ", io.rsIssueIn.fire),
+    ("load_replayQ_issue_fire    ", io.replayQIssueIn.fire),
+    ("load_replay_by_replayQFull ", io.feedbackSlow.valid && io.feedbackFast.bits.sourceType === RSFeedbackType.replayQFull),
+    ("load_success_release_rs    ", io.feedbackSlow.valid && io.feedbackFast.bits.sourceType === RSFeedbackType.success),
+
+    ("load_success_writeback_onetime",    io.ldout.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio),
+    ("load_success_writeback_has_replay", io.ldout.valid && s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio),
+
     ("load_to_load_forward    ", s1_out.valid),
     ("stall_dcache            ", s0_out.valid && s0_out.ready && !s0_req_dcache.ready),
-    ("load_s1_in_fire         ", s1_in.fire),
     ("load_s1_tlb_miss        ", s1_in.fire && s1_dtlbResp.bits.miss),
-    ("load_s2_in_fire         ", s2_in.fire),
     ("load_s2_dcache_miss     ", s2_in.fire && s2_dcacheResp.bits.miss),
     ("load_s2_replay          ", s2_rsFeedback.valid),
     ("load_s2_replay_tlb_miss ", s2_rsFeedback.valid && s2_in.bits.tlbMiss),
