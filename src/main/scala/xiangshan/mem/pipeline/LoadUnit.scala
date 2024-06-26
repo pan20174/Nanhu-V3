@@ -116,6 +116,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     })
   })
 
+  //redirect register fanout
   private val redirectUseName = List("loadS0",
   "loadS1",
   "loadS2",
@@ -126,6 +127,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   /*
     LOAD S0: arb 2 input; generate vaddr; req to TLB
   */
+  val fastReplayIn = Wire(Valid(new ReplayQueueIssueBundle))
+  fastReplayIn.valid := false.B
+  fastReplayIn.bits := DontCare
+
   val rsIssueIn = WireInit(io.rsIssueIn)
   val replayIssueIn = WireInit(io.replayQIssueIn)
   io.rsIssueIn.ready := true.B
@@ -157,9 +162,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   }
 
   val s0_src_selector = Seq(
+    fastReplayIn.valid,
     replayIssueIn.valid,
     rsIssueIn.valid)
   val s0_src = Seq(
+    fromRQToS0Bundle(fastReplayIn.bits),
     fromRQToS0Bundle(replayIssueIn.bits),
     fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
   )
