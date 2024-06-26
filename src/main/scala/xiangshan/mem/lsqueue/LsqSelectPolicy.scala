@@ -31,11 +31,11 @@ class SelectInfo(implicit p: Parameters) extends XSBundle{
 }
 
 object ReplayQueueSelectPolicy {
-  def apply(in:Seq[Valid[MicroOp]], oldest:Boolean, haveEqual:Boolean, entryNum:Int, redirect: Valid[Redirect], p:Parameters) :Valid[UInt] = {
+  def apply(in:Seq[Valid[RobPtr]], oldest:Boolean, haveEqual:Boolean, entryNum:Int, redirect: Valid[Redirect], p:Parameters) :Valid[UInt] = {
     val selector = Module(new SelectPolicy(in.length, oldest, haveEqual)(p))
     selector.io.in.zip(in).foreach({case(a, b) =>
       a.valid := b.valid
-      a.bits := b.bits.robIdx
+      a.bits := b.bits
     })
     val resReg = Reg(Valid(UInt(entryNum.W)))
     resReg.valid := selector.io.out.valid && !redirect.valid

@@ -3,17 +3,16 @@ package xiangshan.mem
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import utils._
 import xs.utils._
 import xiangshan._
 import xs.utils.perf.HasPerfLogging
 import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.ExceptionNO.loadAccessFault
-import xiangshan.backend.issue.RsIdx
 import xiangshan.backend.rob.RobPtr
-import xiangshan.cache.{DCacheTLDBypassLduIO, DCacheWordReq, HasDCacheParameters, UncacheWordIO}
+import xiangshan.cache.{DCacheTLDBypassLduIO, HasDCacheParameters, UncacheWordIO}
 import xiangshan.cache.mmu.HasTlbConst
+import xiangshan.frontend.FtqPtr
 
 object LoadReplayCauses {
   /*
@@ -73,6 +72,44 @@ class LoadTLBWakeUpBundle(implicit p: Parameters) extends XSBundle with HasTlbCo
 
 class ReplayQUopEntry(implicit p: Parameters) extends XSBundle{
   val uop = new MicroOp
+//  val lqIdx = new LqPtr
+//  val robIdx = new RobPtr
+//  val fuOpType = FuOpType()
+//  val sqIdx = new SqPtr //data forward,raw
+//  val ftqPtr = new FtqPtr //raw
+//  val ftqOffset = UInt(log2Up(PredictWidth).W) //raw
+
+  def getFromUop(input: MicroOp): Unit = {
+    uop := input
+//    lqIdx := input.lqIdx
+//    robIdx := input.robIdx
+//    fuOpType := input.ctrl.fuOpType
+//    sqIdx := input.sqIdx
+//    ftqPtr := input.cf.ftqPtr
+//    ftqOffset := input.cf.ftqOffset
+  }
+
+  def toIssueUop: MicroOp = {
+    val issueUop = WireInit(uop)
+
+
+    issueUop
+//    uop := DontCare
+//    uop.lqIdx := lqIdx
+//    uop.robIdx := robIdx
+//    uop.ctrl.fuOpType := fuOpType
+//    uop.sqIdx := sqIdx
+//    uop.cf.ftqPtr := ftqPtr
+//    uop.cf.ftqOffset := ftqOffset
+  }
+
+  def toMMIOWbUop: MicroOp = {
+    val mmioUop = WireInit(uop)
+
+
+    mmioUop
+  }
+
 }
 
 
@@ -252,7 +289,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       // allocate new entry
       allocatedReg(enqIndex(i)) := true.B
       scheduledReg(enqIndex(i)) := false.B
-      entryReg(enqIndex(i)).uop := enq.bits.uop
+      // Extract some valid information
+      entryReg(enqIndex(i)).getFromUop(enq.bits.uop)
+
       hintIDReg(enqIndex(i)) := 0.U
       vaddrReg(enqIndex(i)) := enq.bits.vaddr
       causeReg(enqIndex(i)) := Mux(enqReqIsMMIO(i), 0.U, enq.bits.replay.replayCause.asUInt)
@@ -418,16 +457,16 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }))
   dontTouch(s0_readyToReplay_mask)
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem =>
-    val s0_remReadyToReplay_uop = getRemUop(VecInit(entryReg.map(_.uop)), rem)
+    val s0_remReadyToReplay_rob = getRemUop(VecInit(entryReg.map(_.uop.robIdx)), rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
     dontTouch(s0_remReadyToReplay_mask)
     val s0_remReadyToReplay_seq = (0 until LoadReplayQueueSize/LoadPipelineWidth).map{ i =>
       val valid = s0_remReadyToReplay_mask(i) && !(Mux(s1_selResSeq(rem).valid, s1_selResSeq(rem).bits(i).asBool, false.B))
-      val uop = s0_remReadyToReplay_uop(i)
-      val validUop = Wire(Valid(new MicroOp))
-      validUop.valid := valid && !uop.robIdx.needFlush(io.redirect)
-      validUop.bits := uop
-      validUop
+      val rob = s0_remReadyToReplay_rob(i)
+      val validRob = Wire(Valid(new RobPtr))
+      validRob.valid := valid && !rob.needFlush(io.redirect)
+      validRob.bits := rob
+      validRob
     }
     ReplayQueueSelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
   }
@@ -461,7 +500,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     addrModule.io.raddr(i) := s1_SelReplayIdx(i)
 
     val s2_replay_req_schedIndex = RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid)
-    val s2_replay_req_uop = entryReg.map(_.uop)(s2_replay_req_schedIndex)
+    val s2_replay_req_uop = entryReg.map(_.toIssueUop)(s2_replay_req_schedIndex)
 
     s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid) && !s2_replay_req_uop.robIdx.needFlush(io.redirect) // s2 out valid
     s2_replay_req(i).bits.vaddr := addrModule.io.rdata(i)   // s2 read vaddr
