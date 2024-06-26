@@ -235,7 +235,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s1_in = Wire(Decoupled(new LsPipelineBundle))
   val s1_out = Wire(Decoupled(new LsPipelineBundle))
 
-  PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(redirectReg("LoadS1")))
+  PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(redirectReg("loadS1")))
 
   s1_out.bits := s1_in.bits // todo: replace this way of coding!
   //store load violation from storeUnit S1
