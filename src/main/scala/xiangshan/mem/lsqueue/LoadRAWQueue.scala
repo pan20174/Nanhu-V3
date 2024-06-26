@@ -259,7 +259,7 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
     }))
     val uopRob = uopReg.map(_.robIdx)
 
-    val selModule = Module(new RAWQueueSelectPolicy(LoadRAWQueueSize, true, idx))
+    val selModule = Module(new RAWQueueSelectPolicy(LoadRAWQueueSize, true, 8,idx))
     selModule.io.in.zipWithIndex.foreach({case (in,i) =>
       in.valid := s1_violationValid(i) && RegNext(query.valid,false.B) && !freeMaskVec(i)
       in.bits := uopRob(i)

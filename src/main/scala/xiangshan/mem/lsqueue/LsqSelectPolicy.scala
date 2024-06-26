@@ -47,7 +47,7 @@ object ReplayQueueSelectPolicy {
   }
 }
 
-class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p: Parameters) extends XSModule {
+class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, parallelN: Int, idx: Int)(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle {
     val in = Input(Vec(inputNum, Valid(new RobPtr)))
     val out = Output(Valid(UInt(inputNum.W)))
@@ -66,7 +66,7 @@ class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p
     (interRes, idx)//((valid,rob),idx)
   }
 
-  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), 8, ReductionFunc)
+  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), parallelN, ReductionFunc)
   io.out.valid := res._1.valid
   io.out.bits := res._2
 }
