@@ -116,6 +116,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     })
   })
 
+  private val redirectUseName = List("loadS0",
+  "loadS1",
+  "loadS2",
+  "loadS3")
+
+  private val redirectReg = RedirectRegDup(redirectUseName,io.redirect)
+
   /*
     LOAD S0: arb 2 input; generate vaddr; req to TLB
   */
@@ -228,7 +235,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s1_in = Wire(Decoupled(new LsPipelineBundle))
   val s1_out = Wire(Decoupled(new LsPipelineBundle))
 
-  PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(io.redirect))
+  PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(redirectReg("LoadS1")))
 
   s1_out.bits := s1_in.bits // todo: replace this way of coding!
   //store load violation from storeUnit S1
@@ -337,9 +344,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   */
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
-  PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(io.redirect))
+  PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(redirectReg("loadS1")))
 
-  s2_out.valid := s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect)
+  s2_out.valid := s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2"))
   s2_out.bits := s2_in.bits
 
   val s2_tlb_miss = s2_in.bits.tlbMiss
@@ -475,7 +482,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     !s2_enqRAWFail &&
     !RegNext(s1_bank_conflict)
 
-  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
+  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) && (exceptionWb ||
     normalWb)
 
   // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
@@ -531,7 +538,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   */
   val s3_in = Wire(Decoupled(new LsPipelineBundle))
   s3_in.ready := true.B
-  PipelineConnect(s2_out, s3_in, true.B, s2_out.bits.uop.robIdx.needFlush(io.redirect))
+  PipelineConnect(s2_out, s3_in, true.B, s2_out.bits.uop.robIdx.needFlush(redirectReg("loadS2")))
 
   val s3_ldld_violation = io.lsq.loadViolationQuery.s3_resp.valid &&
     io.lsq.loadViolationQuery.s3_resp.bits.have_violation &&
@@ -563,13 +570,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   ))
   val s3_rdataPartialLoad = rdataHelper(s3_uop,s3_sel_rdata)
 
-  private val s3_lsqMMIOOutputValid = RegNext(io.mmioWb.valid && (!io.mmioWb.bits.uop.robIdx.needFlush(io.redirect)),false.B)
+  private val s3_lsqMMIOOutputValid = RegNext(io.mmioWb.valid && (!io.mmioWb.bits.uop.robIdx.needFlush(redirectReg("loadS3"))),false.B)
   io.ldout.valid := hitLoadOutValidReg || s3_lsqMMIOOutputValid
   val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
   io.ldout.bits := s3_load_wb_meta_reg
   io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
-  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
+  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
   io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
 
@@ -623,7 +630,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   dontTouch(s3_dcacheMshrID)
   //write back control info to replayQueue in S3
-  io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
+  io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
   io.s3_enq_replayQueue.bits.vaddr := s3_in.bits.vaddr
   io.s3_enq_replayQueue.bits.paddr := s3_in.bits.paddr
   io.s3_enq_replayQueue.bits.isMMIO := s3_in.bits.mmio
@@ -653,7 +660,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_canEnqRAW = !s2_cancel_inner &&
     s2_in.valid &&
-    !s2_in.bits.uop.robIdx.needFlush(io.redirect) &&
+    !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) &&
     !s2_hasException &&
     !s2_tlb_miss &&
     (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
