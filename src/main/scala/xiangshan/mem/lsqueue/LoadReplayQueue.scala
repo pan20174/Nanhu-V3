@@ -201,8 +201,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val mmioPaddr = UInt(PAddrBits.W)
   })
 
-  val counterRegMax = 32
-  val penaltyRegWidth = log2Up(counterRegMax) + 1
+  private val counterRegMax = 32
+  private val penaltyRegWidth = log2Up(counterRegMax) + 1
+  private val issueSelectParallelN = 8
 
   // replayQueue state signs define
   // allocated: the entry has been enqueued
@@ -268,7 +269,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val enqIndex =  WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
   val enqNeedAlloacteNew =  WireInit(VecInit.fill(LoadPipelineWidth)(false.B))
   val s1_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
-  val robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(LoadReplayQueueSize.W)))
   // Allocate logic
   val newEnqueue = (0 until LoadPipelineWidth).map(i => {
     needEnqueue(i) && !io.enq(i).bits.replay.isReplayQReplay
@@ -456,12 +456,18 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       input(LoadPipelineWidth * i + rem)
     ))
   }
+
+
   val s1_selResSeq = Wire(Vec(LoadPipelineWidth, Valid(UInt((LoadReplayQueueSize / LoadPipelineWidth).W))))
   dontTouch(s1_selResSeq)
   val s0_readyToReplay_mask = VecInit((0 until LoadReplayQueueSize).map(i => {
     allocatedReg(i) && !scheduledReg(i) && !blockingReg(i)
   }))
   dontTouch(s0_readyToReplay_mask)
+
+
+
+
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem =>
     val s0_remReadyToReplay_rob = getRemUop(VecInit(entryReg.map(_.uop.robIdx)), rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
@@ -474,7 +480,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       validRob.bits := rob
       validRob
     }
-    ReplayQueueSelectPolicy((s0_remReadyToReplay_seq), true, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
+    ReplayQueueSelectPolicy((s0_remReadyToReplay_seq), issueSelectParallelN, true, LoadReplayQueueSize/LoadPipelineWidth, io.redirect, p)
   }
   s1_robOldestSelOH := VecInit((0 until LoadPipelineWidth).map(rem => {
     val oldestBitsVec = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
@@ -483,6 +489,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     oldestBitsVec.asUInt
   }))
+
+
+
+
   val debug_robOldestSelOH = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
   for(i <- 0 until LoadPipelineWidth){
     debug_robOldestSelOH(i) := OHToUInt(s1_robOldestSelOH(i))
@@ -498,7 +508,11 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   }
   // replay issue logic
   val s1_SelReplayIdx = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
-  val s2_replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle)))
+
+
+
+
+  private val s2_replay_req = Wire(Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle)))
   for (i <- 0 until LoadPipelineWidth) {
     s1_SelReplayIdx(i) := OHToUInt(s1_robOldestSelOH(i))
     dontTouch(s1_SelReplayIdx)
