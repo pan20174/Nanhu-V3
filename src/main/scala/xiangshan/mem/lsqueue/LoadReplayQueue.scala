@@ -667,7 +667,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val deqBlockCount           = PopCount(io.replayQIssue.map(r => r.valid && !r.ready))
   val replayTlbMissCount      = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_TM)))
   val replayNukeCount         = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_NK)))
-  val replayRARRejectCount    = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_RAR)))
   val replayRAWRejectCount    = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_RAW)))
   val replayBankConflictCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_BC)))
   val replayDCacheReplayCount = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_DR)))
@@ -675,7 +674,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val replayDCacheMissCount   = PopCount(io.enq.map(enq => enq.fire && !enq.bits.replay.isReplayQReplay && enq.bits.replay.replayCause(LoadReplayCauses.C_DM)))
 
   val secondReplayTlbMissCount      = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex)) === 1.U && enq.bits.replay.tlb_miss}))
-  val secondReplayRARRejectCount    = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex)) === 1.U && enq.bits.replay.rar_nack}))
   val secondReplayRAWRejectCount    = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex)) === 1.U && enq.bits.replay.raw_nack}))
   val secondReplayBankConflictCount = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex)) === 1.U && enq.bits.replay.bank_conflict}))
   val secondReplayDCacheReplayCount = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex)) === 1.U && enq.bits.replay.dcache_rep}))
@@ -683,7 +681,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val secondReplayDCacheMissCount   = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex)) === 1.U && enq.bits.replay.dcache_miss}))
 
   val moreTimesReplayTlbMissCount      = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex) > 1.U )&& enq.bits.replay.tlb_miss}))
-  val moreTimesReplayRARRejectCount    = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex) > 1.U )&& enq.bits.replay.rar_nack}))
   val moreTimesReplayRAWRejectCount    = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex) > 1.U )&& enq.bits.replay.raw_nack}))
   val moreTimesReplayBankConflictCount = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex) > 1.U )&& enq.bits.replay.bank_conflict}))
   val moreTimesReplayDCacheReplayCount = PopCount(VecInit(io.enq.zipWithIndex.map{case (enq,i) => enqReqNeedReplay(enqIndex(i)) && enq.bits.replay.isReplayQReplay && (debugReplayTimesReg(enq.bits.replay.schedIndex) > 1.U )&& enq.bits.replay.dcache_rep}))
@@ -712,7 +709,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     XSPerfAccumulate("replayQ_deq_times", deqNumber)
     XSPerfAccumulate("replayQ_full", io.replayQFull)
 
-    XSPerfAccumulate("replay_cause_rar_nack",      replayRARRejectCount)
     XSPerfAccumulate("replay_cause_raw_nack",      replayRAWRejectCount)
     XSPerfAccumulate("replay_cause_tlb_miss",      replayTlbMissCount)
     XSPerfAccumulate("replay_cause_bank_conflict", replayBankConflictCount)
@@ -720,17 +716,15 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     XSPerfAccumulate("replay_cause_forward_fail",  replayForwardFailCount)
     XSPerfAccumulate("replay_cause_dcache_miss",   replayDCacheMissCount)
 
-    XSPerfAccumulate("replay_second_cause_rar_nack",      secondReplayTlbMissCount      )
-    XSPerfAccumulate("replay_second_cause_raw_nack",      secondReplayRARRejectCount    )
-    XSPerfAccumulate("replay_second_cause_tlb_miss",      secondReplayRAWRejectCount    )
+    XSPerfAccumulate("replay_second_cause_tlb_miss",      secondReplayTlbMissCount      )
+    XSPerfAccumulate("replay_second_cause_raw_nack",      secondReplayRAWRejectCount    )
     XSPerfAccumulate("replay_second_cause_bank_conflict", secondReplayBankConflictCount )
     XSPerfAccumulate("replay_second_cause_dcache_replay", secondReplayDCacheReplayCount )
     XSPerfAccumulate("replay_second_cause_forward_fail",  secondReplayForwardFailCount  )
     XSPerfAccumulate("replay_second_cause_dcache_miss",   secondReplayDCacheMissCount   )
 
-    XSPerfAccumulate("replay_multi_cause_rar_nack",      moreTimesReplayTlbMissCount     )
-    XSPerfAccumulate("replay_multi_cause_raw_nack",      moreTimesReplayRARRejectCount   )
-    XSPerfAccumulate("replay_multi_cause_tlb_miss",      moreTimesReplayRAWRejectCount   )
+    XSPerfAccumulate("replay_multi_cause_tlb_miss",      moreTimesReplayTlbMissCount     )
+    XSPerfAccumulate("replay_multi_cause_raw_nack",      moreTimesReplayRAWRejectCount   )
     XSPerfAccumulate("replay_multi_cause_bank_conflict", moreTimesReplayBankConflictCount)
     XSPerfAccumulate("replay_multi_cause_dcache_replay", moreTimesReplayDCacheReplayCount)
     XSPerfAccumulate("replay_multi_cause_forward_fail",  moreTimesReplayForwardFailCount )
