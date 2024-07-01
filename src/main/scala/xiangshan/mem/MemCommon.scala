@@ -107,6 +107,8 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   // replayInfo
   val replay = new ReplayInfo
+  // debug
+  val debugCause = UInt(LoadReplayCauses.allCauses.W)
 }
 
 class LqWriteBundle(implicit p: Parameters) extends XSBundle {
@@ -141,6 +143,9 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
 
   //Rs
   val rsIdx = new RsIdx
+
+  // debug
+  val debugCause = UInt(LoadReplayCauses.allCauses.W)
 }
 
 

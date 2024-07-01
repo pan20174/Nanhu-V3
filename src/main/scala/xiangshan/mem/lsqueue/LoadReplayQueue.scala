@@ -138,6 +138,7 @@ class ReplayQueueIssueBundle(implicit p: Parameters) extends XSBundle {
   val mask = UInt(8.W)
   val uop = new MicroOp
   val schedIndex = UInt(log2Up(LoadReplayQueueSize).W)
+  val debugCause = UInt(LoadReplayCauses.allCauses.W)
 }
 class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: Int)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle(){
@@ -548,7 +549,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     s2_replay_req(i).bits.vaddr := addrModule.io.rdata(i)   // s2 read vaddr
     s2_replay_req(i).bits.schedIndex := s2_replay_req_schedIndex   // s2 out idx
     s2_replay_req(i).bits.uop := s2_replay_req_uop // s2 read uop reg
-
+    s2_replay_req(i).bits.debugCause := causeReg(s2_replay_req_schedIndex)
     s2_replay_req(i).bits.mask := 0.U
 
     io.replayQIssue(i) <> s2_replay_req(i)
