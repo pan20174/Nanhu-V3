@@ -26,7 +26,7 @@ import xiangshan._
 import xiangshan.backend.execute.fu.FuConfigs.lduCfg
 import xiangshan.backend.execute.fu._
 import xiangshan.backend.execute.fu.csr.SdtrigExt
-import xiangshan.backend.issue.{RSFeedback, RSFeedbackType, RsIdx}
+import xiangshan.backend.issue.{EarlyWakeUpInfo, RSFeedback, RSFeedbackType, RsIdx}
 import xiangshan.backend.rob.RobPtr
 import xiangshan.cache._
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
@@ -35,12 +35,7 @@ import xs.utils.perf.HasPerfLogging
 class LoadToLsqIO(implicit p: Parameters) extends XSBundle {
   val s1_lduMMIOPAddr = ValidIO(new LoadMMIOPaddrWriteBundle)
   val s2_lduUpdateLQ = ValidIO(new LqWriteBundle)
-  val s2_load_data_forwarded = Output(Bool())
-//  val s2_dcache_require_replay = Output(Bool())
-
-//  val s3_lq_wb = Flipped(DecoupledIO(new ExuOutput))
-//  val s3_lq_wbLdRawData = Input(new LoadDataFromLQBundle)
-//  val s3_replay_from_fetch = Output(Bool()) // update uop.ctrl.replayInst in load queue in s3
+  val s2_UpdateLoadQueue = ValidIO(new LoadQueueDataUpdateBundle)
 
   val forwardFromSQ = new PipeLoadForwardFromSQ
   val loadViolationQuery = new LoadViolationQueryIO
@@ -79,8 +74,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val dcache = new DCacheLoadIO
     // S1/S2: forward query to sbuffer and response in next cycle
     val forwardFromSBuffer = new LoadForwardQueryIO
-    // S1/S2: lpv cancel feedback
-    val cancel = Output(Bool())
+//    // S1/S2: lpv cancel feedback
+//    val cancel = Output(Bool())
     // S1/S2: FDI req and response in next cycle
     val fdiReq = ValidIO(new  FDIReqBundle())
     val fdiResp = Flipped(new FDIRespBundle())
@@ -114,11 +109,28 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val trigger = Vec(TriggerNum, new LoadUnitTriggerIO)
     // Global: csr control
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
+    // Load EarlyWakeUp
+    val earlyWakeUp = Output(new Bundle() {
+      val cancel = Bool() //s2 cancel
+      val wakeUp = Valid(new EarlyWakeUpInfo) //s1 wakeup
+    })
   })
+
+  //redirect register fanout
+  private val redirectUseName = List("loadS0",
+  "loadS1",
+  "loadS2",
+  "loadS3")
+
+  private val redirectReg = RedirectRegDup(redirectUseName,io.redirect)
 
   /*
     LOAD S0: arb 2 input; generate vaddr; req to TLB
   */
+  val fastReplayIn = Wire(Valid(new ReplayQueueIssueBundle))
+  fastReplayIn.valid := false.B
+  fastReplayIn.bits := DontCare
+
   val rsIssueIn = WireInit(io.rsIssueIn)
   val replayIssueIn = WireInit(io.replayQIssueIn)
   io.rsIssueIn.ready := true.B
@@ -150,9 +162,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   }
 
   val s0_src_selector = Seq(
+    fastReplayIn.valid,
     replayIssueIn.valid,
     rsIssueIn.valid)
   val s0_src = Seq(
+    fromRQToS0Bundle(fastReplayIn.bits),
     fromRQToS0Bundle(replayIssueIn.bits),
     fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
   )
@@ -228,7 +242,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s1_in = Wire(Decoupled(new LsPipelineBundle))
   val s1_out = Wire(Decoupled(new LsPipelineBundle))
 
-  PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(io.redirect))
+  PipelineConnect(s0_out, s1_in, true.B, s0_out.bits.uop.robIdx.needFlush(redirectReg("loadS1")))
 
   s1_out.bits := s1_in.bits // todo: replace this way of coding!
   //store load violation from storeUnit S1
@@ -262,7 +276,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s1_sbufferForwardReq = io.forwardFromSBuffer
   val s1_lsqForwardReq = io.lsq.forwardFromSQ
-  val s1_ldViolationQueryReq = io.lsq.loadViolationQuery.s1_req
   val s1_fdiReq = io.fdiReq
 
   s1_sbufferForwardReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
@@ -283,9 +296,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_lsqForwardReq.pc := s1_uop.cf.pc
   io.lsq.forwardFromSQ.sqIdxMask := UIntToMask(s1_uop.sqIdx.value, StoreQueueSize)
 
-  s1_ldViolationQueryReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
-  s1_ldViolationQueryReq.bits.paddr := s1_paddr_dup_lsu
-  s1_ldViolationQueryReq.bits.uop := s1_uop
+//  s1_ldViolationQueryReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
+//  s1_ldViolationQueryReq.bits.paddr := s1_paddr_dup_lsu
+//  s1_ldViolationQueryReq.bits.uop := s1_uop
+//  s1_ldViolationQueryReq.valid := false.B
+//  s1_ldViolationQueryReq.bits.paddr := DontCare
+//  s1_ldViolationQueryReq.bits.uop := DontCare
 
   s1_fdiReq.valid := s1_out.fire
   s1_fdiReq.bits.addr := s1_out.bits.vaddr
@@ -294,8 +310,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   /* Generate feedback signal caused by:    1.dcache bank conflict    2.need redo ld-ld violation check */
   val s1_csrCtrl_ldld_vio_check_enable = io.csrCtrl.ldld_vio_check_enable
-  val s1_needLdVioCheckRedo = s1_ldViolationQueryReq.valid && !s1_ldViolationQueryReq.ready &&
-    RegNext(s1_csrCtrl_ldld_vio_check_enable)
+//  val s1_needLdVioCheckRedo = s1_ldViolationQueryReq.valid && !s1_ldViolationQueryReq.ready &&
+//    RegNext(s1_csrCtrl_ldld_vio_check_enable)
+  val s1_needLdVioCheckRedo = false.B
 
   s1_out.valid        := s1_in.valid && s1_enableMem
   s1_out.bits.paddr   := s1_paddr_dup_lsu
@@ -317,17 +334,26 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   debug_s1_cause.fwd_data_sqIdx := 0.U.asTypeOf(new SqPtr)
   debug_s1_cause.tlb_miss := s1_tlb_miss  // tlb resp miss
   debug_s1_cause.raw_nack := s1_hasStLdViolation
-  debug_s1_cause.rar_nack := s1_needLdVioCheckRedo  // rar query fail
   debug_s1_cause.bank_conflict := s1_bank_conflict || s1_cancel_inner  // bank read has conflict
   dontTouch(debug_s1_cause)
+
+  io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_tlb_miss
+  io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
+  io.earlyWakeUp.wakeUp.bits.pdest := s1_in.bits.uop.pdest
+  io.earlyWakeUp.wakeUp.bits.destType := MuxCase(SrcType.default, Seq(
+    s1_in.bits.uop.ctrl.rfWen -> SrcType.reg,
+    s1_in.bits.uop.ctrl.fpWen -> SrcType.fp,
+  ))
+  io.earlyWakeUp.wakeUp.bits.robPtr := s1_in.bits.uop.robIdx
+
   /*
     LOAD S2: cache miss control; forward data merge; mmio check; feedback to reservationStation
   */
   val s2_in = Wire(Decoupled(new LsPipelineBundle))
   val s2_out = Wire(Decoupled(new LsPipelineBundle))
-  PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(io.redirect))
+  PipelineConnect(s1_out, s2_in, true.B, s1_out.bits.uop.robIdx.needFlush(redirectReg("loadS1")))
 
-  s2_out.valid := s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect)
+  s2_out.valid := s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2"))
   s2_out.bits := s2_in.bits
 
   val s2_tlb_miss = s2_in.bits.tlbMiss
@@ -369,7 +395,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_LSQ_LoadForwardQueryIO = Wire(new LoadForwardQueryIO)
   val s2_SB_LoadForwardQueryIO = Wire(new LoadForwardQueryIO)
-  val s2_loadViolationQueryResp = Wire(ValidIO(new LoadViolationQueryResp))
+//  val s2_loadViolationQueryResp = Wire(ValidIO(new LoadViolationQueryResp))
 
   s2_LSQ_LoadForwardQueryIO := DontCare
   s2_SB_LoadForwardQueryIO := DontCare
@@ -378,22 +404,23 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_LSQ_LoadForwardQueryIO.forwardData := io.lsq.forwardFromSQ.forwardData
   s2_LSQ_LoadForwardQueryIO.forwardMask := io.lsq.forwardFromSQ.forwardMask
   s2_LSQ_LoadForwardQueryIO.dataInvalid := io.lsq.forwardFromSQ.dataInvalid
-  s2_LSQ_LoadForwardQueryIO.matchInvalid := io.lsq.forwardFromSQ.matchInvalid
+  s2_LSQ_LoadForwardQueryIO.matchInvalid := io.lsq.forwardFromSQ.matchInvalid //todo!!!
 
   s2_SB_LoadForwardQueryIO.forwardData := io.forwardFromSBuffer.forwardData
   s2_SB_LoadForwardQueryIO.forwardMask := io.forwardFromSBuffer.forwardMask
   s2_SB_LoadForwardQueryIO.dataInvalid := io.forwardFromSBuffer.dataInvalid // always false
   s2_SB_LoadForwardQueryIO.matchInvalid := io.forwardFromSBuffer.matchInvalid
 
-  s2_loadViolationQueryResp := io.lsq.loadViolationQuery.s2_resp
+//  s2_loadViolationQueryResp := io.lsq.loadViolationQuery.s2_resp
 
   val s2_actually_mmio = s2_pmp.mmio && !s2_tlb_miss
   val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
-  val s2_cache_miss = s2_dcacheResp.bits.miss
+  val s2_cache_miss = s2_dcacheResp.bits.miss && s2_dcacheResp.valid
   val s2_cache_replay = s2_dcacheResp.bits.replay
 
-  val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
-    RegNext(io.csrCtrl.ldld_vio_check_enable)
+//  val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
+//    RegNext(io.csrCtrl.ldld_vio_check_enable)
+  val s2_ldld_violation = false.B
   val s2_data_invalid = s2_LSQ_LoadForwardQueryIO.dataInvalid && !s2_ldld_violation && !s2_hasException
 
   val s2_dcache_kill = s2_pmp.ld || s2_pmp.mmio // move pmp resp kill to outside
@@ -412,6 +439,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   }
   val s2_fullForward = s2_out.valid && !s2_tlb_miss && ((~s2_forwardMask.asUInt).asUInt & s2_in.bits.mask) === 0.U && !s2_LSQ_LoadForwardQueryIO.dataInvalid
 
+  val s2_dataFromDCache = s2_out.valid && !s2_fullForward && !s2_cache_miss
 
   // dcache load data
   val s2_loadDataFromDcache = Wire(new LoadDataFromDcacheBundle)
@@ -443,7 +471,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.lsq.s1_lduMMIOPAddr.valid := s1_out.valid && !s1_tlb_miss
   io.lsq.s1_lduMMIOPAddr.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduMMIOPAddr.bits.paddr := s1_paddr_dup_lsu
-  io.lsq.s2_load_data_forwarded := s2_dataForwarded
 
   // provide prefetcher train data
   io.prefetch_train.bits := s2_in.bits
@@ -462,7 +489,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     !s2_enqRAWFail &&
     !RegNext(s1_bank_conflict)
 
-  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(io.redirect) && (exceptionWb ||
+  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) && (exceptionWb ||
     normalWb)
 
   // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
@@ -470,11 +497,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
   io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
   io.lsq.s2_lduUpdateLQ.bits.has_writeback := s2_wb_valid
-  // generate duplicated load queue data wen
-  val s2_wen_dup = RegInit(VecInit(Seq.fill(6)(false.B)))
-  s2_wen_dup.foreach(_ := s1_out.valid && (!s1_out.bits.uop.robIdx.needFlush(io.redirect)))
-  io.lsq.s2_lduUpdateLQ.bits.lq_data_wen_dup := s2_wen_dup
 
+  io.lsq.s2_UpdateLoadQueue.valid := s2_wb_valid
+  io.lsq.s2_UpdateLoadQueue.bits.lqPtr := s2_out.bits.uop.lqIdx
+  io.lsq.s2_UpdateLoadQueue.bits.dataIsFromDCache := s2_dataFromDCache
+  io.lsq.s2_UpdateLoadQueue.bits.wayIdx := s2_dcacheResp.bits.wayIdx
+  io.lsq.s2_UpdateLoadQueue.bits.paddr := s2_out.bits.paddr
+  io.lsq.s2_UpdateLoadQueue.bits.debug_mmio := s2_out.bits.mmio
 
   when(s2_in.valid) {
     assert(!(s2_tlb_miss && s2_fullForward),"when s2_tlb_miss,s2_fullForward must be false!!")
@@ -516,13 +545,17 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   */
   val s3_in = Wire(Decoupled(new LsPipelineBundle))
   s3_in.ready := true.B
-  PipelineConnect(s2_out, s3_in, true.B, s2_out.bits.uop.robIdx.needFlush(io.redirect))
+  PipelineConnect(s2_out, s3_in, true.B, s2_out.bits.uop.robIdx.needFlush(redirectReg("loadS2")))
+
+  val s3_ldld_violation = io.lsq.loadViolationQuery.s3_resp.valid &&
+    io.lsq.loadViolationQuery.s3_resp.bits.have_violation &&
+    RegNext(io.csrCtrl.ldld_vio_check_enable)
 
   // mmio data from load queue
   val s3_mmioDataFromLq = RegEnable(io.mmioWb.bits.data, io.mmioWb.valid)
   // data from dcache hit
   val s3_loadDataFromDcache = RegEnable(s2_loadDataFromDcache, s2_in.valid)
-  val s3_rdataDcache = s3_loadDataFromDcache.mergedData()
+  val s3_rdataDcache = s3_loadDataFromDcache.mergedData() //merge Data from forward and DCache
 
   private val hitLoadOutValidReg = RegNext(hitLoadOut.valid, false.B)
   val s3_uop = s3_loadDataFromDcache.uop
@@ -544,22 +577,22 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   ))
   val s3_rdataPartialLoad = rdataHelper(s3_uop,s3_sel_rdata)
 
-  private val s3_lsqMMIOOutputValid = RegNext(io.mmioWb.valid && (!io.mmioWb.bits.uop.robIdx.needFlush(io.redirect)),false.B)
+  private val s3_lsqMMIOOutputValid = RegNext(io.mmioWb.valid && (!io.mmioWb.bits.uop.robIdx.needFlush(redirectReg("loadS3"))),false.B)
   io.ldout.valid := hitLoadOutValidReg || s3_lsqMMIOOutputValid
   val s3_load_wb_meta_reg = RegEnable(Mux(hitLoadOut.valid,hitLoadOut.bits,io.mmioWb.bits), hitLoadOut.valid | io.mmioWb.valid)
   io.ldout.bits := s3_load_wb_meta_reg
   io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
-  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
+  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
-  io.feedbackSlow.bits.sourceType :=  Mux(!io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
+  io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
 
   assert(!(RegNext(io.feedbackFast.valid) && io.feedbackSlow.valid))
 
   // load forward_fail/ldld_violation check
   // check for inst in load pipeline
   val s3_forward_fail = RegNext(io.lsq.forwardFromSQ.matchInvalid || io.forwardFromSBuffer.matchInvalid)
-  val s3_ldld_violation = RegNext(s2_ldld_violation)
+//  val s3_ldld_violation = RegNext(s2_ldld_violation)
   val s3_need_replay_from_fetch = s3_forward_fail || s3_ldld_violation
   val s3_can_replay_from_fetch = RegEnable(s2_out.bits.mmio && !s2_out.bits.isSoftPrefetch && s2_out.bits.tlbMiss, s2_out.valid)
 
@@ -583,11 +616,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   }}
   io.lsq.trigger.hitLoadAddrTriggerHitVec := hitLoadAddrTriggerHitVec
 
-  // lvp cancel feedback to reservationStation
-  private val s1_cancel = RegInit(false.B)
-  s1_cancel := s1_in.valid && (!s1_out.valid)
-  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss || s2_cache_replay)
-  io.cancel := s1_cancel || s2_lpvCancel
+//  // lvp cancel feedback to reservationStation
+//  private val s1_cancel = RegInit(false.B)
+//  s1_cancel := s1_in.valid && (!s1_out.valid)
+//  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss || s2_cache_replay)
+//  io.cancel := s1_cancel || s2_lpvCancel
+  io.earlyWakeUp.cancel := s2_in.valid && !s2_wb_valid
 
   val debugS3CauseReg = RegInit(0.U.asTypeOf(new ReplayInfo))
   debugS3CauseReg := Mux( s2_cause_can_transfer && s2_out.fire && !s2_wb_valid, debug_s2_cause, 0.U.asTypeOf(new ReplayInfo))
@@ -603,7 +637,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   dontTouch(s3_dcacheMshrID)
   //write back control info to replayQueue in S3
-  io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(io.redirect)
+  io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
   io.s3_enq_replayQueue.bits.vaddr := s3_in.bits.vaddr
   io.s3_enq_replayQueue.bits.paddr := s3_in.bits.paddr
   io.s3_enq_replayQueue.bits.isMMIO := s3_in.bits.mmio
@@ -633,7 +667,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_canEnqRAW = !s2_cancel_inner &&
     s2_in.valid &&
-    !s2_in.bits.uop.robIdx.needFlush(io.redirect) &&
+    !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) &&
     !s2_hasException &&
     !s2_tlb_miss &&
     (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&

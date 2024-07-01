@@ -67,19 +67,13 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val hartId = Input(UInt(8.W))
     val enq = new LsqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
-    val loadMMIOPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LoadMMIOPaddrWriteBundle)))
-    val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
+    val loadWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val storeInRe = Vec(StorePipelineWidth, Input(new LsPipelineBundle()))
     val storeDataIn = Vec(StorePipelineWidth, Flipped(Valid(new ExuOutput))) // store data, send to sq from rs
     val storeMaskIn = Vec(StorePipelineWidth, Flipped(Valid(new StoreMaskBundle))) // store mask, send to sq from rs
-    val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
     val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
-//    val s2_dcache_require_replay = Vec(LoadPipelineWidth, Input(Bool()))
-//    val s3_replay_from_fetch = Vec(LoadPipelineWidth, Input(Bool()))
     val sbuffer = Vec(StorePipelineWidth, Decoupled(new DCacheWordReqWithVaddr))
-//    val ldout = Vec(2, DecoupledIO(new ExuOutput)) // writeback int load
-//    val ldRawDataOut = Vec(2, Output(new LoadDataFromLQBundle))
     val mmioStout = DecoupledIO(new ExuOutput) // writeback uncached store
     val forward = Vec(LoadPipelineWidth, Flipped(new PipeLoadForwardFromSQ))
     val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
@@ -108,6 +102,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
     val mshrFull = Input(Bool())
+    val lduUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
   })
 
   val loadQueue = Module(new LoadQueue)
@@ -150,21 +145,12 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
 
   // load queue wiring
-  loadQueue.io.loadMMIOPaddrIn <> io.loadMMIOPaddrIn
+  loadQueue.io.ldLdViolationReq := io.lduUpdate
   loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.brqRedirect <> io.brqRedirect
-  loadQueue.io.loadIn <> io.loadIn
-  loadQueue.io.storeIn.zip(io.storeIn).foreach({case(a, b) =>
-    a.valid := b.valid & b.bits.uop.loadStoreEnable
-    a.bits := b.bits
-  })
+  loadQueue.io.loadWbInfo <> io.loadWbInfo
   loadQueue.io.stLdViolationQuery := io.storeViolationQuery
-  loadQueue.io.s2_load_data_forwarded <> io.s2_load_data_forwarded
   loadQueue.io.loadEnqRAW <> io.loadEnqRAW
-//  loadQueue.io.s2_dcache_require_replay <> io.s2_dcache_require_replay
-//  loadQueue.io.s3_replay_from_fetch <> io.s3_replay_from_fetch
-//  loadQueue.io.ldout <> io.ldout
-//  loadQueue.io.ldRawDataOut <> io.ldRawDataOut
   loadQueue.io.robHead := RegNext(io.rob.pendingInst)
   loadQueue.io.lqSafeDeq := RegNext(io.rob.lqSafeDeq)
   loadQueue.io.debug_deqPtr := RegNext(io.rob.debug_deqPtr)
@@ -181,13 +167,13 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.sqEmpty := storeQueue.io.sqempty
   loadQueue.io.stDataReadySqPtr := storeQueue.io.stDataReadySqPtr
   loadQueue.io.storeDataWbPtr := io.storeDataWbPtr
+  loadQueue.io.ldLdViolationResp <> io.loadViolationQuery
 
   io.lqDeq := loadQueue.io.lqDeq
   io.ldStop := loadQueue.io.ldStop
   io.replayQFull := loadQueue.io.replayQFull
   loadQueue.io.mshrFull := io.mshrFull
   // store queue wiring
-  // storeQueue.io <> DontCare
   storeQueue.io.brqRedirect <> io.brqRedirect
   storeQueue.io.storeIn <> io.storeIn
   storeQueue.io.storeInRe <> io.storeInRe
@@ -203,9 +189,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   storeQueue.io.sqDeq <> io.sqDeq
 
   storeQueue.io.forward <> io.forward // overlap forwardMask & forwardData, DO NOT CHANGE SEQUENCE
-
-  loadQueue.io.loadViolationQuery <> io.loadViolationQuery
-
   storeQueue.io.sqempty <> io.sqempty
 
   // rob commits for lsq is delayed for two cycles, which causes the delayed update for deqPtr in lq/sq

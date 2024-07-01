@@ -582,3 +582,57 @@ class LoadQueueVaddrModule[T <: Data](
     io.rdata(j) := Mux1H(index_dec, rdata.map(_(j)))
   }
 }
+
+
+
+class LQReleaseDataModule(numEntries: Int, numRead: Int, numWrite: Int)(implicit p: Parameters) extends XSModule with HasDCacheParameters {
+  val io = IO(new Bundle {
+    // normal read/write ports
+    val write = Vec(numWrite, new Bundle() {
+      val wen = Input(Bool())
+      val entryAddr = Input(UInt(log2Up(numEntries).W))
+      val data = Input(new ReleaseEntryBundle)
+    })
+
+    val load_query = Vec(numRead, new Bundle() {
+      val req_data = Input(new ReleaseEntryBundle)
+      val resp_mask = Output(Vec(numEntries, Bool()))
+    })
+
+    val release_query = new Bundle() {
+      val req_data = Input(new ReleaseEntryBundle)
+      val resp_mask = Output(Vec(numEntries, Bool()))
+    }
+  })
+
+  val dataReg = Reg(Vec(numEntries, new ReleaseEntryBundle))
+
+  val waddrOH = io.write.map(a => UIntToOH(a.entryAddr))
+  for(i <- 0 until numEntries){
+    val wen = io.write.zip(waddrOH).map(w => w._1.wen && w._2(i))
+    val wdata = io.write.map(_.data)
+
+    when(wen.reduce(_|_)){
+      dataReg(i) := Mux1H(wen,wdata)
+    }
+  }
+
+  //don't need bypass check
+  for(i <- 0 until numRead){
+    for(j <- 0 until numEntries){
+      io.load_query(i).resp_mask(j) := (io.load_query(i).req_data === dataReg(j))
+    }
+  }
+
+  for (j <- 0 until numEntries) {
+    io.release_query.resp_mask(j) := (io.release_query.req_data === dataReg(j))
+  }
+
+  for(i <- 0 until numWrite){
+    for(j <- (i + 1) until numWrite){
+      when(io.write(i).wen && io.write(j).wen){
+        assert(!(io.write(i).entryAddr === io.write(j).entryAddr))
+      }
+    }
+  }
+}

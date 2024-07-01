@@ -32,6 +32,7 @@ import xiangshan.backend.execute.fu.csr.CSRConst.ModeS
 import xiangshan.backend.execute.fu.{FuConfigs, FunctionUnit, PMP, PMPChecker, PMPCheckerv2}
 import xiangshan.backend.execute.fu.csr.{PFEvent, SdtrigExt}
 import xiangshan.backend.execute.fu.fence.{FenceToSbuffer, SfenceBundle}
+import xiangshan.backend.issue.EarlyWakeUpInfo
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
 import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, TLB, TlbIO, TlbReplace}
@@ -271,7 +272,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       val dcacheMSHRFull = Output(Bool())
     }
 
-    val earlyWakeUpCancel = Output(Vec(3, Vec(lduIssues.length, Bool())))
+//    val earlyWakeUpCancel = Output(Vec(3, Vec(lduIssues.length, Bool())))
     val issueToMou = Flipped(Decoupled(new ExuInput))
     val writebackFromMou = Decoupled(new ExuOutput)
 
@@ -285,6 +286,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val lsqVecDeqCnt = Output(new LsqVecDeqIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val ldStopMemBlock = Output(Bool())
+
+    val lduEarlyWakeUp = Output(Vec(loadUnitNum, new Bundle() {
+      val cancel = Bool()
+      val wakeUp = Valid(new EarlyWakeUpInfo)
+    }))
   })
   io.lsqVecDeqCnt := DontCare
 
@@ -555,7 +561,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   XSDebug(tEnable.asUInt.orR, "Debug Mode: At least one store trigger is enabled\n")
 
-  def PrintTriggerInfo(enable: Bool, trigger: MatchTriggerIO)(implicit p: Parameters) = {
+  private def PrintTriggerInfo(enable: Bool, trigger: MatchTriggerIO)(implicit p: Parameters) = {
     XSDebug(enable, p"Debug Mode: Match Type is ${trigger.matchType}; select is ${trigger.select};" +
       p"timing is ${trigger.timing}; action is ${trigger.action}; chain is ${trigger.chain};" +
       p"tdata2 is ${Hexadecimal(trigger.tdata2)}")
@@ -564,13 +570,12 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     PrintTriggerInfo(tEnable(j), tdata(j))
 
   for (i <- 0 until exuParameters.LduCnt) {
-    loadUnits(i).io.redirect := Pipe(redirectIn)
+    loadUnits(i).io.redirect := redirectIn  //pipe inside
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
 
     lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
-
-
+    lsq.io.lduUpdate(i) := loadUnits(i).io.lsq.s2_UpdateLoadQueue
 
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
     slduIssues(i).rsFeedback := DontCare
@@ -605,8 +610,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //replayQueue
     lsq.io.replayQEnq(i) <> loadUnits(i).io.s3_enq_replayQueue
     loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
-    //cancel
-    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
+//    //cancel
+//    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
+    //earlyWakeup and cancel
+    io.lduEarlyWakeUp(i).cancel := RegNext(loadUnits(i).io.earlyWakeUp.cancel, false.B)
+    io.lduEarlyWakeUp(i).wakeUp := loadUnits(i).io.earlyWakeUp.wakeUp
     // prefetch
     val pcDelay1Valid = RegNext(loadUnits(i).io.rsIssueIn.fire, false.B)
     val pcDelay1Bits = RegEnable(loadUnits(i).io.rsIssueIn.bits.uop.cf.pc, loadUnits(i).io.rsIssueIn.fire)
@@ -620,10 +628,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
     // passdown to lsq (load s1)
-    lsq.io.loadMMIOPaddrIn(i) <> loadUnits(i).io.lsq.s1_lduMMIOPAddr
     // passdown to lsq (load s2)
-    lsq.io.loadIn(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
-    lsq.io.s2_load_data_forwarded(i) <> loadUnits(i).io.lsq.s2_load_data_forwarded
+    lsq.io.loadWbInfo(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 
     // --------------------------------
@@ -890,4 +896,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val allPerfInc = allPerfEvents.map(_._2.asTypeOf(new PerfEvent))
   val perfEvents = HPerfMonitor(csrevents, allPerfInc).getPerfEvents
   generatePerfEvent()
+
+  val clock_debug = RegInit(false.B)
+  clock_debug := ~clock_debug
+  dontTouch(clock_debug)
 }

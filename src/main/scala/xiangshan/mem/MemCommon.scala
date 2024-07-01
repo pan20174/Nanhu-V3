@@ -109,35 +109,20 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
   val replay = new ReplayInfo
 }
 
-class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
+class LqWriteBundle(implicit p: Parameters) extends XSBundle {
   // queue entry data, except flag bits, will be updated if writeQueue is true,
   // valid bit in LqWriteBundle will be ignored
-  val lq_data_wen_dup = Vec(6, Bool()) // dirty reg dup
   val has_writeback = Bool()
+  val miss = Bool()
+  val mmio = Bool()
+  val uop = new MicroOp
+  val vaddr = UInt(VAddrBits.W)
 
   def fromLsPipelineBundle(input: LsPipelineBundle) : Unit = {
-    vaddr := input.vaddr
-    paddr := input.paddr
-    mask := input.mask
-    data := input.data
     uop := input.uop
-    wlineflag := input.wlineflag
     miss := input.miss
-    tlbMiss := input.tlbMiss
-    ptwBack := input.ptwBack
     mmio := input.mmio
-    rsIdx := input.rsIdx
-    forwardMask := input.forwardMask
-    forwardData := input.forwardData
-    isSoftPrefetch := input.isSoftPrefetch
-
-    lq_data_wen_dup := DontCare
-
-    replay.replayCause := DontCare
-    replay.schedIndex := DontCare
-    replay.isReplayQReplay := DontCare
-    replay.full_fwd := DontCare
-    replay.fwd_data_sqIdx := DontCare
+    vaddr := input.vaddr
   }
 }
 
@@ -210,8 +195,7 @@ class LoadViolationQueryResp(implicit p: Parameters) extends XSBundle {
 }
 
 class LoadViolationQueryIO(implicit p: Parameters) extends XSBundle {
-  val s1_req = Decoupled(new LoadViolationQueryReq)
-  val s2_resp = Flipped(Valid(new LoadViolationQueryResp))
+  val s3_resp = Flipped(Valid(new LoadViolationQueryResp))
 }
 
 // Store byte valid mask write bundle
@@ -250,6 +234,18 @@ class LoadDataFromLQBundle(implicit p: Parameters) extends XSBundle {
 
   def mergedData(): UInt = {
     lqData
+  }
+}
+
+object RedirectRegDup{
+  def apply(name: List[String], redirect: ValidIO[Redirect]): Map[String, ValidIO[Redirect]] = {
+    val len = name.length
+    var map: Map[String, ValidIO[Redirect]] = Map()
+
+    for (i <- 0 until len) {
+      map += (name(i) -> Pipe(redirect).suggestName("redirect_dup_" + name(i)))
+    }
+    map
   }
 }
 

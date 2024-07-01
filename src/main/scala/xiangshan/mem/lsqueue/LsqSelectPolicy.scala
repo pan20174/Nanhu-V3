@@ -6,7 +6,7 @@ import chisel3.util._
 import utils._
 import xs.utils._
 import xiangshan._
-import xiangshan.backend.issue.SelectPolicy
+import xiangshan.backend.issue.{HybridSelectInfo, SelectPolicy}
 import xs.utils.perf.HasPerfLogging
 import xiangshan.backend.rob.RobPtr
 
@@ -31,11 +31,16 @@ class SelectInfo(implicit p: Parameters) extends XSBundle{
 }
 
 object ReplayQueueSelectPolicy {
-  def apply(in:Seq[Valid[MicroOp]], oldest:Boolean, haveEqual:Boolean, entryNum:Int, redirect: Valid[Redirect], p:Parameters) :Valid[UInt] = {
-    val selector = Module(new SelectPolicy(in.length, oldest, haveEqual)(p))
+  def apply(in:Seq[Valid[RobPtr]], parallelN: Int, haveEqual:Boolean, entryNum:Int, redirect: Valid[Redirect], p:Parameters) :Valid[UInt] = {
+//    val selector = Module(new SelectPolicy(in.length, oldest, haveEqual)(p))
+//    selector.io.in.zip(in).foreach({case(a, b) =>
+//      a.valid := b.valid
+//      a.bits := b.bits
+//    })
+    val selector = Module(new LSQOldestSelectPolicy(in.length, haveEqual, parallelN, "loadReplayQueueSelector")(p))
     selector.io.in.zip(in).foreach({case(a, b) =>
       a.valid := b.valid
-      a.bits := b.bits.robIdx
+      a.bits := b.bits
     })
     val resReg = Reg(Valid(UInt(entryNum.W)))
     resReg.valid := selector.io.out.valid && !redirect.valid
@@ -47,7 +52,35 @@ object ReplayQueueSelectPolicy {
   }
 }
 
-class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p: Parameters) extends XSModule {
+
+class LSQOldestSelectPolicy(inputNum:Int, haveEqual:Boolean, parallelN: Int = 8, name: String)(implicit p: Parameters) extends XSModule {
+  val io = IO(new Bundle {
+    val in = Input(Vec(inputNum, Valid(new RobPtr)))
+    val out = Output(Valid(UInt(inputNum.W)))
+  })
+
+  override val desiredName: String = name
+  private def ReductionFunc(in: Seq[(Valid[RobPtr], UInt)]):(Valid[RobPtr], UInt) = {
+    val selectPolicy = Module(new SelectPolicy(in.length, true, haveEqual))
+    val interRes = Wire(Valid(new RobPtr))
+    selectPolicy.io.in.zip(in).foreach({case(a, b) =>
+      a.valid := b._1.valid
+      a.bits := b._1.bits
+    })
+    interRes.valid := selectPolicy.io.out.valid
+    interRes.bits := Mux1H(selectPolicy.io.out.bits, in.map(_._1.bits))
+    val idx = Mux1H(selectPolicy.io.out.bits, in.map(_._2))
+    (interRes, idx)
+  }
+
+  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), parallelN, ReductionFunc)
+  io.out.valid := res._1.valid
+  io.out.bits := res._2
+}
+
+
+
+class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, parallelN: Int, idx: Int)(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle {
     val in = Input(Vec(inputNum, Valid(new RobPtr)))
     val out = Output(Valid(UInt(inputNum.W)))
@@ -66,7 +99,7 @@ class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, idx: Int)(implicit p
     (interRes, idx)//((valid,rob),idx)
   }
 
-  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), 8, ReductionFunc)
+  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), parallelN, ReductionFunc)
   io.out.valid := res._1.valid
   io.out.bits := res._2
 }

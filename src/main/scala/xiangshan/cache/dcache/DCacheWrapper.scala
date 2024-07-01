@@ -322,6 +322,7 @@ class BankedDCacheWordResp(implicit p: Parameters) extends DCacheWordResp
 //  val bank_data = Vec(DCacheBanks, Bits(DCacheSRAMRowBits.W))
 //  val bank_oh = UInt(DCacheBanks.W)
   val load_data = UInt(DCacheSRAMRowBits.W)
+  val wayIdx = UInt(log2Up(DCacheWays).W)
 }
 
 class DCacheWordRespWithError(implicit p: Parameters) extends BaseDCacheWordResp
@@ -353,6 +354,7 @@ class Refill(implicit p: Parameters) extends DCacheBundle
 class Release(implicit p: Parameters) extends DCacheBundle
 {
   val paddr  = UInt(PAddrBits.W)
+  val wayIdx = UInt(log2Up(DCacheWays).W)
 }
 
 class DCacheWordIO(implicit p: Parameters) extends DCacheBundle
@@ -745,7 +747,9 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   wb.io.probe_ttob_check_resp <> mainPipe.io.probe_ttob_check_resp
 
   io.lsu.release.valid := RegNext(wb.io.req.fire)
-  io.lsu.release.bits.paddr := RegNext(wb.io.req.bits.addr)
+  io.lsu.release.bits.paddr := RegEnable(wb.io.req.bits.addr, wb.io.req.fire)
+  io.lsu.release.bits.wayIdx := RegEnable(wb.io.req.bits.wayIdx, wb.io.req.fire)
+
   // Note: RegNext() is required by:
   // * load queue released flag update logic
   // * load / load violation check logic

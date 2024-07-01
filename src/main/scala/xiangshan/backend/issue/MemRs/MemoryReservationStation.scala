@@ -114,6 +114,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     val floatingAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val vectorAllocPregs = Vec(coreParams.vectorParameters.vRenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val ldStopMemRS = Input(Bool())
+    val lduEarlyWakeUpIn = Input(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
   })
   require(outer.dispatchNode.in.length == 1)
   private val enq = outer.dispatchNode.in.map(_._1).head
@@ -150,14 +151,22 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     mod
   })
 
-  private val internalEarlyWakeup = Wire(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
-  io.loadEarlyWakeup.zip(internalEarlyWakeup).foreach({case(a, b) =>
+//  private val internalEarlyWakeup = Wire(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
+//  io.loadEarlyWakeup.zip(internalEarlyWakeup).foreach({case(a, b) =>
+//    a.valid := b.valid
+//    a.bits := b.bits
+//  })
+
+  private val loadUnitEarlyWakeup = io.lduEarlyWakeUpIn
+  //wake up other rs
+  io.loadEarlyWakeup.zip(loadUnitEarlyWakeup).foreach({ case (a, b) =>
     a.valid := b.valid
     a.bits := b.bits
   })
 
+  //wake up memRs
   rsBankSeq.foreach(rb => {
-    rb.io.loadEarlyWakeup.zip(internalEarlyWakeup).foreach({case(a, b) =>
+    rb.io.loadEarlyWakeup.zip(loadUnitEarlyWakeup).foreach({case(a, b) =>
       a.valid := b.valid && b.bits.destType === SrcType.reg
       a.bits := b.bits
     })
@@ -414,24 +423,24 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       })
 
       val lduIssueInfo = lduSelectNetwork.io.issueInfo(issuePortIdx)
-      val earlyWakeupQueue = Module(new WakeupQueue(3))
-      earlyWakeupQueue.io.in.valid := scalarLoadSel && !(issueDriver.io.hold && issueDriver.io.isLoad)
-      earlyWakeupQueue.io.earlyWakeUpCancel := io.earlyWakeUpCancel
-      earlyWakeupQueue.io.in.bits.robPtr := lduIssueInfo.bits.info.robPtr
-      earlyWakeupQueue.io.in.bits.lpv := lduIssueInfo.bits.info.lpv
-      earlyWakeupQueue.io.in.bits.pdest := lduIssueInfo.bits.info.pdest
-      earlyWakeupQueue.io.in.bits.destType := MuxCase(SrcType.default, Seq(
-        lduIssueInfo.bits.info.rfWen -> SrcType.reg,
-        lduIssueInfo.bits.info.fpWen -> SrcType.fp,
-      ))
-      earlyWakeupQueue.io.redirect := io.redirect
+//      val earlyWakeupQueue = Module(new WakeupQueue(3))
+//      earlyWakeupQueue.io.in.valid := scalarLoadSel && !(issueDriver.io.hold && issueDriver.io.isLoad)
+//      earlyWakeupQueue.io.earlyWakeUpCancel := io.earlyWakeUpCancel
+//      earlyWakeupQueue.io.in.bits.robPtr := lduIssueInfo.bits.info.robPtr
+//      earlyWakeupQueue.io.in.bits.lpv := lduIssueInfo.bits.info.lpv
+//      earlyWakeupQueue.io.in.bits.pdest := lduIssueInfo.bits.info.pdest
+//      earlyWakeupQueue.io.in.bits.destType := MuxCase(SrcType.default, Seq(
+//        lduIssueInfo.bits.info.rfWen -> SrcType.reg,
+//        lduIssueInfo.bits.info.fpWen -> SrcType.fp,
+//      ))
+//      earlyWakeupQueue.io.redirect := io.redirect
 
-      earlyWakeupQueue.io.in.bits.lpv(issuePortIdx) := lduIssueInfo.bits.info.lpv(issuePortIdx) | (1 << (LpvLength - 1)).U
-      internalEarlyWakeup(issuePortIdx).valid := earlyWakeupQueue.io.out.valid && false.B ///more: tmp
-      internalEarlyWakeup(issuePortIdx).bits.robPtr := earlyWakeupQueue.io.out.bits.robPtr
-      internalEarlyWakeup(issuePortIdx).bits.pdest := earlyWakeupQueue.io.out.bits.pdest
-      internalEarlyWakeup(issuePortIdx).bits.destType := earlyWakeupQueue.io.out.bits.destType
-      internalEarlyWakeup(issuePortIdx).bits.lpv := earlyWakeupQueue.io.out.bits.lpv(issuePortIdx)
+//      earlyWakeupQueue.io.in.bits.lpv(issuePortIdx) := lduIssueInfo.bits.info.lpv(issuePortIdx) | (1 << (LpvLength - 1)).U
+//      internalEarlyWakeup(issuePortIdx).valid := earlyWakeupQueue.io.out.valid && false.B ///more: tmp
+//      internalEarlyWakeup(issuePortIdx).bits.robPtr := earlyWakeupQueue.io.out.bits.robPtr
+//      internalEarlyWakeup(issuePortIdx).bits.pdest := earlyWakeupQueue.io.out.bits.pdest
+//      internalEarlyWakeup(issuePortIdx).bits.destType := earlyWakeupQueue.io.out.bits.destType
+//      internalEarlyWakeup(issuePortIdx).bits.lpv := earlyWakeupQueue.io.out.bits.lpv(issuePortIdx)
 
       selResp.ready := issueDriver.io.enq.ready
       issueDriver.io.enq.valid := selResp.valid
