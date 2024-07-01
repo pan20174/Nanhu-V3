@@ -669,6 +669,49 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   )
   generatePerfEvent()
 
+  
+  XSPerfAccumulate("NHV5_load_issueFromRs", io.rsIssueIn.fire)
+  XSPerfAccumulate("NHV5_load_issueFromReplay", io.replayQIssueIn.fire)
+
+  XSPerfAccumulate("NHV5_load_s0_fromRs_requireTLB", io.tlb.req.fire && !s0_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s0_fromRs_requireDcache", io.dcache.req.fire && !s0_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s0_fromRq_requireTLB", io.tlb.req.fire && s0_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s0_fromRq_requireDcache", io.dcache.req.fire && s0_out.bits.replay.isReplayQReplay)
+
+  val s1_perfValidCounting = s1_out.valid && !(ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && (!s1_isSoftPrefetch) && s1_enableMem
+  XSPerfAccumulate("NHV5_load_s1_fromRs_TLBMiss", s1_tlb_miss && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRs_HasRawVio", s1_hasStLdViolation && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRs_RarCheckRedo", s1_needLdVioCheckRedo && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRs_BankConflict", s1_needLdVioCheckRedo && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRs_DcacheNotRdy", s1_cancel_inner && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
+
+  XSPerfAccumulate("NHV5_load_s1_fromRq_TLBMiss", s1_tlb_miss && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRq_HasRawVio", s1_hasStLdViolation && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRq_RarCheckRedo", s1_needLdVioCheckRedo && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRq_BankConflict", s1_needLdVioCheckRedo && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRq_DcacheNotRdy", s1_cancel_inner && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
+
+
+  val s2_perfValidCounting = s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
+  XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMiss", s2_cache_miss && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRs_FwdFail", s2_data_invalid && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRs_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+
+  XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRq_FwdFail", s2_data_invalid && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRq_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
+
+  XSPerfAccumulate("NHV5_load_s2_fromRs_isMMio", s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && s2_mmio && s2_enableMem )
+
+  val s3_perfValidCounting = hitLoadOutValidReg 
+  XSPerfAccumulate("NHV5_load_s3_fromRs_wb",    io.ldout.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio)
+  XSPerfAccumulate("NHV5_load_s3_fromRq_wbNormal", io.ldout.valid && s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio)
+  XSPerfAccumulate("NHV5_load_s3_fromRq_wbMmio", s3_lsqMMIOOutputValid)
+  XSPerfAccumulate("NHV5_load_s3_replayToRs_by_replayQFull ", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.replayQFull)
+  XSPerfAccumulate("NHV5_load_s3_success_release_rs    ", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.success)
+  
   when(io.ldout.fire){
     XSDebug("ldout %x\n", io.ldout.bits.uop.cf.pc)
   }
