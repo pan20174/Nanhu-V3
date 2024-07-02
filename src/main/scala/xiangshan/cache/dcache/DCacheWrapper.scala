@@ -746,8 +746,10 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   // dontTouch(refillPipe_io_req_valid_dup)
   // dontTouch(refillPipe_io_data_write_valid_dup)
   // dontTouch(refillPipe_io_tag_write_valid_dup)
-  mainPipe.io.data_write_ready_dup := VecInit(Seq.fill(nDupDataWriteReady)(true.B))
-  mainPipe.io.tag_write_ready_dup := VecInit(Seq.fill(nDupDataWriteReady)(true.B))
+
+//  mainPipe.io.data_write_ready_dup := VecInit(Seq.fill(nDupDataWriteReady)(true.B))
+//  mainPipe.io.tag_write_ready_dup := VecInit(Seq.fill(nDupDataWriteReady)(true.B))
+
   mainPipe.io.wb_ready_dup := wb.io.req_ready_dup
 
   // mq_refill_dup.zip(refillShouldBeBlocked_dup).foreach { case (r, block) =>
