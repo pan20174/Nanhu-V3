@@ -657,6 +657,16 @@ class WritebackQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModu
   // performance counters
   XSPerfAccumulate("wb_req", io.req.fire)
 
+  // 添加entry的使用情况统计
+  val free_count = PopCount(entries.map(_.io.primary_ready))
+  val valid_count = 18.U - free_count
+  for (i <- 0 to 18) {
+    XSPerfAccumulate(s"wbq_${i}_valid", valid_count === i.U)
+  }
+  // 统计写回队列满了以后有请求想要发但失败的情况
+  XSPerfAccumulate("wbq_full_req_failed", io.req.valid && !io.req.ready)
+
+
   val perfValidCount = RegNext(PopCount(entries.map(e => e.io.block_addr.valid)))
   val perfEvents = Seq(
     ("dcache_wbq_req      ", io.req.fire),
