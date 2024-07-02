@@ -719,13 +719,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s1_fromRs_TLBMiss", s1_tlb_miss && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRs_HasRawVio", s1_hasStLdViolation && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRs_RarCheckRedo", s1_needLdVioCheckRedo && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
-  XSPerfAccumulate("NHV5_load_s1_fromRs_BankConflict", s1_needLdVioCheckRedo && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRs_BankConflict", s1_bank_conflict && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRs_DcacheNotRdy", s1_cancel_inner && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
 
   XSPerfAccumulate("NHV5_load_s1_fromRq_TLBMiss", s1_tlb_miss && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRq_HasRawVio", s1_hasStLdViolation && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRq_RarCheckRedo", s1_needLdVioCheckRedo && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
-  XSPerfAccumulate("NHV5_load_s1_fromRq_BankConflict", s1_needLdVioCheckRedo && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s1_fromRq_BankConflict", s1_bank_conflict && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRq_DcacheNotRdy", s1_cancel_inner && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
 
 
