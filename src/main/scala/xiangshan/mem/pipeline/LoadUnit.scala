@@ -772,6 +772,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s3_sameCause_BankConflict", s3NeedReplay && s3CauseMerge(LoadReplayCauses.C_BC))
   XSPerfAccumulate("NHV5_load_s3_sameCause_Raw", s3NeedReplay && s3CauseMerge(LoadReplayCauses.C_RAW))
 
+  val debug_NHV5_load_s3_sameCause_MshrFull = RegInit(false.B)
+  debug_NHV5_load_s3_sameCause_MshrFull := s3NeedReplay && s3CauseMerge(LoadReplayCauses.C_DR)
+  dontTouch(debug_NHV5_load_s3_sameCause_MshrFull)
   when(io.ldout.fire){
     XSDebug("ldout %x\n", io.ldout.bits.uop.cf.pc)
   }
