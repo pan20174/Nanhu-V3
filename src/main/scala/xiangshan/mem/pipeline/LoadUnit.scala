@@ -712,7 +712,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s0_fromRq_requireTLB", io.tlb.req.fire && s0_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s0_fromRq_requireDcache", io.dcache.req.fire && s0_out.bits.replay.isReplayQReplay)
 
-  val s1_perfValidCounting = s1_out.valid && !(ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && (!s1_isSoftPrefetch) && s1_enableMem
+  val s1_perfValidCounting = s1_out.valid && !(ExceptionNO.selectByFu(s1_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) &&
+  (!s1_isSoftPrefetch) && s1_enableMem && !s1_out.bits.uop.robIdx.needFlush(redirectReg("loadS1"))
   XSPerfAccumulate("NHV5_load_s1_fromRs_TLBMiss", s1_tlb_miss && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRs_HasRawVio", s1_hasStLdViolation && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s1_fromRs_RarCheckRedo", s1_needLdVioCheckRedo && s1_perfValidCounting && !s1_out.bits.replay.isReplayQReplay)
@@ -726,7 +727,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s1_fromRq_DcacheNotRdy", s1_cancel_inner && s1_perfValidCounting && s1_out.bits.replay.isReplayQReplay)
 
 
-  val s2_perfValidCounting = s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem
+  val s2_perfValidCounting = s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) &&
+  !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem && !s2_out.bits.uop.robIdx.needFlush(redirectReg("loadS2"))
   XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMiss", s2_cache_miss && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_FwdFail", s2_data_invalid && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
@@ -746,7 +748,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s3_replayToRs_by_replayQFull ", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.replayQFull)
   XSPerfAccumulate("NHV5_load_s3_success_release_rs", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.success)
   
-  val s3NeedReplay = io.s3_enq_replayQueue.fire && io.s3_enq_replayQueue.bits.replay.need_rep
+  val s3NeedReplay = io.s3_enq_replayQueue.fire && io.s3_enq_replayQueue.bits.replay.need_rep && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
   XSPerfAccumulate("NHV5_load_s3_needReplay_cause_TlbMiss", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM))
   XSPerfAccumulate("NHV5_load_s3_needReplay_cause_FwdFail", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_FF))
   XSPerfAccumulate("NHV5_load_s3_needReplay_cause_MshrFull", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DR))
