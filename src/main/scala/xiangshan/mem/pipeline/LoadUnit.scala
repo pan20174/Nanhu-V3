@@ -418,7 +418,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_actually_mmio = s2_pmp.mmio && !s2_tlb_miss
   val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
-  val s2_cache_miss = s2_dcacheResp.bits.miss && s2_dcacheResp.valid
+  val s2_cache_miss = (s2_dcacheResp.bits.miss || RegNext(s1_bank_conflict)) && s2_dcacheResp.valid
   val s2_cache_replay = s2_dcacheResp.bits.replay
 
 //  val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
