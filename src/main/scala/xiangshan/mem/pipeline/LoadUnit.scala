@@ -729,12 +729,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_perfValidCounting = s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) &&
   !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem && !s2_out.bits.uop.robIdx.needFlush(redirectReg("loadS2"))
-  XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMiss", s2_cache_miss && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMiss", s2_cache_miss && !RegNext(s1_bank_conflict) && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_FwdFail", s2_data_invalid && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
 
-  XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && !RegNext(s1_bank_conflict) && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_FwdFail", s2_data_invalid && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
@@ -771,6 +771,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s3_sameCause_BankConflict", s3NeedReplay && s3CauseMerge(LoadReplayCauses.C_BC))
   XSPerfAccumulate("NHV5_load_s3_sameCause_Raw", s3NeedReplay && s3CauseMerge(LoadReplayCauses.C_RAW))
 
+  XSPerfAccumulate("NHV5_load_notIssue", (!io.rsIssueIn.valid && !io.replayQIssueIn.valid) && (io.rsIssueIn.ready || io.replayQIssueIn.ready))
+  XSPerfAccumulate("NHV5_load_notWb", !io.ldout.valid && io.ldout.ready)
+  
   val debug_NHV5_load_s3_sameCause_MshrFull = RegInit(false.B)
   debug_NHV5_load_s3_sameCause_MshrFull := s3NeedReplay && s3CauseMerge(LoadReplayCauses.C_DR)
   dontTouch(debug_NHV5_load_s3_sameCause_MshrFull)
