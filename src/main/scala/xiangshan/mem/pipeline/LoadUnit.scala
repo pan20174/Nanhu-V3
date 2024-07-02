@@ -539,7 +539,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_causeReg := debugS2CauseReg
   s2_causeReg.full_fwd := s2_fullForward
   s2_causeReg.fwd_data_sqIdx := Mux(s2_data_invalid, io.lsq.forwardFromSQ.dataInvalidSqIdx, 0.U.asTypeOf(new SqPtr))
-  s2_causeReg.dcache_miss := s2_cache_miss || debugS2CauseReg.dcache_miss
+  s2_causeReg.dcache_miss := (s2_cache_miss && !RegNext(s1_bank_conflict)) || debugS2CauseReg.dcache_miss
   s2_causeReg.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   s2_causeReg.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
   s2_causeReg.raw_violation := s2_hasStLdViolation || debugS2CauseReg.raw_violation
