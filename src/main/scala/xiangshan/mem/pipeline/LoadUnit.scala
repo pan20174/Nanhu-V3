@@ -743,13 +743,20 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s2_fromRs_isMMio", s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) && !s2_in.bits.isSoftPrefetch && s2_mmio && s2_enableMem )
 
   val s3_perfValidCounting = hitLoadOutValidReg 
-  XSPerfAccumulate("NHV5_load_s3_fromRs_wb",    io.ldout.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio)
-  XSPerfAccumulate("NHV5_load_s3_fromRq_wbNormal", io.ldout.valid && s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio)
-  XSPerfAccumulate("NHV5_load_s3_fromRq_wbMmio", s3_lsqMMIOOutputValid)
+  XSPerfAccumulate("NHV5_load_s3_fromRs_normalWbOnceSuccess",    io.ldout.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio)
+  XSPerfAccumulate("NHV5_load_s3_fromRq_ReplayWb", io.ldout.valid && s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio)
+  XSPerfAccumulate("NHV5_load_s3_fromRq_mmioWb", s3_lsqMMIOOutputValid)
   XSPerfAccumulate("NHV5_load_s3_replayToRs_by_replayQFull ", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.replayQFull)
   XSPerfAccumulate("NHV5_load_s3_success_release_rs", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.success)
   
   val s3NeedReplay = io.s3_enq_replayQueue.fire && io.s3_enq_replayQueue.bits.replay.need_rep
+  XSPerfAccumulate("NHV5_load_s3_needReplay_cause_TlbMiss", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_TM))
+  XSPerfAccumulate("NHV5_load_s3_needReplay_cause_FwdFail", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_FF))
+  XSPerfAccumulate("NHV5_load_s3_needReplay_cause_MshrFull", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DR))
+  XSPerfAccumulate("NHV5_load_s3_needReplay_cause_DcacheMiss", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_DM))
+  XSPerfAccumulate("NHV5_load_s3_needReplay_cause_BankConflict", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_BC))
+  XSPerfAccumulate("NHV5_load_s3_needReplay_cause_Raw", s3NeedReplay && io.s3_enq_replayQueue.bits.replay.replayCause(LoadReplayCauses.C_RAW))
+  
   XSPerfAccumulate("NHV5_load_s3_needReplay_lastTimeHas_TlbMiss", s3NeedReplay && s3_in.bits.debugCause(LoadReplayCauses.C_TM))
   XSPerfAccumulate("NHV5_load_s3_needReplay_lastTimeHas_FwdFail", s3NeedReplay && s3_in.bits.debugCause(LoadReplayCauses.C_FF))
   XSPerfAccumulate("NHV5_load_s3_needReplay_lastTimeHas_MshrFull", s3NeedReplay && s3_in.bits.debugCause(LoadReplayCauses.C_DR))
