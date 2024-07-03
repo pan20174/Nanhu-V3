@@ -34,6 +34,7 @@ import xiangshan.backend.rob.RobPtr
 import xs.utils.perf.HasPerfLogging
 
 import scala.math.max
+import xs.utils.perf.XSLogger
 
 // DCache specific parameters
 case class DCacheParameters
@@ -540,6 +541,26 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   tag_write_arb.io.in(0) <> refillPipe.io.tag_write
   tag_write_arb.io.in(1) <> mainPipe.io.tag_write
   tagArray.io.write <> tag_write_arb.io.out
+
+
+  print(s"tagArray nSets: ${nSets}")
+  require(nSets/2 == 128)
+  require(tagArray.io.read.length == 3)
+  val port_list = (0 until tagArray.io.read.length).toList
+  for ((p1, p2) <- port_list.combinations(2).map(i => (i(0), i(1)))) {
+    val port_valid = (tagArray.io.read(p1).valid && tagArray.io.read(p2).valid).asBool
+    val port_address_leq = tagArray.io.read(p1).bits.idx < (nSets/2).U && tagArray.io.read(p2).bits.idx < (nSets/2).U && port_valid
+    val port_address_heq = tagArray.io.read(p1).bits.idx >= (nSets/2).U && tagArray.io.read(p2).bits.idx >= (nSets/2).U && port_valid
+    XSPerfAccumulate(s"tagArray_port${p1}${p2}_valid", port_valid)
+    XSPerfAccumulate(s"tagArray_port${p1}${p2}_leq", port_address_leq)
+    XSPerfAccumulate(s"tagArray_port${p1}${p2}_heq", port_address_heq)
+  }
+
+  for (i <- 0 until tagArray.io.read.length) {
+    XSPerfAccumulate(s"tagArray_port${i}_total", tagArray.io.read(i).valid)
+    XSPerfAccumulate(s"tagArray_port${i}_less_than_half_idx", tagArray.io.read(i).bits.idx < (nSets/2).U && tagArray.io.read(i).valid)
+  }
+  
 
   //----------------------------------------
   // data array
