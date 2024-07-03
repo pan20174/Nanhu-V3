@@ -324,7 +324,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 //    RegNext(s1_csrCtrl_ldld_vio_check_enable)
   val s1_needLdVioCheckRedo = false.B
 
-  s1_out.valid        := s1_in.valid && s1_enableMem && !s1_bank_conflict
+  s1_out.valid        := s1_in.valid && s1_enableMem
   s1_out.bits.paddr   := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
   when(!s1_tlb_miss){
@@ -347,10 +347,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_causeReg.raw_violation := s1_hasStLdViolation
   s1_causeReg.bank_conflict := s1_cancel_inner  // bank read has conflict
   dontTouch(s1_causeReg)
-
-  val s1_pickout_bankconflict = s1_causeReg.replayCause.updated(LoadReplayCauses.C_BC, false.B)
-  io.fastReplayOut.valid := s1_in.valid && s1_enableMem && s1_bank_conflict && !s1_pickout_bankconflict.reduce(_ || _)
-  io.fastReplayOut.bits  := s1_in.bits
 
   io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_tlb_miss
   io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
@@ -430,7 +426,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_actually_mmio = s2_pmp.mmio && !s2_tlb_miss
   val s2_mmio = !s2_isSoftPrefetch && s2_actually_mmio && !s2_hasException
-  val s2_cache_miss = (s2_dcacheResp.bits.miss || RegNext(s1_bank_conflict)) && s2_dcacheResp.valid
+  val s2_cache_miss = s2_dcacheResp.bits.miss && s2_dcacheResp.valid
+  val s2_bank_conflict = RegNext(s1_bank_conflict)
   val s2_cache_replay = s2_dcacheResp.bits.replay
 
 //  val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
@@ -465,8 +462,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_loadDataFromDcache.addrOffset := s2_in.bits.paddr(2, 0)
 
   // real miss: dcache miss as well as can't forward
-  s2_out.bits.miss := s2_cache_miss && !s2_hasException && !s2_fullForward && !s2_ldld_violation &&
-    !s2_isSoftPrefetch && s2_enableMem
+  s2_out.bits.miss := s2_cache_miss && !s2_hasException && !s2_fullForward && !s2_ldld_violation && !s2_isSoftPrefetch && s2_enableMem
   s2_out.bits.uop.ctrl.fpWen := s2_in.bits.uop.ctrl.fpWen && !s2_hasException
   s2_out.bits.mmio := s2_mmio && s2_enableMem
 
@@ -474,7 +470,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_out.bits.forwardData := s2_forwardData // data from dcache is not included in io.out.bits.forwardData
   s2_in.ready := s2_out.ready || !s2_in.valid
 
-  val s2_dataForwarded = (s2_cache_miss || s2_cache_replay) && !s2_hasException && s2_fullForward
+  val s2_dataForwarded = (s2_cache_miss || s2_cache_replay || s2_bank_conflict) && !s2_hasException && s2_fullForward
 
   val s2_rsFeedback = Wire(ValidIO(new RSFeedback))
   s2_rsFeedback.valid := s2_in.valid && (!s2_in.bits.replay.isReplayQReplay)
@@ -494,14 +490,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val exceptionWb = s2_hasException
   val normalWb = !s2_tlb_miss &&
-    (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
+    (!(s2_cache_miss || s2_cache_replay || s2_bank_conflict) || s2_fullForward) &&
     !s2_data_invalid && !s2_mmio &&
     !s2_allStLdViolation &&
-    !s2_enqRAWFail &&
-    !RegNext(s1_bank_conflict)
+    !s2_enqRAWFail
 
-  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) && (exceptionWb ||
-    normalWb)
+  val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) &&
+   (exceptionWb || normalWb)
 
   // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
   //update exceptionGen
@@ -545,12 +540,18 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_causeReg := debugS2CauseReg
   s2_causeReg.full_fwd := s2_fullForward
   s2_causeReg.fwd_data_sqIdx := Mux(s2_data_invalid, io.lsq.forwardFromSQ.dataInvalidSqIdx, 0.U.asTypeOf(new SqPtr))
-  s2_causeReg.dcache_miss := (s2_cache_miss && !RegNext(s1_bank_conflict)) || debugS2CauseReg.dcache_miss
+  s2_causeReg.dcache_miss := s2_cache_miss || debugS2CauseReg.dcache_miss
   s2_causeReg.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
   s2_causeReg.dcache_rep  := s2_cache_replay || debugS2CauseReg.dcache_rep
   s2_causeReg.raw_violation := s2_hasStLdViolation || debugS2CauseReg.raw_violation
   s2_causeReg.raw_nack := s2_enqRAWFail
   dontTouch(s2_causeReg)
+
+  val s2_pickout_bankconflict = s2_causeReg.replayCause.updated(LoadReplayCauses.C_BC, false.B)
+  io.fastReplayOut.valid := s2_in.valid && s2_enableMem && (s2_bank_conflict && !s2_fullForward) && !(s2_pickout_bankconflict.reduce(_ || _) || RegNext(s1_cancel_inner)) && !exceptionWb
+  io.fastReplayOut.bits  := s2_in.bits
+  // lpv cancel feedback to reservationStation
+  io.earlyWakeUp.cancel := s2_in.valid && !s2_wb_valid
 
   /*
     LOAD S3: writeback data merge; writeback control
@@ -597,7 +598,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
-  io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
+  io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready || RegNext(io.fastReplayOut.valid),
+    RSFeedbackType.replayQFull, RSFeedbackType.success)
 
   // load forward_fail/ldld_violation check, mcheck for inst in load pipeline
   val s3_forward_fail = RegNext(io.lsq.forwardFromSQ.matchInvalid || io.forwardFromSBuffer.matchInvalid)
@@ -623,13 +625,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     io.trigger(i).lastDataHit := TriggerCmp(lastValidData, tdata2, matchType, tEnable)
   }}
   io.lsq.trigger.hitLoadAddrTriggerHitVec := hitLoadAddrTriggerHitVec
-
-//  // lvp cancel feedback to reservationStation
-//  private val s1_cancel = RegInit(false.B)
-//  s1_cancel := s1_in.valid && (!s1_out.valid)
-//  val s2_lpvCancel = s2_in.valid && (s2_tlb_miss || s2_mmio || s2_LSQ_LoadForwardQueryIO.dataInvalid || s2_cache_miss || s2_cache_replay)
-//  io.cancel := s1_cancel || s2_lpvCancel
-  io.earlyWakeUp.cancel := s2_in.valid && !s2_wb_valid
 
   val s3_causeReg = RegInit(0.U.asTypeOf(new ReplayInfo))
   s3_causeReg := Mux( s2_cause_can_transfer && s2_out.fire && !s2_wb_valid, s2_causeReg, 0.U.asTypeOf(new ReplayInfo))
@@ -672,10 +667,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) &&
     !s2_hasException &&
     !s2_tlb_miss &&
-    (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
+    (!(s2_cache_miss || s2_cache_replay || s2_bank_conflict) || s2_fullForward) &&
     !s2_data_invalid && !s2_mmio &&
-    !s2_allStLdViolation &&
-    !RegNext(s1_bank_conflict)
+    !s2_allStLdViolation
 
   io.enqRAWQueue.s2_enq.valid := s2_canEnqRAW
   io.enqRAWQueue.s2_enq.bits.paddr := s2_out.bits.paddr(PAddrBits - 1, 3)
@@ -731,12 +725,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_perfValidCounting = s2_out.valid && (!ExceptionNO.selectByFu(s2_out.bits.uop.cf.exceptionVec, lduCfg).asUInt.orR) &&
   !s2_in.bits.isSoftPrefetch && !s2_mmio && s2_enableMem && !s2_out.bits.uop.robIdx.needFlush(redirectReg("loadS2"))
-  XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMiss", s2_cache_miss && !RegNext(s1_bank_conflict) && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMiss", s2_cache_miss && !s2_bank_conflict && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_FwdFail", s2_data_invalid && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
 
-  XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && !RegNext(s1_bank_conflict) && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
+  XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && !s2_bank_conflict && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_FwdFail", s2_data_invalid && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
