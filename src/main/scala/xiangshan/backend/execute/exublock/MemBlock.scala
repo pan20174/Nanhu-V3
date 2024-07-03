@@ -610,9 +610,9 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //replayQueue
     lsq.io.replayQEnq(i) <> loadUnits(i).io.s3_enq_replayQueue
     loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
-    val lduFastFeedbackReg = RegEnable(loadUnits(i).io.fastReplayOut.bits, loadUnits(i).io.fastReplayOut.fire)
+
     loadUnits(i).io.fastReplayIn.valid := RegNext(loadUnits(i).io.fastReplayOut.valid)
-    loadUnits(i).io.fastReplayIn.bits := lduFastFeedbackReg
+    loadUnits(i).io.fastReplayIn.bits := RegEnable(loadUnits(i).io.fastReplayOut.bits, loadUnits(i).io.fastReplayOut.fire)
     loadUnits(i).io.fastReplayOut.ready := RegNext(loadUnits(i).io.fastReplayIn.ready)
 //    //cancel
 //    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
