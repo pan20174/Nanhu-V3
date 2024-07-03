@@ -60,10 +60,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val io = IO(new Bundle() {
 
     // S0: reservationStation issueIn
-    val rsIssueIn = Flipped(Decoupled(new ExuInput))
+    val rsIssueIn = Flipped(DecoupledIO(new ExuInput))
     val rsIdx = Input(new RsIdx)
     // S0: replayQueue issueIn
-    val replayQIssueIn = Flipped(Decoupled(new ReplayQueueIssueBundle))
+    val replayQIssueIn = Flipped(DecoupledIO(new ReplayQueueIssueBundle))
     // S0: fastReplay from LoadS1
     val fastReplayIn = Flipped(DecoupledIO(new LsPipelineBundle))
     // S0: specialLoad for timing
@@ -126,9 +126,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   /*
     LOAD S0: arb 2 input; generate vaddr; req to TLB
   */
-  val fastReplayIn = WireInit(io.fastReplayIn)
-  val rsIssueIn = WireInit(io.rsIssueIn)
-  val replayIssueIn = WireInit(io.replayQIssueIn)
+  val fastReplayIn = io.fastReplayIn
+  val rsIssueIn = io.rsIssueIn
+  val replayIssueIn = io.replayQIssueIn
   assert(fastReplayIn.fire && rsIssueIn.fire ||
     fastReplayIn.fire && replayIssueIn.fire ||
     rsIssueIn.fire && replayIssueIn.fire ,"3 input port can't fire same time")
@@ -139,56 +139,48 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.rsIssueIn.ready := true.B 
   io.replayQIssueIn.ready := true.B
   io.fastReplayIn.ready := true.B
-  assert(!(rsIssueIn.valid && replayIssueIn.valid))
-  def fromRsToS0Bundle(input: ExuInput,inRsIdx: RsIdx): LoadPipelineBundleS0 = {
-    val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
-    out.uop := input.uop
-    out.src := input.src
-    out.vm := input.vm
-    out.rsIdx := inRsIdx
-    out.vaddr := input.src(0) + SignExt(input.uop.ctrl.imm(11,0), VAddrBits)
-    out.replayCause.foreach(_ := false.B)
-    out.schedIndex := 0.U
-    out.isReplayQReplay := false.B
-    out.debugCause := 0.U
-    out
-  }
-  def fromRQToS0Bundle(input: ReplayQueueIssueBundle): LoadPipelineBundleS0 = {
-    val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
-    out.uop := input.uop
-    out.src.foreach(_ := 0.U)
-    out.vm := 0.U
-    out.rsIdx := DontCare
-    out.replayCause.foreach(_ := false.B)
-    out.vaddr := input.vaddr
-    out.schedIndex := input.schedIndex
-    out.isReplayQReplay := true.B
-    out.debugCause := input.debugCause
-    out
-  }
-  def fromFastRepToS0Bundle(input: LsPipelineBundle): LoadPipelineBundleS0 = {
-    val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
-    out.uop := input.uop
-    out.src.foreach(_ := 0.U)
-    out.vm := 0.U
-    out.rsIdx := DontCare
-    out.replayCause.foreach(_ := false.B)
-    out.vaddr := input.vaddr
-    out.schedIndex := 0.U
-    out.isReplayQReplay := false.B
-    out.debugCause := DontCare
-    out.debugCause(LoadReplayCauses.C_FR) := true.B
-    out
-  }
+
+  val s0_rsIssue = Wire(new LoadPipelineBundleS0)
+  s0_rsIssue.uop := rsIssueIn.bits.uop
+  s0_rsIssue.src := rsIssueIn.bits.src
+  s0_rsIssue.vm := rsIssueIn.bits.vm
+  s0_rsIssue.rsIdx := io.rsIdx
+  s0_rsIssue.vaddr := rsIssueIn.bits.src(0) + SignExt(rsIssueIn.bits.uop.ctrl.imm(11,0), VAddrBits)
+  s0_rsIssue.replayCause.foreach(_ := false.B)
+  s0_rsIssue.schedIndex := 0.U
+  s0_rsIssue.isReplayQReplay := false.B
+  s0_rsIssue.debugCause := 0.U
+
+  val s0_replayQIssue = Wire(new LoadPipelineBundleS0)
+  s0_replayQIssue.uop := replayIssueIn.bits.uop
+  s0_replayQIssue.src.foreach(_ := 0.U)
+  s0_replayQIssue.vm := 0.U
+  s0_replayQIssue.rsIdx := DontCare
+  s0_replayQIssue.vaddr := replayIssueIn.bits.vaddr
+  s0_replayQIssue.replayCause.foreach(_ := false.B)
+  s0_replayQIssue.schedIndex := replayIssueIn.bits.schedIndex
+  s0_replayQIssue.isReplayQReplay := true.B
+  s0_replayQIssue.debugCause := replayIssueIn.bits.debugCause
+
+  val s0_fastRepIssue = Wire(new LoadPipelineBundleS0)
+  s0_fastRepIssue.uop := replayIssueIn.bits.uop
+  s0_fastRepIssue.src.foreach(_ := 0.U)
+  s0_fastRepIssue.vm := 0.U
+  s0_fastRepIssue.rsIdx := DontCare
+  s0_fastRepIssue.vaddr := replayIssueIn.bits.vaddr
+  s0_fastRepIssue.replayCause.foreach(_ := false.B)
+  s0_fastRepIssue.schedIndex := 0.U
+  s0_fastRepIssue.isReplayQReplay := false.B
+  s0_fastRepIssue.debugCause := (1<<(LoadReplayCauses.C_FR-1)).U
 
   val s0_src_selector = Seq(
     fastReplayIn.valid,
     replayIssueIn.valid,
     rsIssueIn.valid)
   val s0_src = Seq(
-    fromFastRepToS0Bundle(fastReplayIn.bits),
-    fromRQToS0Bundle(replayIssueIn.bits),
-    fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
+    s0_fastRepIssue,
+    s0_replayQIssue,
+    s0_rsIssue
   )
   val s0_sel_src = Wire(new LoadPipelineBundleS0)
   s0_sel_src := ParallelPriorityMux(s0_src_selector, s0_src)

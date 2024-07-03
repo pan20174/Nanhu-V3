@@ -559,7 +559,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     dontTouch(io.replayQIssue(i))
 //    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
   }
-  io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _) && !io.replayStop.reduceTree(_ || )
+  io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _) && !io.replayStop.reduce(_ || _)
 
   /*
     MMIO will write back from ReplayQueue
