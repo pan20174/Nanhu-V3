@@ -149,13 +149,6 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     // find the way to be replaced
     val replace_way = new ReplacementWayReqIO
 
-    val status = new Bundle() {
-      val s0_set = ValidIO(UInt(idxBits.W))
-      val s1, s2, s3 = ValidIO(new MainPipeStatus)
-    }
-    val status_dup = Vec(nDupStatus, new Bundle() {
-      val s1, s2, s3 = ValidIO(new MainPipeStatus)
-    })
 
     // lrsc locked block should block probe
     val lrsc_locked_block = Output(Valid(UInt(PAddrBits.W)))
@@ -254,6 +247,8 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val s1_idx = get_idx(s1_req.vaddr)
   val s1_req_vaddr = RegEnable(s0_req.vaddr, s0_fire)
 
+
+  // duplicate regs to reduce fanout
   when (s0_fire) {
     s1_valid := true.B
   }.elsewhen (s1_fire) {
@@ -1086,31 +1081,6 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.replace_way.set.valid := RegNext(s0_fire)
   io.replace_way.set.bits := s1_idx
 
-  // TODO: consider block policy of a finer granularity
-  io.status.s0_set.valid := req.valid
-  io.status.s0_set.bits := get_idx(s0_req.vaddr)
-  io.status.s1.valid := s1_valid
-  io.status.s1.bits.set := s1_idx
-  io.status.s1.bits.way_en := s1_way_en
-  io.status.s2.valid := s2_valid && !s2_req_refill
-  io.status.s2.bits.set := s2_idx
-  io.status.s2.bits.way_en := s2_way_en
-  io.status.s3.valid := s3_valid && !s3_req_replace
-  io.status.s3.bits.set := s3_idx
-  io.status.s3.bits.way_en := s3_way_en
-
-  for ((s, i) <- io.status_dup.zipWithIndex) {
-    s.s1.valid := s1_valid
-    s.s1.bits.set := RegEnable(get_idx(s0_req.vaddr), s0_fire)
-    s.s1.bits.way_en := s1_way_en
-    s.s2.valid := s2_valid && !RegEnable(s1_req.replace, s1_fire)
-    s.s2.bits.set := RegEnable(get_idx(s1_req.vaddr), s1_fire)
-    s.s2.bits.way_en := RegEnable(s1_way_en, s1_fire)
-    s.s3.valid := s3_valid && !RegEnable(s2_req.replace, s2_fire_to_s3)
-    s.s3.bits.set := RegEnable(get_idx(s2_req_vaddr), s2_fire_to_s3)
-    s.s3.bits.way_en := RegEnable(s2_way_en, s2_fire_to_s3)
-  }
-  dontTouch(io.status_dup)
 
   // report error to beu and csr, 1 cycle after read data resp
   io.error := 0.U.asTypeOf(new L1CacheErrorInfo())

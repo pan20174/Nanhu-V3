@@ -690,7 +690,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   //----------------------------------------
   // replace (main pipe)
-  val mpStatus = mainPipe.io.status
+//  val mpStatus = mainPipe.io.status
   mainPipe.io.replace_req <> missQueue.io.replace_pipe_req
   missQueue.io.replace_pipe_resp := mainPipe.io.replace_resp
   io.lsu.store.refill_hit_resp := DontCare
