@@ -118,6 +118,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
+    val replayStop = Input(Vec(LoadPipelineWidth, Bool()))
     //loadUnit update
     val loadWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
     //mmio
@@ -211,6 +212,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   io.mmioWb <> replayQueue.io.mmioWb
   io.uncache <> replayQueue.io.mmioReq
   io.ldStop := replayQueue.io.ldStop
+  replayQueue.io.replayStop := io.replayStop
   io.replayQIssue <> replayQueue.io.replayQIssue
   io.replayQFull := replayQueue.io.replayQFull
   replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr

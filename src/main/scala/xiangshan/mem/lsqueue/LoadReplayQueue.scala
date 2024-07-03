@@ -190,6 +190,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val ldStop = Output(Bool())
+    val replayStop = Input(Vec(LoadPipelineWidth, Bool()))
     val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val stDataReadySqPtr = Input(new SqPtr)

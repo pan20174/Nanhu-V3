@@ -361,6 +361,9 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val sbuffer = Module(new Sbuffer)
   io.lqDeq := lsq.io.lqDeq
   // TODO: ldStop modify to stop each lane 
+  for(i <- 0 until LoadPipelineWidth){
+    lsq.io.replayStop(i) := loadUnits(i).io.fastReplayOut.fire
+  }
   io.ldStopMemBlock := lsq.io.ldStop || loadUnits(0).io.fastReplayOut.fire || loadUnits(1).io.fastReplayOut.fire
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
