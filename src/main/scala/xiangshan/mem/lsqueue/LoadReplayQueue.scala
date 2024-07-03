@@ -537,20 +537,18 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   // replay issue logic
   val s1_SelReplayIdx = WireInit(VecInit.fill(LoadPipelineWidth)(0.U(log2Up(LoadReplayQueueSize).W)))
 
-
-
-
   for (i <- 0 until LoadPipelineWidth) {
+    val fastRepBlock = io.replayStop(i)
     s1_SelReplayIdx(i) := OHToUInt(s1_robOldestSelOH(i))
     s2_robOldestSelOH(i) := RegNext(s1_robOldestSelOH(i))
     dontTouch(s1_SelReplayIdx)
-    addrModule.io.ren(i) := s1_selResSeq(i).valid
+    addrModule.io.ren(i) := s1_selResSeq(i).valid && !fastRepBlock
     addrModule.io.raddr(i) := s1_SelReplayIdx(i)
 
-    val s2_replay_req_schedIndex = RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid)
+    val s2_replay_req_schedIndex = RegEnable(s1_SelReplayIdx(i), s1_selResSeq(i).valid && !fastRepBlock)
     val s2_replay_req_uop = entryReg.map(_.toIssueUop)(s2_replay_req_schedIndex)
 
-    s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid) && !s2_replay_req_uop.robIdx.needFlush(io.redirect) // s2 out valid
+    s2_replay_req(i).valid := RegNext(s1_selResSeq(i).valid && !fastRepBlock) && !s2_replay_req_uop.robIdx.needFlush(io.redirect) // s2 out valid
     s2_replay_req(i).bits.vaddr := addrModule.io.rdata(i)   // s2 read vaddr
     s2_replay_req(i).bits.schedIndex := s2_replay_req_schedIndex   // s2 out idx
     s2_replay_req(i).bits.uop := s2_replay_req_uop // s2 read uop reg
@@ -561,8 +559,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     dontTouch(io.replayQIssue(i))
 //    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
   }
-  io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
-
+  io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _) && !io.replayStop.reduceTree(_ || )
 
   /*
     MMIO will write back from ReplayQueue
