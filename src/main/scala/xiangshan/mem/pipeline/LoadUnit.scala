@@ -142,7 +142,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s0_rsIssue = Wire(new LoadPipelineBundleS0)
   s0_rsIssue.uop := rsIssueIn.bits.uop
-  s0_rsIssue.src := rsIssueIn.bits.src
   s0_rsIssue.vm := rsIssueIn.bits.vm
   s0_rsIssue.rsIdx := io.rsIdx
   s0_rsIssue.vaddr := rsIssueIn.bits.src(0) + SignExt(rsIssueIn.bits.uop.ctrl.imm(11,0), VAddrBits)
@@ -153,7 +152,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s0_replayQIssue = Wire(new LoadPipelineBundleS0)
   s0_replayQIssue.uop := replayIssueIn.bits.uop
-  s0_replayQIssue.src.foreach(_ := 0.U)
   s0_replayQIssue.vm := 0.U
   s0_replayQIssue.rsIdx := DontCare
   s0_replayQIssue.vaddr := replayIssueIn.bits.vaddr
@@ -163,11 +161,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_replayQIssue.debugCause := replayIssueIn.bits.debugCause
 
   val s0_fastRepIssue = Wire(new LoadPipelineBundleS0)
-  s0_fastRepIssue.uop := replayIssueIn.bits.uop
-  s0_fastRepIssue.src.foreach(_ := 0.U)
+  s0_fastRepIssue.uop := fastReplayIn.bits.uop
   s0_fastRepIssue.vm := 0.U
   s0_fastRepIssue.rsIdx := DontCare
-  s0_fastRepIssue.vaddr := replayIssueIn.bits.vaddr
+  s0_fastRepIssue.vaddr := fastReplayIn.bits.vaddr
   s0_fastRepIssue.replayCause.foreach(_ := false.B)
   s0_fastRepIssue.schedIndex := 0.U
   s0_fastRepIssue.isReplayQReplay := false.B

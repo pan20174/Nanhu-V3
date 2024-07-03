@@ -132,7 +132,6 @@ class LqWriteBundle(implicit p: Parameters) extends XSBundle {
 class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
   //EXUInput
   val uop = new MicroOp
-  val src = Vec(3, UInt(VLEN.W))
   val vm = UInt(VLEN.W)
 
   //replayQ
