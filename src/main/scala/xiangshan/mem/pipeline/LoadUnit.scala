@@ -64,12 +64,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val rsIdx = Input(new RsIdx)
     // S0: replayQueue issueIn
     val replayQIssueIn = Flipped(Decoupled(new ReplayQueueIssueBundle))
+    // S0: fastReplay from LoadS1
+    val fastReplayIn = Flipped(DecoupledIO(new LsPipelineBundle))
     // S0: specialLoad for timing
     val auxValid = Input(Bool())
     val vmEnable = Input(Bool())
     // S0/S1: tlb query and response in next cycle
     val tlb = new TlbRequestIO(nRespDups=2)
 
+    // S1: fastReplay to LoadS0
+    val fastReplayOut = DecoupledIO(new LsPipelineBundle)
     // S1/S2: cache query and response in next cycle
     val dcache = new DCacheLoadIO
     // S1/S2: forward query to sbuffer and response in next cycle
@@ -95,7 +99,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
     // S3: feedback reservationStation to replay
     val feedbackSlow = ValidIO(new RSFeedback)
-    val feedbackFast = ValidIO(new RSFeedback) // todo: will be deleted soon
     // S3: replay inst enq replayQueue
     val s3_enq_replayQueue = DecoupledIO(new LoadToReplayQueueBundle)
     // S3: load writeback
@@ -117,24 +120,22 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   })
 
   //redirect register fanout
-  private val redirectUseName = List("loadS0",
-  "loadS1",
-  "loadS2",
-  "loadS3")
-
+  private val redirectUseName = List("loadS0",  "loadS1",  "loadS2",  "loadS3")
   private val redirectReg = RedirectRegDup(redirectUseName,io.redirect)
 
   /*
     LOAD S0: arb 2 input; generate vaddr; req to TLB
   */
-  val fastReplayIn = Wire(Valid(new ReplayQueueIssueBundle))
-  fastReplayIn.valid := false.B
-  fastReplayIn.bits := DontCare
-
+  val fastReplayIn = WireInit(io.fastReplayIn)
   val rsIssueIn = WireInit(io.rsIssueIn)
   val replayIssueIn = WireInit(io.replayQIssueIn)
-  io.rsIssueIn.ready := true.B
-  io.replayQIssueIn.ready := true.B
+  assert(fastReplayIn.fire && rsIssueIn.fire ||
+    fastReplayIn.fire && replayIssueIn.fire ||
+    rsIssueIn.fire && replayIssueIn.fire ,"3 input port can't fire same time")
+
+  io.rsIssueIn.ready := true.B // always true, use ldstop to block
+  io.replayQIssueIn.ready := !io.fastReplayIn.fire // fast replay has high priority than replayQ
+  io.fastReplayIn.ready := true.B
   assert(!(rsIssueIn.valid && replayIssueIn.valid))
   def fromRsToS0Bundle(input: ExuInput,inRsIdx: RsIdx): LoadPipelineBundleS0 = {
     val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
@@ -162,13 +163,27 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     out.debugCause := input.debugCause
     out
   }
+  def fromFastRepToS0Bundle(input: LsPipelineBundle): LoadPipelineBundleS0 = {
+    val out = WireInit(0.U.asTypeOf(new LoadPipelineBundleS0))
+    out.uop := input.uop
+    out.src.foreach(_ := 0.U)
+    out.vm := 0.U
+    out.rsIdx := DontCare
+    out.replayCause.foreach(_ := false.B)
+    out.vaddr := input.vaddr
+    out.schedIndex := 0.U
+    out.isReplayQReplay := false.B
+    out.debugCause := DontCare
+    out.debugCause(LoadReplayCauses.C_FR) := true.B
+    out
+  }
 
   val s0_src_selector = Seq(
     fastReplayIn.valid,
     replayIssueIn.valid,
     rsIssueIn.valid)
   val s0_src = Seq(
-    fromRQToS0Bundle(fastReplayIn.bits),
+    fromFastRepToS0Bundle(fastReplayIn.bits),
     fromRQToS0Bundle(replayIssueIn.bits),
     fromRsToS0Bundle(rsIssueIn.bits, io.rsIdx)
   )
@@ -317,7 +332,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 //    RegNext(s1_csrCtrl_ldld_vio_check_enable)
   val s1_needLdVioCheckRedo = false.B
 
-  s1_out.valid        := s1_in.valid && s1_enableMem
+  s1_out.valid        := s1_in.valid && s1_enableMem && !s1_bank_conflict
   s1_out.bits.paddr   := s1_paddr_dup_lsu
   s1_out.bits.tlbMiss := s1_tlb_miss
   when(!s1_tlb_miss){
@@ -338,9 +353,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_causeReg.tlb_miss := s1_tlb_miss  // tlb resp miss
   s1_causeReg.raw_nack := false.B
   s1_causeReg.raw_violation := s1_hasStLdViolation
-
-  s1_causeReg.bank_conflict := s1_bank_conflict || s1_cancel_inner  // bank read has conflict
+  s1_causeReg.bank_conflict := s1_cancel_inner  // bank read has conflict
   dontTouch(s1_causeReg)
+
+  val s1_pickout_bankconflict = s1_causeReg.replayCause.updated(LoadReplayCauses.C_BC, false.B)
+  io.fastReplayOut.valid := s1_in.valid && s1_enableMem && s1_bank_conflict && !s1_pickout_bankconflict.reduce(_ || _)
+  io.fastReplayOut.bits  := s1_in.bits
 
   io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_tlb_miss
   io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
@@ -482,10 +500,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
   io.prefetch_train.valid := s2_in.fire && !s2_out.bits.mmio && !s2_in.bits.tlbMiss
 
-  // todo: delete feedback fast
-  io.feedbackFast.valid := false.B
-  io.feedbackFast.bits := DontCare
-
   val exceptionWb = s2_hasException
   val normalWb = !s2_tlb_miss &&
     (!(s2_cache_miss || s2_cache_replay) || s2_fullForward) &&
@@ -593,12 +607,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
   io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready, RSFeedbackType.replayQFull,RSFeedbackType.success)
 
-  assert(!(RegNext(io.feedbackFast.valid) && io.feedbackSlow.valid))
-
-  // load forward_fail/ldld_violation check
-  // check for inst in load pipeline
+  // load forward_fail/ldld_violation check, mcheck for inst in load pipeline
   val s3_forward_fail = RegNext(io.lsq.forwardFromSQ.matchInvalid || io.forwardFromSBuffer.matchInvalid)
-//  val s3_ldld_violation = RegNext(s2_ldld_violation)
   val s3_need_replay_from_fetch = s3_forward_fail || s3_ldld_violation
   val s3_can_replay_from_fetch = RegEnable(s2_out.bits.mmio && !s2_out.bits.isSoftPrefetch && s2_out.bits.tlbMiss, s2_out.valid)
 
@@ -687,8 +697,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val perfEvents = Seq(
     ("load_rs_issue_fire         ", io.rsIssueIn.fire),
     ("load_replayQ_issue_fire    ", io.replayQIssueIn.fire),
-    ("load_replay_by_replayQFull ", io.feedbackSlow.valid && io.feedbackFast.bits.sourceType === RSFeedbackType.replayQFull),
-    ("load_success_release_rs    ", io.feedbackSlow.valid && io.feedbackFast.bits.sourceType === RSFeedbackType.success),
+    ("load_replay_by_replayQFull ", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.replayQFull),
+    ("load_success_release_rs    ", io.feedbackSlow.valid && io.feedbackSlow.bits.sourceType === RSFeedbackType.success),
 
     ("load_success_writeback_onetime",    io.ldout.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio),
     ("load_success_writeback_has_replay", io.ldout.valid && s3_in.bits.replay.isReplayQReplay && !s3_in.bits.mmio),

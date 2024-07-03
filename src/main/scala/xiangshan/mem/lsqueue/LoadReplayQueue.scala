@@ -38,8 +38,10 @@ object LoadReplayCauses {
   val C_RAW = 5
   // RAW queue is full
   val C_NK  = 6
+  // RAW queue is full
+  val C_FR  = 7
   // total causes
-  val allCauses = 7
+  val allCauses = 8
 }
 class ReplayInfo(implicit p: Parameters) extends XSBundle{
   val replayCause = Vec(LoadReplayCauses.allCauses, Bool())
@@ -522,14 +524,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     debug_robOldestSelOH(i) := OHToUInt(s1_robOldestSelOH(i))
     dontTouch(debug_robOldestSelOH(i))
   }
-//  for (i <- 0 until LoadPipelineWidth) {
-//    for (j <- 0 until LoadReplayQueueSize) {
-//      when (s1_selResSeq(i).valid && s1_robOldestSelOH(i)(j)) {
-//        scheduledReg(j) := true.B
-//        causeReg(j)     := 0.U
-//      }
-//    }
-//  }
 
   for(i <- 0 until LoadPipelineWidth){
     when(io.replayQIssue(i).fire){
