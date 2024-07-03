@@ -69,7 +69,6 @@ class MemIssueRouter(implicit p: Parameters) extends LazyModule{
       ob.rsIdx := ib.rsIdx
       ob.auxValid := ib.auxValid && ib.issue.bits.uop.ctrl.fuType === oe._2.fuConfigs.head.fuType
       if (oe._2.fuConfigs.head.name == "ldu") {
-        ib.rsFeedback.feedbackFastLoad := ob.rsFeedback.feedbackFastLoad
         ib.rsFeedback.feedbackSlowLoad := ob.rsFeedback.feedbackSlowLoad
       } else if (oe._2.fuConfigs.head.name == "sta") {
         ib.rsFeedback.feedbackSlowStore := ob.rsFeedback.feedbackSlowStore
@@ -358,12 +357,11 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   private val stOut = staWritebacks
 
-  // TODO: fast load wakeup
   val lsq     = Module(new LsqWrappper)
   val sbuffer = Module(new Sbuffer)
-
   io.lqDeq := lsq.io.lqDeq
-  io.ldStopMemBlock := lsq.io.ldStop
+  // TODO: ldStop modify to stop each lane 
+  io.ldStopMemBlock := lsq.io.ldStop || loadUnits(0).io.fastReplayOut.fire || loadUnits(1).io.fastReplayOut.fire
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
 
@@ -572,7 +570,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   for (i <- 0 until exuParameters.LduCnt) {
     loadUnits(i).io.redirect := redirectIn  //pipe inside
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
-    lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
 
     lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
     lsq.io.lduUpdate(i) := loadUnits(i).io.lsq.s2_UpdateLoadQueue
@@ -610,6 +607,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //replayQueue
     lsq.io.replayQEnq(i) <> loadUnits(i).io.s3_enq_replayQueue
     loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
+    val lduFastFeedbackReg = RegEnable(loadUnits(i).io.fastReplayOut.bits, loadUnits(i).io.fastReplayOut.fire)
+    loadUnits(i).io.fastReplayIn.valid := RegNext(loadUnits(i).io.fastReplayOut.valid)
+    loadUnits(i).io.fastReplayIn.bits := lduFastFeedbackReg
+    loadUnits(i).io.fastReplayOut.ready := RegNext(loadUnits(i).io.fastReplayIn.ready)
 //    //cancel
 //    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
     //earlyWakeup and cancel

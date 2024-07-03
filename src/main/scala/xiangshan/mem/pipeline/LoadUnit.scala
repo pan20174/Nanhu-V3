@@ -132,9 +132,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   assert(fastReplayIn.fire && rsIssueIn.fire ||
     fastReplayIn.fire && replayIssueIn.fire ||
     rsIssueIn.fire && replayIssueIn.fire ,"3 input port can't fire same time")
-
-  io.rsIssueIn.ready := true.B // always true, use ldstop to block
-  io.replayQIssueIn.ready := !io.fastReplayIn.fire // fast replay has high priority than replayQ
+  /*
+    3 ports ready always true, use ldStop to block rs, use replayStop to block replayQ
+    fastRep > replayQ > rsIssue
+  */ 
+  io.rsIssueIn.ready := true.B 
+  io.replayQIssueIn.ready := true.B
   io.fastReplayIn.ready := true.B
   assert(!(rsIssueIn.valid && replayIssueIn.valid))
   def fromRsToS0Bundle(input: ExuInput,inRsIdx: RsIdx): LoadPipelineBundleS0 = {
