@@ -129,9 +129,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val fastReplayIn = io.fastReplayIn
   val rsIssueIn = io.rsIssueIn
   val replayIssueIn = io.replayQIssueIn
-  assert(fastReplayIn.fire && rsIssueIn.fire ||
+  assert(!(fastReplayIn.fire && rsIssueIn.fire ||
     fastReplayIn.fire && replayIssueIn.fire ||
-    rsIssueIn.fire && replayIssueIn.fire ,"3 input port can't fire same time")
+    rsIssueIn.fire && replayIssueIn.fire) ,"3 input port can't fire same time")
   /*
     3 ports ready always true, use ldStop to block rs, use replayStop to block replayQ
     fastRep > replayQ > rsIssue
