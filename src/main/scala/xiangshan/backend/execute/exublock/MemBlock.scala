@@ -69,12 +69,15 @@ class MemIssueRouter(implicit p: Parameters) extends LazyModule{
       assert(ob.issue.ready === true.B)
       ob.rsIdx := ib.rsIdx
       ob.auxValid := ib.auxValid && ib.issue.bits.uop.ctrl.fuType === oe._2.fuConfigs.head.fuType
-      if (oe._2.fuConfigs.head.name == "ldu") {
-        ib.rsFeedback.feedbackFastLoad := ob.rsFeedback.feedbackFastLoad
-        ib.rsFeedback.feedbackSlowLoad := ob.rsFeedback.feedbackSlowLoad
-      } else if (oe._2.fuConfigs.head.name == "sta") {
+      if (oe._2.fuConfigs.head.name == "sta") {
         ib.rsFeedback.feedbackSlowStore := ob.rsFeedback.feedbackSlowStore
       }
+//      if (oe._2.fuConfigs.head.name == "ldu") {
+//        ib.rsFeedback.feedbackFastLoad := ob.rsFeedback.feedbackFastLoad
+//        ib.rsFeedback.feedbackSlowLoad := ob.rsFeedback.feedbackSlowLoad
+//      } else if (oe._2.fuConfigs.head.name == "sta") {
+//        ib.rsFeedback.feedbackSlowStore := ob.rsFeedback.feedbackSlowStore
+//      }
     }
   }
 }
@@ -115,15 +118,15 @@ class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extend
       writebackToVms = false
     )
   })
-  private val slduParams = Seq.tabulate(exuParameters.LduCnt)(idx => {ExuConfig(
-    name = "SpecialLduExu",
-    id = idx,
-    complexName = "MemComplex",
-    fuConfigs = Seq(FuConfigs.specialLduCfg),
-    exuType = ExuType.sldu,
-    writebackToRob = false,
-    writebackToVms = false
-  )})
+//  private val slduParams = Seq.tabulate(exuParameters.LduCnt)(idx => {ExuConfig(
+//    name = "SpecialLduExu",
+//    id = idx,
+//    complexName = "MemComplex",
+//    fuConfigs = Seq(FuConfigs.specialLduCfg),
+//    exuType = ExuType.sldu,
+//    writebackToRob = false,
+//    writebackToVms = false
+//  )})
 
   private val vstdParams = Seq.tabulate(exuParameters.StuCnt)(idx => {
     ExuConfig(
@@ -160,8 +163,9 @@ class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extend
     )
   })
 
-  val lduIssueNodes: Seq[ExuInputNode] = lduParams.zipWithIndex.map(e => new ExuInputNode(e._1))
-  val slduIssueNodes: Seq[MemoryBlockIssueNode] = slduParams.zipWithIndex.map(e => new MemoryBlockIssueNode(e._1, e._2))
+//  val lduIssueNodes: Seq[ExuInputNode] = lduParams.zipWithIndex.map(e => new ExuInputNode(e._1))
+//  val slduIssueNodes: Seq[MemoryBlockIssueNode] = slduParams.zipWithIndex.map(e => new MemoryBlockIssueNode(e._1, e._2))
+  val lduIssueNodes: Seq[MemoryBlockIssueNode] = lduParams.zipWithIndex.map(e => new MemoryBlockIssueNode(e._1, e._2))
   val staIssueNodes: Seq[ExuInputNode] = staParams.zipWithIndex.map(e => new ExuInputNode(e._1))
   val stdIssueNodes: Seq[ExuInputNode] = stdParams.zipWithIndex.map(e => new ExuInputNode(e._1))
 
@@ -173,8 +177,8 @@ class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extend
   val vstdWritebackNodes: Seq[ExuOutputNode] = vstdParams.map(new ExuOutputNode(_))
 
   val memIssueRouters: Seq[MemIssueRouter] = Seq.fill(2)(LazyModule(new MemIssueRouter))
-  memIssueRouters.zip(lduIssueNodes).zip(staIssueNodes).zip(stdIssueNodes).foreach({case(((mir, ldu), sta), std) =>
-    ldu :*= mir.node
+  memIssueRouters.zip(staIssueNodes).zip(stdIssueNodes).foreach({case((mir, sta), std) =>
+//    ldu :*= mir.node
     sta :*= mir.node
     std :*= mir.node
   })
@@ -182,7 +186,8 @@ class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extend
   private val allWritebackNodes = lduWritebackNodes ++ staWritebackNodes ++ stdWritebackNodes
 
   memIssueRouters.foreach(mir => mir.node :*= issueNode)
-  slduIssueNodes.foreach(_ :*= issueNode)
+  lduIssueNodes.foreach(_ :*= issueNode)
+//  slduIssueNodes.foreach(_ :*= issueNode) //???
   allWritebackNodes.foreach(onode => writebackNode :=* onode)
 
   val dcache = LazyModule(new DCacheWrapper(parentName = parentName + "dcache_"))
@@ -210,10 +215,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     iss.in.head._1
   })
 
-  private val slduIssues = outer.slduIssueNodes.map(iss => {
-    require(iss.in.length == 1)
-    iss.in.head._1
-  })
+//  private val slduIssues = outer.slduIssueNodes.map(iss => {
+//    require(iss.in.length == 1)
+//    iss.in.head._1
+//  })
   private val staIssues = outer.staIssueNodes.map(iss => {
     require(iss.in.length == 1)
     iss.in.head._1
@@ -367,7 +372,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   lsq.io.tlb_hint <> io.tlb_hint
 
   io.lqDeq := lsq.io.lqDeq
-  io.ldStopMemBlock := lsq.io.ldStop
+  io.ldStopMemBlock := RegNext(lsq.io.ldStop, false.B)
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
 
@@ -573,18 +578,22 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     lsq.io.lduUpdate(i) := loadUnits(i).io.lsq.s2_UpdateLoadQueue
 
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
-    slduIssues(i).rsFeedback := DontCare
-    val selSldu = slduIssues(i).auxValid
-    val slduValid = slduIssues(i).issue.valid && !slduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
+//    slduIssues(i).rsFeedback := DontCare
+//    val selSldu = slduIssues(i).auxValid
+//    val slduValid = slduIssues(i).issue.valid && !slduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
     val lduValid = lduIssues(i).issue.valid && !lduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
-    loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
+//    loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
+    loadUnits(i).io.rsIdx := lduIssues(i).rsIdx
     // get input form dispatch
-    loadUnits(i).io.rsIssueIn.valid := Mux(selSldu, slduValid, lduValid)
-    loadUnits(i).io.rsIssueIn.bits := Mux(selSldu,slduIssues(i).issue.bits, lduIssues(i).issue.bits)
-    loadUnits(i).io.auxValid := Mux(selSldu, slduIssues(i).auxValid, lduIssues(i).auxValid)
-    slduIssues(i).issue.ready := loadUnits(i).io.rsIssueIn.ready
+//    loadUnits(i).io.rsIssueIn.valid := Mux(selSldu, slduValid, lduValid)
+//    loadUnits(i).io.rsIssueIn.bits := Mux(selSldu, slduIssues(i).issue.bits, lduIssues(i).issue.bits)
+//    loadUnits(i).io.auxValid := Mux(selSldu, slduIssues(i).auxValid, lduIssues(i).auxValid)
+    loadUnits(i).io.rsIssueIn.valid := lduValid
+    loadUnits(i).io.rsIssueIn.bits := lduIssues(i).issue.bits
+    loadUnits(i).io.auxValid := lduIssues(i).auxValid
+//    slduIssues(i).issue.ready := loadUnits(i).io.rsIssueIn.ready
     lduIssues(i).issue.ready := loadUnits(i).io.rsIssueIn.ready
-    when(selSldu){assert(lduIssues(i).issue.valid === false.B)}
+//    when(selSldu){assert(lduIssues(i).issue.valid === false.B)}
     // dcache access
     loadUnits(i).io.dcache <> dcache.io.lsu.load(i)
     loadUnits(i).io.loadReqHandledResp <> dcache.io.lsu.loadReqHandledResp

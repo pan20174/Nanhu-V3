@@ -374,7 +374,7 @@ class MemoryStatusArray(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx:Seq
     val wakeups = Input(Vec(wakeupWidth, Valid(new WakeUpInfo)))
     val loadEarlyWakeup = Input(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
     val earlyWakeUpCancel = Input(Vec(loadUnitNum, Bool()))
-    val replay = Input(Vec(3, Valid(new Replay(entryNum))))
+    val replay = Input(Vec(4, Valid(new Replay(entryNum))))
     val stIssued = Input(Vec(stuNum, Valid(new RobPtr)))
     val stLastCompelet = Input(new SqPtr)
     val stdHasIssue = Input(Vec(2, Valid(UInt(entryNum.W))))

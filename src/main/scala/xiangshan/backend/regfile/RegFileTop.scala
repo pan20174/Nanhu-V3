@@ -74,7 +74,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
 
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
-    val pcReadNum:Int = issueNode.out.count(_._2._2.hasJmp) * 2 + issueNode.out.count(_._2._2.hasLoad) + issueNode.out.count(_._2._2.hasSpecialLoad)
+    val pcReadNum:Int = issueNode.out.count(_._2._2.hasJmp) * 2 + issueNode.out.count(_._2._2.hasLoad)
     println("\nRegfile Configuration:")
     println(s"PC read num: $pcReadNum \n")
     println("Regfile Writeback Info:")
@@ -92,6 +92,10 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
       val ldStop = Input(Bool())
       val redirect = Input(Valid(new Redirect))
     })
+    //tmp
+    io.vectorRfMoveReq := DontCare
+    io.vectorReads := DontCare
+
     require(issueNode.in.count(_._2._1.isIntRs) <= 1)
     require(issueNode.in.count(_._2._1.isMemRs) <= 1)
     require(issueNode.in.count(_._2._1.isFpRs) <= 1)
@@ -189,88 +193,45 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
             d := fpRf.io.read(fpRfReadIdx).data
             fpRfReadIdx = fpRfReadIdx + 1
           }
-        } else if (exuComplexParam.isMemType && !exuComplexParam.isSpecialLoad) {
+        } else if(exuComplexParam.isMemType && (exuComplexParam.isSta || exuComplexParam.isStd)){
+          println("exuComplexParam = " + exuComplexParam)
+
           val issueBundle = WireInit(bi.issue.bits)
-
-          val is2Stage = SrcType.isVec(bi.issue.bits.uop.ctrl.srcType(1)) || SrcType.isReg(bi.issue.bits.uop.ctrl.srcType(1))
-          val isUnitStride = (bi.issue.bits.uop.ctrl.fuType === FuType.ldu || bi.issue.bits.uop.ctrl.fuType === FuType.stu) && !is2Stage
           val isStd = bi.issue.bits.uop.ctrl.fuType === FuType.std
-          val uopIdx = bi.issue.bits.uop.uopIdx
-          val sew = bi.issue.bits.uop.vctrl.eew(2)
-          val uopDelay = RegEnable(bi.issue.bits.uop, bi.issue.valid)
-          io.vectorReads(vecReadPortIdx).addr := Mux(isStd, bi.issue.bits.uop.psrc(2), bi.issue.bits.uop.psrc(1))
-          //Mask read
-          io.vectorReads(vecReadPortIdx + 1).addr := bi.issue.bits.uop.vm
-          val vmVal = RegEnable(io.vectorReads(vecReadPortIdx + 1).data, bi.issue.valid && bi.issue.bits.uop.ctrl.isVector)
-          val isMaskDisabled = uopDelay.vctrl.vm && !(vmVal(uopDelay.segIdx).asBool)
-          val isTailDisabled = uopDelay.isTail
-          val isPrestartDisabled = uopDelay.isPrestart
-          val directlyDisabled = uopDelay.vctrl.disable
-          //Base address read
-          intRf.io.read(intRfReadIdx).addr := bi.issue.bits.uop.psrc(0)
-          //Stride read
-          intRf.io.read(intRfReadIdx + 1).addr := bi.issue.bits.uop.psrc(1)
-          //Scalar STD data read
-          fpRf.io.readNoBypass(noBypassFpReadIdx).addr := bi.issue.bits.uop.psrc(0)
-          //Move req
-          io.vectorRfMoveReq(vecMoveReqPortIdx).valid := uopDelay.ctrl.fuType === FuType.ldu &&
-            RegNext(!bi.hold && bi.issue.valid, false.B) && uopDelay.ctrl.isVector
-          when(isPrestartDisabled || isTailDisabled || isMaskDisabled || directlyDisabled){
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := false.B
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.enable := false.B
-          }.otherwise{
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := false.B
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.enable := true.B
-          }
-          io.vectorRfMoveReq(vecMoveReqPortIdx).bits.srcAddr := uopDelay.psrc(2)
-          io.vectorRfMoveReq(vecMoveReqPortIdx).bits.dstAddr := uopDelay.pdest
-          io.vectorRfMoveReq(vecMoveReqPortIdx).bits.sew := uopDelay.vctrl.eew(2)
-          io.vectorRfMoveReq(vecMoveReqPortIdx).bits.segIdx := uopDelay.segIdx
 
-          when(bi.issue.bits.uop.ctrl.isVector){
-            when(isUnitStride){
-              exuInBundle.src(0) := intRf.io.read(intRfReadIdx).data
-              exuInBundle.uop.ctrl.imm := (ZeroExt(uopIdx,12) << sew)(11, 0)
-            }.otherwise{
-              val baseAddrReg = RegEnable(intRf.io.read(intRfReadIdx).data, bi.issue.valid && bi.hold)
-              val strideReg = RegEnable(intRf.io.read(intRfReadIdx + 1).data, bi.issue.valid && bi.hold)
-              val offsetReg = RegEnable(io.vectorReads(vecReadPortIdx).data, bi.issue.valid && bi.hold)
-              val uopReg = RegEnable(bi.issue.bits.uop, bi.issue.valid && bi.hold)
-              val addrGen = Module(new AddrGen)
-              addrGen.io.base := baseAddrReg
-              addrGen.io.stride := strideReg
-              addrGen.io.offset := offsetReg
-              addrGen.io.uop := uopReg
-              exuInBundle.src(0) := addrGen.io.target
-              exuInBundle.uop.ctrl.imm := addrGen.io.imm
-            }
-          }.otherwise {
-            //todo
-            issueBundle.src(0) := intRf.io.read(intRfReadIdx).data
-            exuInBundle := ImmExtractor(exuComplexParam, issueBundle)
-          }
+          // sta std
+          intRf.io.read(intRfReadIdx).addr := bi.issue.bits.uop.psrc(0)
+          // std fp
+          fpRf.io.readNoBypass(noBypassFpReadIdx).addr := bi.issue.bits.uop.psrc(0)
+
+          issueBundle.src(0) := intRf.io.read(intRfReadIdx).data
+          exuInBundle := ImmExtractor(exuComplexParam, issueBundle)
+          exuInBundle.uop.loadStoreEnable := true.B
+
           val iDataReg = RegEnable(intRf.io.read(intRfReadIdx).data, bi.issue.fire && isStd)
           val fDataReg = RegEnable(fpRf.io.readNoBypass(noBypassFpReadIdx).data, bi.issue.fire && isStd)
-          val vDataReg = RegEnable(
-            VrfHelper.extractElement(bi.issue.bits.uop.segIdx, io.vectorReads(vecReadPortIdx).data, sew, VLEN, XLEN),
-            bi.issue.fire && isStd
-          )
-          when(RegNext(bi.issue.bits.uop.ctrl.isVector)){
-            exuInBundle.src(1) := vDataReg
-          }.otherwise {
-            val selReg = RegNext(SrcType.isFp(bi.issue.bits.uop.ctrl.srcType(0)))
-            exuInBundle.src(1) := Mux(selReg, fDataReg, iDataReg)
-          }
+          val selReg = RegNext(SrcType.isFp(bi.issue.bits.uop.ctrl.srcType(0)))
+          val sel = SrcType.isFp(bi.issue.bits.uop.ctrl.srcType(0))
+          exuInBundle.src(1) := Mux(sel, fDataReg, iDataReg)
+
+          noBypassFpReadIdx = noBypassFpReadIdx + 1
+          intRfReadIdx = intRfReadIdx + 1
+        } else if(exuComplexParam.isMemType && exuComplexParam.isLdu){
+          val issueBundle = WireInit(bi.issue.bits)
+
+          // load address
+          intRf.io.read(intRfReadIdx).addr := bi.issue.bits.uop.psrc(0)
+
+          issueBundle.src(0) := intRf.io.read(intRfReadIdx).data
+          exuInBundle := ImmExtractor(exuComplexParam, issueBundle)
           io.pcReadAddr(pcReadPortIdx) := bi.issue.bits.uop.cf.ftqPtr.value
           exuInBundle.uop.cf.pc := io.pcReadData(pcReadPortIdx).getPc(bi.issue.bits.uop.cf.ftqOffset)
-          exuInBundle.uop.loadStoreEnable := !(uopDelay.ctrl.isVector && (isMaskDisabled || isTailDisabled || isPrestartDisabled || directlyDisabled))
+          exuInBundle.uop.loadStoreEnable := true.B
 
-          intRfReadIdx = intRfReadIdx + 2
-          noBypassFpReadIdx = noBypassFpReadIdx + 1
-          vecMoveReqPortIdx = vecMoveReqPortIdx + 1
-          vecReadPortIdx = vecReadPortIdx + 2
           pcReadPortIdx = pcReadPortIdx + 1
+          intRfReadIdx = intRfReadIdx + 1
         } else if (exuComplexParam.isMemType && exuComplexParam.isSpecialLoad) {
+          require(false,"no special load")
           val issueBundle = WireInit(bi.issue.bits)
           io.pcReadAddr(pcReadPortIdx) := bi.issue.bits.uop.cf.ftqPtr.value
           intRf.io.read(intRfReadIdx).addr := bi.issue.bits.uop.psrc(0)
@@ -285,42 +246,72 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           require(false, "Unknown Exu Complex Type")
         }
         //todo
-        val issueValidReg = RegInit(false.B)
-        val auxValidReg = RegInit(false.B)
-        val issueExuInReg = Reg(new ExuInput)
-        val rsIdxReg = Reg(new RsIdx)
+        if(exuComplexParam.isMemType && exuComplexParam.isLdu){
+          val issueValidReg = RegInit(false.B)
+          val auxValidReg = RegInit(false.B)
+          val issueExuInReg = Reg(new ExuInput)
+          val rsIdxReg = Reg(new RsIdx)
 
-        val allowPipe = !issueValidReg || bo.issue.ready || (issueValidReg && issueExuInReg.uop.robIdx.needFlush(io.redirect))
-        bo.issue.valid := issueValidReg
-        bo.issue.bits := issueExuInReg
-        bo.issue.bits.uop.loadStoreEnable := issueExuInReg.uop.loadStoreEnable && issueValidReg
-        bo.rsIdx := rsIdxReg
-        bo.auxValid := auxValidReg
-        when(allowPipe) {
-          issueValidReg := bi.issue.valid && !bi.hold && !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
-          auxValidReg := bi.auxValid && !bi.hold && !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
-        }
-        when(bi.issue.fire && !bi.hold) {
-          issueExuInReg := exuInBundle
-          rsIdxReg := bi.rsIdx
-        }
-        if(exuComplexParam.isMemType && !exuComplexParam.isSpecialLoad){
-          bo.issue.bits.src(1) := exuInBundle.src(1) // Special for std
-          bo.issue.bits.uop.loadStoreEnable := exuInBundle.uop.loadStoreEnable // This has been delayed
-        }
+          val shouldBeFlushed = issueExuInReg.uop.robIdx.needFlush(io.redirect)
+          val enqFire = bi.issue.valid && bo.issue.ready && !io.ldStop
 
-        bi.issue.ready := allowPipe ///todo
-        if(exuComplexParam.isMemType && !exuComplexParam.isSpecialLoad){
-          when(allowPipe && bi.issue.fire){
-            issueValidReg := !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
-            auxValidReg := bi.auxValid && !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
+          bi.issue.ready := bo.issue.ready && !io.ldStop
+
+          when(bo.issue.fire) {
+            issueValidReg := false.B
           }
-          bi.issue.ready := allowPipe && !io.ldStop
+          when(shouldBeFlushed) {
+            issueValidReg := false.B
+          }
+          when(enqFire) {
+            issueValidReg := !exuInBundle.uop.robIdx.needFlush(io.redirect) //issue driver deq.valid has no needFlush
+            issueExuInReg := exuInBundle
+            rsIdxReg := bi.rsIdx
+          }
+
+          bo.issue.valid := issueValidReg && !io.ldStop
+          bo.issue.bits := issueExuInReg
+          bo.rsIdx := rsIdxReg
+          bo.auxValid := auxValidReg
+          bo.issue.bits.uop.loadStoreEnable := true.B // This has been delayed
+          bo.hold := false.B
+
+          bi.rsFeedback.feedbackFastLoad := bo.rsFeedback.feedbackFastLoad
+          bi.rsFeedback.feedbackSlowLoad := bo.rsFeedback.feedbackSlowLoad
+          bi.rsFeedback.feedbackSlowStore := bo.rsFeedback.feedbackSlowStore
+
+        } else {
+          val issueValidReg = RegInit(false.B)
+          val auxValidReg = RegInit(false.B)
+          val issueExuInReg = Reg(new ExuInput)
+          val rsIdxReg = Reg(new RsIdx)
+
+          val allowPipe = !issueValidReg || bo.issue.ready || (issueValidReg && issueExuInReg.uop.robIdx.needFlush(io.redirect))
+          bo.issue.valid := issueValidReg
+          bo.issue.bits := issueExuInReg
+          bo.issue.bits.uop.loadStoreEnable := issueExuInReg.uop.loadStoreEnable && issueValidReg
+          bo.rsIdx := rsIdxReg
+          bo.auxValid := auxValidReg
+          when(allowPipe) {
+            issueValidReg := bi.issue.valid && !bi.hold && !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
+            auxValidReg := bi.auxValid && !bi.hold && !bi.issue.bits.uop.robIdx.needFlush(io.redirect)
+          }
+          when(bi.issue.fire && !bi.hold) {
+            issueExuInReg := exuInBundle
+            rsIdxReg := bi.rsIdx
+          }
+
+          if (exuComplexParam.isMemType && !exuComplexParam.isSpecialLoad) {
+            bo.issue.bits.src(1) := exuInBundle.src(1) // Special for std
+            bo.issue.bits.uop.loadStoreEnable := exuInBundle.uop.loadStoreEnable // This has been delayed
+          }
+
+          bi.issue.ready := allowPipe ///todo
+          bi.rsFeedback.feedbackFastLoad := bo.rsFeedback.feedbackFastLoad
+          bi.rsFeedback.feedbackSlowLoad := bo.rsFeedback.feedbackSlowLoad
+          bi.rsFeedback.feedbackSlowStore := bo.rsFeedback.feedbackSlowStore
+          bo.hold := false.B
         }
-        bi.rsFeedback.feedbackFastLoad := bo.rsFeedback.feedbackFastLoad
-        bi.rsFeedback.feedbackSlowLoad := bo.rsFeedback.feedbackSlowLoad
-        bi.rsFeedback.feedbackSlowStore := bo.rsFeedback.feedbackSlowStore
-        bo.hold := false.B
       }
     }
 
