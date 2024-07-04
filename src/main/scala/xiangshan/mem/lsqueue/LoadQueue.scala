@@ -134,7 +134,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val replayQFull = Output(Bool())
-    val ldStop = Output(Bool())
+    val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
     //loadUnit update
     val loadWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
     //mmio

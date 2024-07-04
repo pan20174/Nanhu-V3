@@ -95,7 +95,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val storeAddrIn = Vec(StorePipelineWidth, Flipped(Decoupled(new ExuOutput)))  // store addr
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
-    val ldStop = Output(Bool())
+    val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))

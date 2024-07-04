@@ -115,7 +115,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     val integerAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val floatingAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val vectorAllocPregs = Vec(coreParams.vectorParameters.vRenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
-    val ldStopMemRS = Input(Bool())
+    val ldStopMemRS = Input(Vec(LoadPipelineWidth, Bool()))
     val lduEarlyWakeUpIn = Input(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
   })
   require(outer.dispatchNode.in.length == 1)
@@ -343,7 +343,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       iss._1.specialPsrcType := DontCare
       iss._1.specialPsrcRen := false.B
       loadIssueDriver.io.deq.ready := iss._1.issue.ready
-      loadIssueDriver.io.ldStop := io.ldStopMemRS
+      loadIssueDriver.io.ldStop := io.ldStopMemRS(ldIssuePortIdx)
 
       uopReadPortIdx = uopReadPortIdx + 1
     }

@@ -186,7 +186,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val redirect = Flipped(ValidIO(new Redirect))
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
-    val ldStop = Output(Bool())
+    val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
     val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val stDataReadySqPtr = Input(new SqPtr)
@@ -560,7 +560,9 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     dontTouch(io.replayQIssue(i))
 //    assert(vaddrReg(s2_replay_req_schedIndex) === vaddrModule.io.rdata(i),"the vaddr must be equal!!!")
   }
-  io.ldStop := s1_selResSeq.map(seq => seq.valid).reduce(_ | _)
+  io.ldStop.zipWithIndex.foreach({case (s,i) =>
+    s := s1_selResSeq(i).valid
+  })
 
 
   /*

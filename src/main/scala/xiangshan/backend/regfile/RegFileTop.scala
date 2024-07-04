@@ -89,7 +89,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
       val vectorRfMoveReq = Output(Vec(loadUnitNum, Valid(new MoveReq)))
       val debug_int_rat = Input(Vec(32, UInt(PhyRegIdxWidth.W)))
       val debug_fp_rat = Input(Vec(32, UInt(PhyRegIdxWidth.W)))
-      val ldStop = Input(Bool())
+      val ldStop = Input(Vec(LoadPipelineWidth, Bool()))
       val redirect = Input(Valid(new Redirect))
     })
     //tmp
@@ -251,11 +251,12 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           val auxValidReg = RegInit(false.B)
           val issueExuInReg = Reg(new ExuInput)
           val rsIdxReg = Reg(new RsIdx)
+          val replayStop = io.ldStop(exuComplexParam.id)
 
           val shouldBeFlushed = issueExuInReg.uop.robIdx.needFlush(io.redirect)
-          val enqFire = bi.issue.valid && bo.issue.ready && !io.ldStop
+          val enqFire = bi.issue.valid && bo.issue.ready && !replayStop
 
-          bi.issue.ready := bo.issue.ready && !io.ldStop
+          bi.issue.ready := bo.issue.ready && !replayStop
 
           when(bo.issue.fire) {
             issueValidReg := false.B
@@ -269,7 +270,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
             rsIdxReg := bi.rsIdx
           }
 
-          bo.issue.valid := issueValidReg && !io.ldStop
+          bo.issue.valid := issueValidReg && !replayStop
           bo.issue.bits := issueExuInReg
           bo.rsIdx := rsIdxReg
           bo.auxValid := auxValidReg

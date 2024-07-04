@@ -292,8 +292,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
     val lsqVecDeqCnt = Output(new LsqVecDeqIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
-    val ldStopMemBlock = Output(Bool())
-
+    val ldStopMemBlock = Output(Vec(LoadPipelineWidth, Bool()))
     val lduEarlyWakeUp = Output(Vec(loadUnitNum, new Bundle() {
       val cancel = Bool()
       val wakeUp = Valid(new EarlyWakeUpInfo)
@@ -372,7 +371,9 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   lsq.io.tlb_hint <> io.tlb_hint
 
   io.lqDeq := lsq.io.lqDeq
-  io.ldStopMemBlock := RegNext(lsq.io.ldStop, false.B)
+  io.ldStopMemBlock.zip(lsq.io.ldStop).foreach({case (out,source) =>
+    out := RegNext(source, false.B)
+  })
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
 
