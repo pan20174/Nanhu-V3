@@ -552,7 +552,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   dontTouch(s2_causeReg)
 
   val s2_pickout_bankconflict = s2_causeReg.replayCause.updated(LoadReplayCauses.C_BC, false.B)
-  io.fastReplayOut.valid := s2_in.valid && s2_enableMem && (s2_bank_conflict && !s2_fullForward) && !(s2_pickout_bankconflict.reduce(_ || _) || RegNext(s1_cancel_inner)) && !exceptionWb
+  io.fastReplayOut.valid := s2_in.valid && s2_enableMem && (s2_bank_conflict && !s2_fullForward) && !(s2_pickout_bankconflict.reduce(_ || _) || RegNext(s1_cancel_inner)) && !exceptionWb && !s2_mmio
   io.fastReplayOut.bits  := s2_in.bits
   // lpv cancel feedback to reservationStation
   io.earlyWakeUp.cancel := s2_in.valid && !s2_wb_valid
