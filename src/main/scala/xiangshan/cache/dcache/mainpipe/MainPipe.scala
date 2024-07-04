@@ -94,10 +94,6 @@ class MainPipeReq(implicit p: Parameters) extends DCacheBundle {
   }
 }
 
-class MainPipeStatus(implicit p: Parameters) extends DCacheBundle {
-  val set = UInt(idxBits.W)
-  val way_en = UInt(nWays.W)
-}
 
 class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents with HasPerfLogging {
   val io = IO(new Bundle() {
@@ -461,9 +457,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
 
   val s3_req_miss = RegEnable(s2_req.miss, s2_fire_to_s3)
   val s3_req_word_idx = RegEnable(s2_req.word_idx, s2_fire_to_s3)
-
-  //2024 7-1 16：23
-
+  
   val s3_req_probe_param = RegEnable(s2_req.probe_param, s2_fire_to_s3)
   val (_, probe_shrink_param, _) = s3_coh.onProbe(s3_req_probe_param)
   val miss_update_meta = s3_req.miss
@@ -641,20 +635,6 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
       amo_update_meta ||
       s3_req_refill
     )
-
-  when (s3_valid && (s3_lr || s3_sc)) {
-    when (s3_can_do_amo && s3_lr) {
-      lrsc_count := (LRSCCycles - 1).U
-      lrsc_addr := get_block_addr(s3_req_addr)
-    }.otherwise {
-      lrsc_count := 0.U
-    }
-  }.elsewhen (io.invalid_resv_set) {
-    lrsc_count := 0.U
-  }.elsewhen (lrsc_count > 0.U) {
-    lrsc_count := lrsc_count - 1.U
-  }
-
   val s3_probe_can_go_dup_for_meta_w_valid = s3_req_probe &&
     io.wb_ready_dup(metaWritePort) &&
     (io.meta_write.ready || !probe_update_meta_wire)  //先别删
@@ -665,7 +645,6 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     (s3_replace_can_go && s3_refill_can_go)
 
   val s3_fire_dup_for_meta_w_valid = s3_valid && s3_can_go_dup_for_meta_w_valid
-  when (do_amoalu) { s3_s_amoalu := true.B }
   when (s3_fire_dup_for_meta_w_valid) { s3_s_amoalu := false.B }
 
   // fix probe meta change
@@ -700,73 +679,10 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     )
   )
   assert(new_coh != ClientStates.Nothing)
+  when (s3_fire_dup_for_meta_w_valid) { s3_valid := false.B }
 
-  when (s2_fire_to_s3) { s3_valid := true.B }
-    .elsewhen (s3_fire_dup_for_meta_w_valid) { s3_valid := false.B }
-  // -------------------------------------------------------------------------------------
-  // ---------------- duplicate regs for err_write.valid to solve fanout -----------------
-  val update_meta_dup_for_err_w_valid = (
-    miss_update_meta||
-      probe_update_meta ||
-      store_update_meta ||
-      amo_update_meta ||
-      s3_req_refill
-    )
-  when (s3_valid && (s3_lr || s3_sc)) {
-    when (s3_can_do_amo && s3_lr) {
-      lrsc_count := (LRSCCycles - 1).U
-      lrsc_addr := get_block_addr(s3_req_addr)
-    }.otherwise {
-      lrsc_count := 0.U
-    }
-  }.elsewhen (io.invalid_resv_set) {
-    lrsc_count := 0.U
-  }.elsewhen (lrsc_count > 0.U) {
-    lrsc_count := lrsc_count - 1.U
-  }
-
-  // 2024 7.1 19:37
-  when (do_amoalu) { s3_s_amoalu := true.B }
-  when (s3_fire) { s3_s_amoalu := false.B }
-
-  when (s2_fire_to_s3) { s3_valid := true.B }
-    .elsewhen (s3_fire) { s3_valid := false.B }
-  // -------------------------------------------------------------------------------------
-  // ---------------- duplicate regs for tag_write.valid to solve fanout -----------------
-
-  when (s3_valid && (s3_lr || s3_sc)) {
-    when (s3_can_do_amo && s3_lr) {
-      lrsc_count := (LRSCCycles - 1).U
-      lrsc_addr := get_block_addr(s3_req_addr)
-    }.otherwise {
-      lrsc_count := 0.U
-    }
-  }.elsewhen (io.invalid_resv_set) {
-    lrsc_count := 0.U
-  }.elsewhen (lrsc_count > 0.U) {
-    lrsc_count := lrsc_count - 1.U
-  }
-
-  when (do_amoalu) { s3_s_amoalu := true.B }
-  when (s3_fire) { s3_s_amoalu := false.B }
-
-  when (s2_fire_to_s3) { s3_valid := true.B }
-    .elsewhen (s3_fire) { s3_valid := false.B }
   // -------------------------------------------------------------------------------------
   // ---------------- duplicate regs for data_write.valid to solve fanout ----------------
-
-  when (s3_valid && (s3_lr || s3_sc)) {
-    when (s3_can_do_amo && s3_lr) {
-      lrsc_count := (LRSCCycles - 1).U
-      lrsc_addr := get_block_addr(s3_req_addr)
-    }.otherwise {
-      lrsc_count := 0.U
-    }
-  }.elsewhen (io.invalid_resv_set) {
-    lrsc_count := 0.U
-  }.elsewhen (lrsc_count > 0.U) {
-    lrsc_count := lrsc_count - 1.U
-  }
 
   val s3_probe_can_go_dup_for_data_w_valid = s3_req_probe &&
     io.wb_ready_dup(dataWritePort) &&
@@ -793,7 +709,6 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     (s3_replace_can_go_dup_for_data_w_valid && s3_refill_can_go_dup_for_data_w_valid)
 
   val s3_fire_dup_for_data_w_valid = s3_valid && s3_can_go_dup_for_data_w_valid
-  when (do_amoalu) { s3_s_amoalu := true.B }
   when (s3_fire_dup_for_data_w_valid) { s3_s_amoalu := false.B }
 
   val banked_wmask = Mux(
@@ -822,24 +737,10 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     )
   }
 
-  when (s2_fire_to_s3) { s3_valid := true.B }
-    .elsewhen (s3_fire_dup_for_data_w_valid) { s3_valid := false.B }
+  when (s3_fire_dup_for_data_w_valid) { s3_valid := false.B }
 
   val wb_ready_dup_for_data_w_bank = io.wb_ready_dup.drop(dataWritePort).take(DCacheBanks)
   for (i <- 0 until DCacheBanks) {
-    when (s3_valid && (s3_lr || s3_sc)) {
-      when (s3_can_do_amo && s3_lr) {
-        lrsc_count := (LRSCCycles - 1).U
-        lrsc_addr := get_block_addr(s3_req_addr)
-      }.otherwise {
-        lrsc_count := 0.U
-      }
-    }.elsewhen (io.invalid_resv_set) {
-      lrsc_count := 0.U
-    }.elsewhen (lrsc_count > 0.U) {
-      lrsc_count := lrsc_count - 1.U
-    }
-
     val s3_probe_can_go_dup_for_data_w_bank = s3_req_probe &&
       wb_ready_dup_for_data_w_bank(i) &&
       (io.meta_write.ready || !probe_update_meta)
@@ -865,58 +766,21 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
       s3_refill_can_go_dup_for_data_w_bank
 
     val s3_fire_dup_for_data_w_bank = s3_valid && s3_can_go_dup_for_data_w_bank
-
-    when (do_amoalu) { s3_s_amoalu := true.B }
     when (s3_fire_dup_for_data_w_bank) { s3_s_amoalu := false.B }
-
-    when (s2_fire_to_s3) { s3_valid := true.B }
-      .elsewhen (s3_fire_dup_for_data_w_bank) { s3_valid := false.B }
+    when (s3_fire_dup_for_data_w_bank) { s3_valid := false.B }
 
     io.data_write_dup(i).valid := s3_valid && s3_update_data_cango_dup_for_data_w_bank && update_data
     io.data_write_dup(i).bits.way_en := RegEnable(s2_way_en, s2_fire_to_s3)
     io.data_write_dup(i).bits.addr := RegEnable(s2_req_vaddr, s2_fire_to_s3)
   }
-  // -------------------------------------------------------------------------------------
-  // ---------------- duplicate regs for wb.valid to solve fanout ----------------
 
-  when (s3_valid && (s3_lr || s3_sc)) {
-    when (s3_can_do_amo && s3_lr) {
-      lrsc_count := (LRSCCycles - 1).U
-      lrsc_addr := get_block_addr(s3_req_addr)
-    }.otherwise {
-      lrsc_count := 0.U
-    }
-  }.elsewhen (io.invalid_resv_set) {
-    lrsc_count := 0.U
-  }.elsewhen (lrsc_count > 0.U) {
-    lrsc_count := lrsc_count - 1.U
-  }
 
   when (do_amoalu) { s3_s_amoalu := true.B }
   when (s3_fire) { s3_s_amoalu := false.B }
-
-  for (i <- 0 until DCacheBanks) {
-    val old_data = s3_store_data_merged(i)
-    s3_sc_data_merged(i) := mergePutData(old_data, s3_req_amo_data,
-      Mux(
-        s3_req_word_idx === i.U && !s3_sc_fail,
-        s3_req_amo_mask,
-        0.U(wordBytes.W)
-      )
-    )
-  }
-
-  when (s2_fire_to_s3) { s3_valid := true.B }
-    .elsewhen (s3_fire) { s3_valid := false.B }
-
-  // -------------------------------------------------------------------------------------
-
   when (s2_fire_to_s3) {
     s3_valid := true.B
-
   }.elsewhen (s3_fire) {
     s3_valid := false.B
-
   }
   s3_ready := !s3_valid || s3_can_go
   s3_s0_set_conflict := s3_valid && s3_idx === s0_idx
@@ -975,6 +839,11 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.store_hit_resp.bits.replay := false.B
   io.store_hit_resp.bits.id := s3_req.id
 
+  io.error_flag_write.valid := s3_fire && update_meta && s3_l2_error
+  io.error_flag_write.bits.idx := s3_idx
+  io.error_flag_write.bits.way_en := s3_way_en
+  io.error_flag_write.bits.error := s3_l2_error
+
   io.release_update.valid := s3_valid && (s3_store_can_go || s3_amo_can_go) && s3_hit && update_data  // need todo
   io.release_update.bits.addr := s3_req_addr
   io.release_update.bits.mask := Mux(s3_store_hit, s3_banked_store_wmask, banked_amo_wmask)
@@ -1016,11 +885,6 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.meta_write.bits.idx := s3_idx
   io.meta_write.bits.way_en := s3_way_en
   io.meta_write.bits.meta.coh := new_coh
-
-  io.error_flag_write.valid := s3_fire && update_meta_dup_for_err_w_valid && s3_l2_error
-  io.error_flag_write.bits.idx := s3_idx
-  io.error_flag_write.bits.way_en := s3_way_en
-  io.error_flag_write.bits.error := s3_l2_error
 
   io.tag_write.valid := s3_fire && (s3_req_miss || refill_update_meta)  //重填且替换
   io.tag_write.bits.idx := s3_idx
