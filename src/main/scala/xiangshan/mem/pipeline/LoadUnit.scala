@@ -96,7 +96,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val enqRAWQueue = new LoadEnqRAWBundle
     // S2,S3: store violation query
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
-
+    val feedbackFast = ValidIO(new RSFeedback) // todo: will be deleted soon
     // S3: feedback reservationStation to replay
     val feedbackSlow = ValidIO(new RSFeedback)
     // S3: replay inst enq replayQueue
@@ -163,13 +163,13 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s0_fastRepIssue = Wire(new LoadPipelineBundleS0)
   s0_fastRepIssue.uop := fastReplayIn.bits.uop
   s0_fastRepIssue.vm := 0.U
-  s0_fastRepIssue.rsIdx := DontCare
+  s0_fastRepIssue.rsIdx := fastReplayIn.bits.rsIdx
   s0_fastRepIssue.vaddr := fastReplayIn.bits.vaddr
   s0_fastRepIssue.replayCause.foreach(_ := false.B)
   s0_fastRepIssue.schedIndex := 0.U
   s0_fastRepIssue.isReplayQReplay := false.B
   s0_fastRepIssue.debugCause := (1<<(LoadReplayCauses.C_FR-1)).U
-
+  dontTouch(s0_fastRepIssue)
   val s0_src_selector = Seq(
     fastReplayIn.valid,
     replayIssueIn.valid,
@@ -241,7 +241,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   private val illegalAddr = s0_vaddr2(XLEN - 1, VAddrBits - 1) =/= 0.U && s0_vaddr2(XLEN - 1, VAddrBits - 1) =/= Fill(XLEN - VAddrBits + 1, 1.U(1.W))
   s0_out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := !s0_addrAligned && s0_EnableMem && !s0_isSoftPrefetch
   s0_out.bits.uop.cf.exceptionVec(loadPageFault) := illegalAddr && s0_EnableMem & io.vmEnable && !s0_isSoftPrefetch
-  s0_out.bits.rsIdx := io.rsIdx
+  s0_out.bits.rsIdx := s0_sel_src.rsIdx
   s0_out.bits.replay.replayCause.foreach(_ := false.B)
   s0_out.bits.isSoftPrefetch := s0_isSoftPrefetch
   s0_out.bits.debugCause := s0_sel_src.debugCause
@@ -483,6 +483,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.lsq.s1_lduMMIOPAddr.bits.lqIdx := s1_out.bits.uop.lqIdx
   io.lsq.s1_lduMMIOPAddr.bits.paddr := s1_paddr_dup_lsu
 
+  // todo: delete feedback fast
+  io.feedbackFast.valid := false.B
+  io.feedbackFast.bits := DontCare
+
   // provide prefetcher train data
   io.prefetch_train.bits := s2_in.bits
   io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
@@ -596,7 +600,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.ldout.bits := s3_load_wb_meta_reg
   io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
-  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
+  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3")) && !(RegNext(io.fastReplayOut.valid))
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
   io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready || RegNext(io.fastReplayOut.valid),
     RSFeedbackType.replayQFull, RSFeedbackType.success)

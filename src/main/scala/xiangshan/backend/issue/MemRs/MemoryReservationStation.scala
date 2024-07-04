@@ -411,7 +411,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       stIssuedWires(issuePortIdx).valid := issueDriver.io.deq.fire && issueDriver.io.deq.bits.uop.ctrl.fuType === FuType.stu
       stIssuedWires(issuePortIdx).bits := issueDriver.io.deq.bits.uop.robIdx
       val replayPortSel = selectedBanks.map(_.io.replay)
-      val feedbackSeq = Seq(iss._1.rsFeedback.feedbackSlowLoad, iss._1.rsFeedback.feedbackSlowStore)
+      val feedbackSeq = Seq(iss._1.rsFeedback.feedbackSlowLoad, iss._1.rsFeedback.feedbackFastLoad, iss._1.rsFeedback.feedbackSlowStore)
       replayPortSel.zipWithIndex.foreach(bankReplays => {
         val bankIdx = bankReplays._2 + issuePortIdx * issBankNum
         bankReplays._1.zip(feedbackSeq).foreach({ case (sink, source) =>

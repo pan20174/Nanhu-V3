@@ -62,7 +62,7 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
     val auxStdIssValid = Input(Bool())
     val auxSLoadIssValid = Input(Bool())
 
-    val replay = Input(Vec(2, Valid(new Replay(entryNum))))
+    val replay = Input(Vec(3, Valid(new Replay(entryNum))))
 
     val stIssued = Input(Vec(stuNum, Valid(new RobPtr)))
     val stLastCompelet = Input(new SqPtr)

@@ -122,6 +122,7 @@ package object issue {
     // Note: you need to update in implicit Parameters p before imp MemRSFeedbackIO
     // for instance: MemRSFeedbackIO()(updateP)
     val feedbackSlowLoad = ValidIO(new RSFeedback) // dcache miss queue full, dtlb miss
+    val feedbackFastLoad = ValidIO(new RSFeedback) // bank conflict
     val feedbackSlowStore = ValidIO(new RSFeedback)
   }
 
