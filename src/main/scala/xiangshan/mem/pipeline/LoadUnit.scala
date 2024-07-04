@@ -34,8 +34,8 @@ import xs.utils.perf.HasPerfLogging
 
 class LoadToLsqIO(implicit p: Parameters) extends XSBundle {
   val s1_lduMMIOPAddr = ValidIO(new LoadMMIOPaddrWriteBundle)
-  val s2_lduUpdateLQ = ValidIO(new LqWriteBundle)
-  val s2_UpdateLoadQueue = ValidIO(new LoadQueueDataUpdateBundle)
+  val s2_excepWb2LQ = ValidIO(new LqWriteBundle)
+  val s2_queryAndUpdateLQ = ValidIO(new LoadQueueDataUpdateBundle)
 
   val forwardFromSQ = new PipeLoadForwardFromSQ
   val loadViolationQuery = new LoadViolationQueryIO
@@ -504,16 +504,16 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   // writeback to LSQ, Load queue will be updated at s2 for both hit/miss int/fp load
   //update exceptionGen
-  io.lsq.s2_lduUpdateLQ.valid := s2_out.valid
-  io.lsq.s2_lduUpdateLQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
-  io.lsq.s2_lduUpdateLQ.bits.has_writeback := s2_wb_valid
+  io.lsq.s2_excepWb2LQ.valid := s2_out.valid
+  io.lsq.s2_excepWb2LQ.bits.fromLsPipelineBundle(s2_out.bits) // generate LqWriteBundle from LsPipelineBundle
+  io.lsq.s2_excepWb2LQ.bits.has_writeback := s2_wb_valid
 
-  io.lsq.s2_UpdateLoadQueue.valid := s2_wb_valid
-  io.lsq.s2_UpdateLoadQueue.bits.lqPtr := s2_out.bits.uop.lqIdx
-  io.lsq.s2_UpdateLoadQueue.bits.dataIsFromDCache := s2_dataFromDCache
-  io.lsq.s2_UpdateLoadQueue.bits.wayIdx := s2_dcacheResp.bits.wayIdx
-  io.lsq.s2_UpdateLoadQueue.bits.paddr := s2_out.bits.paddr
-  io.lsq.s2_UpdateLoadQueue.bits.debug_mmio := s2_out.bits.mmio
+  io.lsq.s2_queryAndUpdateLQ.valid := s2_wb_valid
+  io.lsq.s2_queryAndUpdateLQ.bits.lqPtr := s2_out.bits.uop.lqIdx
+  io.lsq.s2_queryAndUpdateLQ.bits.dataIsFromDCache := s2_dataFromDCache
+  io.lsq.s2_queryAndUpdateLQ.bits.wayIdx := s2_dcacheResp.bits.wayIdx
+  io.lsq.s2_queryAndUpdateLQ.bits.paddr := s2_out.bits.paddr
+  io.lsq.s2_queryAndUpdateLQ.bits.debug_mmio := s2_out.bits.mmio
 
   when(s2_in.valid) {
     assert(!(s2_tlb_miss && s2_fullForward),"when s2_tlb_miss,s2_fullForward must be false!!")

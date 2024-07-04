@@ -576,7 +576,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     lduIssues(i).rsFeedback.feedbackSlowLoad := loadUnits(i).io.feedbackSlow
 
     lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
-    lsq.io.lduUpdate(i) := loadUnits(i).io.lsq.s2_UpdateLoadQueue
+    lsq.io.lduqueryAndUpdate(i) := loadUnits(i).io.lsq.s2_queryAndUpdateLQ
 
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
     slduIssues(i).rsFeedback := DontCare
@@ -634,7 +634,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     })
     // passdown to lsq (load s1)
     // passdown to lsq (load s2)
-    lsq.io.loadWbInfo(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
+    lsq.io.loadExcepWbInfo(i) <> loadUnits(i).io.lsq.s2_excepWb2LQ
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 
     // --------------------------------

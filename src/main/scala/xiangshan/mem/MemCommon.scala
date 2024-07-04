@@ -189,10 +189,10 @@ class PipeLoadForwardFromSQ(implicit p: Parameters) extends LoadForwardQueryIO {
 // Note that query req may be !ready, as dcache is releasing a block
 // If it happens, a replay from rs is needed.
 
-class LoadViolationQueryReq(implicit p: Parameters) extends XSBundle {
-  val paddr = UInt(PAddrBits.W)
-  val uop = new MicroOp // provide lqIdx
-}
+// class LoadViolationQueryReq(implicit p: Parameters) extends XSBundle {
+//   val paddr = UInt(PAddrBits.W)
+//   val uop = new MicroOp // provide lqIdx
+// }
 
 class LoadViolationQueryResp(implicit p: Parameters) extends XSBundle {
   val have_violation = Bool()
