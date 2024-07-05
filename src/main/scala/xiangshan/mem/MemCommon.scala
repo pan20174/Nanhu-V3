@@ -107,6 +107,8 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   // replayInfo
   val replay = new ReplayInfo
+  // debug
+  val debugCause = UInt(LoadReplayCauses.allCauses.W)
 }
 
 class LqWriteBundle(implicit p: Parameters) extends XSBundle {
@@ -130,7 +132,6 @@ class LqWriteBundle(implicit p: Parameters) extends XSBundle {
 class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
   //EXUInput
   val uop = new MicroOp
-  val src = Vec(3, UInt(VLEN.W))
   val vm = UInt(VLEN.W)
 
   //replayQ
@@ -141,6 +142,9 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
 
   //Rs
   val rsIdx = new RsIdx
+
+  // debug
+  val debugCause = UInt(LoadReplayCauses.allCauses.W)
 }
 
 
@@ -185,10 +189,10 @@ class PipeLoadForwardFromSQ(implicit p: Parameters) extends LoadForwardQueryIO {
 // Note that query req may be !ready, as dcache is releasing a block
 // If it happens, a replay from rs is needed.
 
-class LoadViolationQueryReq(implicit p: Parameters) extends XSBundle {
-  val paddr = UInt(PAddrBits.W)
-  val uop = new MicroOp // provide lqIdx
-}
+// class LoadViolationQueryReq(implicit p: Parameters) extends XSBundle {
+//   val paddr = UInt(PAddrBits.W)
+//   val uop = new MicroOp // provide lqIdx
+// }
 
 class LoadViolationQueryResp(implicit p: Parameters) extends XSBundle {
   val have_violation = Bool()

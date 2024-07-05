@@ -364,16 +364,21 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   private val stOut = staWritebacks
 
-  // TODO: fast load wakeup
   val lsq     = Module(new LsqWrappper)
   val sbuffer = Module(new Sbuffer)
 
   lsq.io.tlb_hint <> io.tlb_hint
 
   io.lqDeq := lsq.io.lqDeq
-  io.ldStopMemBlock.zip(lsq.io.ldStop).foreach({case (out,source) =>
-    out := RegNext(source, false.B)
+
+  for(i <- 0 until LoadPipelineWidth){
+    lsq.io.replayStop(i) := loadUnits(i).io.fastReplayOut.fire
+  }
+
+  io.ldStopMemBlock.zip(lsq.io.ldStop).zip(loadUnits.map(_.io.fastReplayOut.fire)).foreach({ case ((out, replayQ), fastReplay) =>
+    out := RegNext(replayQ || fastReplay, false.B)
   })
+
   // if you wants to stress test dcache store, use FakeSbuffer
   // val sbuffer = Module(new FakeSbuffer)
 
@@ -576,7 +581,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     lduIssues(i).rsFeedback.feedbackFastLoad := loadUnits(i).io.feedbackFast
 
     lsq.io.loadEnqRAW(i) <> loadUnits(i).io.enqRAWQueue
-    lsq.io.lduUpdate(i) := loadUnits(i).io.lsq.s2_UpdateLoadQueue
+    lsq.io.lduqueryAndUpdate(i) := loadUnits(i).io.lsq.s2_queryAndUpdateLQ
 
     val bnpi = outer.lduIssueNodes(i).in.head._2._1.bankNum / exuParameters.LduCnt
 //    slduIssues(i).rsFeedback := DontCare
@@ -615,6 +620,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //replayQueue
     lsq.io.replayQEnq(i) <> loadUnits(i).io.s3_enq_replayQueue
     loadUnits(i).io.replayQIssueIn <> lsq.io.replayQIssue(i)
+
+    loadUnits(i).io.fastReplayIn.valid := RegNext(loadUnits(i).io.fastReplayOut.valid)
+    loadUnits(i).io.fastReplayIn.bits := RegEnable(loadUnits(i).io.fastReplayOut.bits, loadUnits(i).io.fastReplayOut.fire)
+    loadUnits(i).io.fastReplayOut.ready := RegNext(loadUnits(i).io.fastReplayIn.ready)
 //    //cancel
 //    io.earlyWakeUpCancel.foreach(w => w(i) := RegNext(loadUnits(i).io.cancel,false.B))
     //earlyWakeup and cancel
@@ -632,9 +641,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       pf.io.ld_in(i).bits := loadUnits(i).io.prefetch_train.bits
       pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
-    // passdown to lsq (load s1)
-    // passdown to lsq (load s2)
-    lsq.io.loadWbInfo(i) <> loadUnits(i).io.lsq.s2_lduUpdateLQ
+
+    lsq.io.loadExcepWbInfo(i) <> loadUnits(i).io.lsq.s2_excepWb2LQ
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
 
     // --------------------------------

@@ -118,14 +118,14 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val replayQFull = Output(Bool())
-    val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
+    val ldStop = Output(Bool())
+    val replayStop = Input(Vec(LoadPipelineWidth, Bool()))
     //loadUnit update
-    val loadWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
+    val loadExcepWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
     //mmio
     val mmioWb = DecoupledIO(new ExuOutput)
     val uncache = new UncacheWordIO
     //wakeup info
-    val tlb_hint = Flipped(new TlbHintIO)
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val mshrFull = Input(Bool())
@@ -133,7 +133,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //LoadUnit S2 enq
     val stLdViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle))) //storeUnit S1
     //load load violation
-    val ldLdViolationReq = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
+    val lduqueryAndUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
     val ldLdViolationResp = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
     //storeQueue info
     val stAddrReadyPtr = Input(new SqPtr)
@@ -216,6 +216,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   io.mmioWb <> replayQueue.io.mmioWb
   io.uncache <> replayQueue.io.mmioReq
   io.ldStop := replayQueue.io.ldStop
+  replayQueue.io.replayStop := io.replayStop
   io.replayQIssue <> replayQueue.io.replayQIssue
   io.replayQFull := replayQueue.io.replayQFull
   replayQueue.io.degbugInfo.debug_deqPtr := io.debug_deqPtr
@@ -319,17 +320,17 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   for (i <- 0 until LoadPipelineWidth) {
     releaseDataModule.io.write(i).wen := false.B
-    val wbIdx = io.ldLdViolationReq(i).bits.lqPtr.value
-    val wbPaddr = io.ldLdViolationReq(i).bits.paddr
-    val wbWayIdx = io.ldLdViolationReq(i).bits.wayIdx
+    val wbIdx = io.lduqueryAndUpdate(i).bits.lqPtr.value
+    val wbPaddr = io.lduqueryAndUpdate(i).bits.paddr
+    val wbWayIdx = io.lduqueryAndUpdate(i).bits.wayIdx
     val wbReleaseData = ReleasePAddrHash(wbPaddr,wbWayIdx)
 
-    when(io.ldLdViolationReq(i).fire){
+    when(io.lduqueryAndUpdate(i).fire){
       writebacked(wbIdx) := true.B
-      dataFromDCache(wbIdx) := io.ldLdViolationReq(i).bits.dataIsFromDCache
+      dataFromDCache(wbIdx) := io.lduqueryAndUpdate(i).bits.dataIsFromDCache
 
-      debug_mmio(wbIdx) := io.ldLdViolationReq(i).bits.debug_mmio
-      debug_paddr(wbIdx) := io.ldLdViolationReq(i).bits.paddr
+      debug_mmio(wbIdx) := io.lduqueryAndUpdate(i).bits.debug_mmio
+      debug_paddr(wbIdx) := io.lduqueryAndUpdate(i).bits.paddr
 
       releaseDataModule.io.write(i).wen := true.B
       releaseDataModule.io.write(i).entryAddr := wbIdx
@@ -372,7 +373,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   // Load-Load Memory violation query
   (0 until LoadPipelineWidth).foreach(i => {
-    val req = io.ldLdViolationReq(i)
+    val req = io.lduqueryAndUpdate(i)
     val resp = io.ldLdViolationResp(i).s3_resp
 
     //s2 load load violation Req
@@ -380,10 +381,6 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val reqWayIdx = req.bits.wayIdx
     val reqReleaseEntry = ReleasePAddrHash(reqPaddr, reqWayIdx)
     releaseDataModule.io.load_query(i).req_data := reqReleaseEntry
-
-    //s3 load load violation resp
-    resp.valid := RegNext(req.valid, false.B)
-
     val startIndex = req.bits.lqPtr.value
     val lqIdxMask = UIntToMask(startIndex, LoadQueueSize)
     val xorMask = lqIdxMask ^ enqMask
@@ -405,7 +402,10 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val s1_addrMatch = RegEnable(s0_addrMatch, req.valid)
     val llv_mask = s1_shouldCheck.asUInt & s1_addrMatch.asUInt
     llv_mask.suggestName("ldldViolationMask_" + i)
-    io.ldLdViolationResp(i).s3_resp.bits.have_violation := llv_mask.orR
+
+    //s3 load load violation resp
+    resp.valid := RegNext(req.valid, false.B)
+    resp.bits.have_violation := llv_mask.orR
 
     dontTouch(s0_shouldCheck)
     dontTouch(s0_addrMatch)
@@ -434,13 +434,13 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   // Read vaddr for mem exception
   exceptionGen.io.redirect := io.brqRedirect
   exceptionGen.io.in.zipWithIndex.foreach({ case (d, i) =>
-    val validCond = io.loadWbInfo(i).valid && !io.loadWbInfo(i).bits.uop.robIdx.needFlush(io.brqRedirect)
-    val writebackCond = !io.loadWbInfo(i).bits.miss && !io.loadWbInfo(i).bits.mmio
-    val ffIgnoreCond = io.loadWbInfo(i).bits.uop.vctrl.ff && io.loadWbInfo(i).bits.uop.segIdx =/= 0.U && writebackCond
-    d.bits.robIdx := RegEnable(io.loadWbInfo(i).bits.uop.robIdx, validCond)
-    d.bits.vaddr := RegEnable(io.loadWbInfo(i).bits.vaddr, validCond)
-    d.bits.eVec := RegEnable(io.loadWbInfo(i).bits.uop.cf.exceptionVec, validCond)
-    d.bits.uopIdx := RegEnable(io.loadWbInfo(i).bits.uop.uopIdx, validCond)
+    val validCond = io.loadExcepWbInfo(i).valid && !io.loadExcepWbInfo(i).bits.uop.robIdx.needFlush(io.brqRedirect)
+    val writebackCond = !io.loadExcepWbInfo(i).bits.miss && !io.loadExcepWbInfo(i).bits.mmio
+    val ffIgnoreCond = io.loadExcepWbInfo(i).bits.uop.vctrl.ff && io.loadExcepWbInfo(i).bits.uop.segIdx =/= 0.U && writebackCond
+    d.bits.robIdx := RegEnable(io.loadExcepWbInfo(i).bits.uop.robIdx, validCond)
+    d.bits.vaddr := RegEnable(io.loadExcepWbInfo(i).bits.vaddr, validCond)
+    d.bits.eVec := RegEnable(io.loadExcepWbInfo(i).bits.uop.cf.exceptionVec, validCond)
+    d.bits.uopIdx := RegEnable(io.loadExcepWbInfo(i).bits.uop.uopIdx, validCond)
     d.valid := RegNext(validCond & !ffIgnoreCond, false.B)
   })
   private val mmioEvec = Wire(ExceptionVec())

@@ -282,7 +282,7 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   // they can sit in load queue and wait for refill
   //
   // * report a miss if bank conflict is detected
-  val real_miss = !s2_hit_dup_lsu
+  val real_miss = !s2_hit_dup_lsu && !io.bank_conflict_slow
   resp.bits.miss := real_miss && (io.miss_req.fire)
   // load pipe need replay when there is mshr full
   resp.bits.replay := real_miss && (!(io.miss_req.fire) || s2_nack_hit)

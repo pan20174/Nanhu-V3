@@ -69,7 +69,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val tlb_hint = Flipped(new TlbHintIO)
     val enq = new LsqEnqIO
     val brqRedirect = Flipped(ValidIO(new Redirect))
-    val loadWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
+    val loadExcepWbInfo = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))
     val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
     val storeInRe = Vec(StorePipelineWidth, Input(new LsPipelineBundle()))
     val storeDataIn = Vec(StorePipelineWidth, Flipped(Valid(new ExuOutput))) // store data, send to sq from rs
@@ -96,6 +96,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val storeAddrIn = Vec(StorePipelineWidth, Flipped(Decoupled(new ExuOutput)))  // store addr
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
+    val replayStop = Input(Vec(LoadPipelineWidth, Bool()))
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
@@ -104,7 +105,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
     val mshrFull = Input(Bool())
-    val lduUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
+    val lduqueryAndUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
   })
 
   val loadQueue = Module(new LoadQueue)
@@ -147,11 +148,11 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
 
   // load queue wiring
-  loadQueue.io.ldLdViolationReq := io.lduUpdate
+  loadQueue.io.lduqueryAndUpdate := io.lduqueryAndUpdate
   loadQueue.io.tlbWakeup := io.tlbWakeup
   loadQueue.io.tlb_hint <> io.tlb_hint
   loadQueue.io.brqRedirect <> io.brqRedirect
-  loadQueue.io.loadWbInfo <> io.loadWbInfo
+  loadQueue.io.loadExcepWbInfo <> io.loadExcepWbInfo
   loadQueue.io.stLdViolationQuery := io.storeViolationQuery
   loadQueue.io.loadEnqRAW <> io.loadEnqRAW
   loadQueue.io.robHead := RegNext(io.rob.pendingInst)
@@ -174,6 +175,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   io.lqDeq := loadQueue.io.lqDeq
   io.ldStop := loadQueue.io.ldStop
+  loadQueue.io.replayStop := io.replayStop
   io.replayQFull := loadQueue.io.replayQFull
   loadQueue.io.mshrFull := io.mshrFull
   // store queue wiring
