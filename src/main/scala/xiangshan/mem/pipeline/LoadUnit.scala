@@ -348,7 +348,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_causeReg.bank_conflict := s1_cancel_inner  // bank read has conflict
   dontTouch(s1_causeReg)
 
-  io.earlyWakeUp.wakeUp.valid := false.B//s1_in.valid && !s1_tlb_miss
+  io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_causeReg.need_rep
   io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
   io.earlyWakeUp.wakeUp.bits.pdest := s1_in.bits.uop.pdest
   io.earlyWakeUp.wakeUp.bits.destType := MuxCase(SrcType.default, Seq(
@@ -498,7 +498,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     !s2_data_invalid && !s2_mmio &&
     !s2_allStLdViolation &&
     !s2_enqRAWFail
-
+  val dataCanForward = !(s2_cache_miss || s2_cache_replay || s2_bank_conflict || s2_cancel_inner) || s2_fullForward
   val s2_wb_valid = !s2_cancel_inner && s2_in.valid && !s2_in.bits.uop.robIdx.needFlush(redirectReg("loadS2")) &&
    (exceptionWb || normalWb)
 
@@ -601,6 +601,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.ldout.bits := s3_load_wb_meta_reg
   io.ldout.bits.data := Mux(hitLoadOutValidReg, s3_rdataPartialLoad, s3_load_wb_meta_reg.data)
 
+  val s3_alreadyFastRep = RegNext(io.fastReplayOut.valid)
+  dontTouch(s3_alreadyFastRep)
   io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3")) && !(RegNext(io.fastReplayOut.valid))
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
   io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready || RegNext(io.fastReplayOut.valid),
@@ -659,10 +661,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.s3_enq_replayQueue.bits.uop := s3_in.bits.uop
   io.s3_enq_replayQueue.bits.mask := s3_in.bits.mask
   io.s3_enq_replayQueue.bits.tlbMiss := false.B
-
-
-  assert(!(RegNext(hitLoadOut.valid,false.B) && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)),"when load" +
-    " wb," + "replayCause must be 0!!")
+  assert(!((io.s3_enq_replayQueue.valid &&io.s3_enq_replayQueue.bits.replay.need_rep) && s3_alreadyFastRep), "FastRep and ReplayQ will handle independent casue")
+  assert(!(RegNext(hitLoadOut.valid,false.B) && s3_alreadyFastRep),"FastRep and Wirteback cant happened same time")
+  assert(!(RegNext(hitLoadOut.valid,false.B) && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)),"when load" +  " wb," + "replayCause must be 0!!")
 
 
   val s3_needReplay = io.s3_enq_replayQueue.valid && io.s3_enq_replayQueue.bits.replay.replayCause.reduce(_|_)
