@@ -150,7 +150,6 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   // load queue wiring
   loadQueue.io.lduqueryAndUpdate := io.lduqueryAndUpdate
   loadQueue.io.tlbWakeup := io.tlbWakeup
-  loadQueue.io.tlb_hint <> io.tlb_hint
   loadQueue.io.brqRedirect <> io.brqRedirect
   loadQueue.io.loadExcepWbInfo <> io.loadExcepWbInfo
   loadQueue.io.stLdViolationQuery := io.storeViolationQuery
