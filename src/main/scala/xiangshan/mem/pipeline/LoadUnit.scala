@@ -120,7 +120,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   })
 
   //redirect register fanout
-  private val redirectUseName = List("loadS0",  "loadS1",  "loadS2",  "loadS3")
+  private val redirectUseName = List("loadS0",  "loadS1",  "loadS2",  "loadS3", "fastRep")
   private val redirectReg = RedirectRegDup(redirectUseName,io.redirect)
 
   /*
@@ -348,7 +348,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_causeReg.bank_conflict := s1_cancel_inner  // bank read has conflict
   dontTouch(s1_causeReg)
 
-  io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_tlb_miss
+  io.earlyWakeUp.wakeUp.valid := false.B//s1_in.valid && !s1_tlb_miss
   io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
   io.earlyWakeUp.wakeUp.bits.pdest := s1_in.bits.uop.pdest
   io.earlyWakeUp.wakeUp.bits.destType := MuxCase(SrcType.default, Seq(
@@ -460,7 +460,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_loadDataFromDcache.forwardData := s2_forwardData
   s2_loadDataFromDcache.uop := s2_out.bits.uop
   s2_loadDataFromDcache.addrOffset := s2_in.bits.paddr(2, 0)
-
+  dontTouch(s2_loadDataFromDcache)
   // real miss: dcache miss as well as can't forward
   s2_out.bits.miss := s2_cache_miss && !s2_hasException && !s2_fullForward && !s2_ldld_violation && !s2_isSoftPrefetch && s2_enableMem
   s2_out.bits.uop.ctrl.fpWen := s2_in.bits.uop.ctrl.fpWen && !s2_hasException
@@ -552,7 +552,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   dontTouch(s2_causeReg)
 
   val s2_pickout_bankconflict = s2_causeReg.replayCause.updated(LoadReplayCauses.C_BC, false.B)
-  io.fastReplayOut.valid := s2_in.valid && s2_enableMem && (s2_bank_conflict && !s2_fullForward) && !(s2_pickout_bankconflict.reduce(_ || _) || RegNext(s1_cancel_inner)) && !exceptionWb && !s2_mmio
+  io.fastReplayOut.valid := s2_in.valid && s2_enableMem && (s2_bank_conflict && !s2_fullForward) &&
+    !(s2_pickout_bankconflict.reduce(_ || _) || RegNext(s1_cancel_inner)) && !exceptionWb && !s2_mmio && !s2_in.bits.uop.robIdx.needFlush(redirectReg("fastRep"))
   io.fastReplayOut.bits  := s2_in.bits
   // lpv cancel feedback to reservationStation
   io.earlyWakeUp.cancel := s2_in.valid && !s2_wb_valid
