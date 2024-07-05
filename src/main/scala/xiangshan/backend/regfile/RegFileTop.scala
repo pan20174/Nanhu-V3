@@ -211,8 +211,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           val iDataReg = RegEnable(intRf.io.read(intRfReadIdx).data, bi.issue.fire && isStd)
           val fDataReg = RegEnable(fpRf.io.readNoBypass(noBypassFpReadIdx).data, bi.issue.fire && isStd)
           val selReg = RegNext(SrcType.isFp(bi.issue.bits.uop.ctrl.srcType(0)))
-          val sel = SrcType.isFp(bi.issue.bits.uop.ctrl.srcType(0))
-          exuInBundle.src(1) := Mux(sel, fDataReg, iDataReg)
+          exuInBundle.src(1) := Mux(selReg, fDataReg, iDataReg)
 
           noBypassFpReadIdx = noBypassFpReadIdx + 1
           intRfReadIdx = intRfReadIdx + 1
