@@ -114,24 +114,8 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   val io = IO(new Bundle() {
     //dispatch enqueue
     val enq = new LqEnqIO
-    val tlb_hint = Flipped(new TlbHintIO)
-    val brqRedirect = Flipped(ValidIO(new Redirect))
-    val loadMMIOPaddrIn = Vec(LoadPipelineWidth, Flipped(Valid(new LoadMMIOPaddrWriteBundle)))  //useless
-    val loadIn = Vec(LoadPipelineWidth, Flipped(Valid(new LqWriteBundle)))  //from loadUnit S2
-    val storeIn = Vec(StorePipelineWidth, Flipped(Valid(new LsPipelineBundle)))
-    val stLdViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
-    val s2_load_data_forwarded = Vec(LoadPipelineWidth, Input(Bool()))
-    val loadViolationQuery = Vec(LoadPipelineWidth, Flipped(new LoadViolationQueryIO))
-    val lqSafeDeq = Input(new RobPtr)
-    val robHead = Input(new RobPtr)
-    val rollback = Output(Valid(new Redirect)) // replay now starts from load instead of store
-    val release = Flipped(ValidIO(new Release))
-    val uncache = new UncacheWordIO
-    val exceptionAddr = new ExceptionAddrIO
-    val lqFull = Output(Bool())
-    val lqCancelCnt = Output(UInt(log2Up(LoadQueueSize + 1).W))
-    val trigger = Vec(LoadPipelineWidth, new LqTriggerIO)
-    val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
+    //replayQueue
+    val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
     val replayQFull = Output(Bool())
     val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
@@ -141,6 +125,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val mmioWb = DecoupledIO(new ExuOutput)
     val uncache = new UncacheWordIO
     //wakeup info
+    val tlb_hint = Flipped(new TlbHintIO)
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
     val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val mshrFull = Input(Bool())
