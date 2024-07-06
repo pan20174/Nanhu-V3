@@ -704,8 +704,8 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     difftest.coreid := io.hartId
     difftest.index := 1.U
     difftest.idtfr := 1.U
-    // difftest.valid := io.refill_to_ldq.valid && io.refill_to_ldq.bits.hasdata && io.refill_to_ldq.bits.refill_done
-    difftest.valid := false.B
+    difftest.valid := io.refill_to_ldq.valid && io.refill_to_ldq.bits.hasdata && io.refill_to_ldq.bits.refill_done
+    // difftest.valid := false.B
     difftest.addr := io.refill_to_ldq.bits.addr
     difftest.data := difftest_data_raw.asUInt.asTypeOf(difftest.data)
   }

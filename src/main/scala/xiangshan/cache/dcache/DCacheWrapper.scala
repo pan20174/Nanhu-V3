@@ -161,6 +161,8 @@ trait HasDCacheParameters extends HasL1CacheParameters {
   val errWritePort = tagWritePort + 1
   val wbPort = errWritePort + 1
 
+  val wbqWays = 2
+
   def addr_to_dcache_bank(addr: UInt) = {
     require(addr.getWidth >= DCacheSetOffset)
     addr(DCacheSetOffset-1, DCacheBankOffset)
@@ -766,8 +768,8 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   wb.io.req <> mainPipe.io.wb
   bus.c     <> wb.io.mem_release
   // wb.io.release_wakeup := refillPipe.io.release_wakeup
-  wb.io.release_wakeup := mainPipe.io.replace_resp
-  wb.io.release_update := mainPipe.io.release_update
+  // wb.io.release_wakeup := mainPipe.io.replace_resp
+  // wb.io.release_update := mainPipe.io.release_update
   wb.io.probe_ttob_check_req <> mainPipe.io.probe_ttob_check_req
   wb.io.probe_ttob_check_resp <> mainPipe.io.probe_ttob_check_resp
 
