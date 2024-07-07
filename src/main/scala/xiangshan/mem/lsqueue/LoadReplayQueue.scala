@@ -183,6 +183,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   with HasLoadHelper
   with HasPerfLogging
   with HasDCacheParameters
+  with HasCircularQueuePtrHelper
 {
   val io = IO(new Bundle() {
     val enq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
@@ -194,6 +195,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val stDataReadySqPtr = Input(new SqPtr)
+    val stAddrReadyPtr = Input(new SqPtr)
     val sqEmpty= Input(Bool())
     val storeDataWbPtr = Vec(StorePipelineWidth, Flipped(Valid(new SqPtr)))
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
@@ -446,7 +448,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
 
     when(causeReg(i)(LoadReplayCauses.C_NK)) {
-      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === entryReg(i).uop.lqIdx), false.B, true.B)
+      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === entryReg(i).uop.lqIdx) || !isAfter(entryReg(i).uop.sqIdx,io.stAddrReadyPtr), false.B, true.B)
     }
   })
 

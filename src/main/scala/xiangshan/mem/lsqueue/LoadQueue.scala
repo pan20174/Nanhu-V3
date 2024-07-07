@@ -210,6 +210,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.tlbWakeup := io.tlbWakeup
   replayQueue.io.loadDeqPtr := deqPtrExt
   replayQueue.io.robHead := io.robHead
+  replayQueue.io.stAddrReadyPtr := io.stAddrReadyPtr
 
 
   io.mmioWb <> replayQueue.io.mmioWb
