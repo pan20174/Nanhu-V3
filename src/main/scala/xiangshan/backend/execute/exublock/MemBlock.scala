@@ -674,9 +674,25 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     p"has trigger fire vec ${lduWritebacks(i).bits.uop.cf.trigger.backendCanFire}\n")
   }
 
-  //todo: mmio writeback
-  loadUnits.foreach(_.io.mmioWb := DontCare)
-  loadUnits.head.io.mmioWb <> lsq.io.mmioWb
+  //mmio writeback
+  val mmioCanWbVec = loadUnits.map(_.io.mmioWb.ready)
+  val mmioCanWb = mmioCanWbVec.reduce(_|_)
+  val mmioWritePortIdx = WireInit(0.U(log2Up(LoadPipelineWidth + 1).W))
+  when(mmioCanWb){
+    mmioWritePortIdx := PriorityEncoder(mmioCanWbVec)
+  }
+
+  loadUnits.map(_.io.mmioWb).zipWithIndex.foreach({ case (wb, idx) =>
+    when(idx.U === mmioWritePortIdx && mmioCanWb) {
+      wb.valid := lsq.io.mmioWb.valid
+      wb.bits := lsq.io.mmioWb.bits
+    }.otherwise{
+      wb.valid := false.B
+      wb.bits := 0.U.asTypeOf(new ExuOutput)
+    }
+  })
+
+  lsq.io.mmioWb.ready := mmioCanWb
 
   // Prefetcher
   prefetcherOpt.foreach(pf => {
