@@ -95,8 +95,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
     val storeAddrIn = Vec(StorePipelineWidth, Flipped(Decoupled(new ExuOutput)))  // store addr
     val replayQEnq = Vec(LoadPipelineWidth, Flipped(DecoupledIO(new LoadToReplayQueueBundle)))
-    val ldStop = Output(Vec(LoadPipelineWidth, Bool()))
-    val replayStop = Input(Vec(LoadPipelineWidth, Bool()))
+    val replayQLdStop = Output(Vec(LoadPipelineWidth, Bool()))
+    val fastReplayStop = Input(Vec(LoadPipelineWidth, Bool()))
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
@@ -173,8 +173,8 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
   loadQueue.io.ldLdViolationResp <> io.loadViolationQuery
 
   io.lqDeq := loadQueue.io.lqDeq
-  io.ldStop := loadQueue.io.ldStop
-  loadQueue.io.replayStop := io.replayStop
+  io.replayQLdStop := loadQueue.io.replayQLdStop
+  loadQueue.io.fastReplayStop := io.fastReplayStop
   io.replayQFull := loadQueue.io.replayQFull
   loadQueue.io.mshrFull := io.mshrFull
   // store queue wiring

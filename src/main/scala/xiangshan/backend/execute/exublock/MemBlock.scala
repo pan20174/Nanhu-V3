@@ -372,10 +372,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   io.lqDeq := lsq.io.lqDeq
 
   for(i <- 0 until LoadPipelineWidth){
-    lsq.io.replayStop(i) := loadUnits(i).io.fastReplayOut.fire
+    lsq.io.fastReplayStop(i) := loadUnits(i).io.fastReplayOut.fire
   }
 
-  io.ldStopMemBlock.zip(lsq.io.ldStop).zip(loadUnits.map(_.io.fastReplayOut.fire)).foreach({ case ((out, replayQ), fastReplay) =>
+  io.ldStopMemBlock.zip(lsq.io.replayQLdStop).zip(loadUnits.map(_.io.fastReplayOut.fire)).foreach({ case ((out, replayQ), fastReplay) =>
     out := RegNext(replayQ || fastReplay, false.B)
   })
 

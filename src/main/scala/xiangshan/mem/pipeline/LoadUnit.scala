@@ -339,7 +339,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s1_causeReg.bank_conflict := s1_cancel_inner  // bank read has conflict
   dontTouch(s1_causeReg)
 
-  io.earlyWakeUp.wakeUp.valid := false.B//s1_in.valid && !s1_tlb_miss
+  io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_tlb_miss
   io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
   io.earlyWakeUp.wakeUp.bits.pdest := s1_in.bits.uop.pdest
   io.earlyWakeUp.wakeUp.bits.destType := MuxCase(SrcType.default, Seq(
