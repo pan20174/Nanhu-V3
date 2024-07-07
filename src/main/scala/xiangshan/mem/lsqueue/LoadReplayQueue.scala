@@ -11,7 +11,7 @@ import freechips.rocketchip.util.SeqToAugmentedSeq
 import xiangshan.ExceptionNO.loadAccessFault
 import xiangshan.backend.rob.RobPtr
 import xiangshan.cache.{DCacheTLDBypassLduIO, HasDCacheParameters, UncacheWordIO}
-import xiangshan.cache.mmu.HasTlbConst
+import xiangshan.cache.mmu.{HasTlbConst, VaBundle}
 import xiangshan.frontend.FtqPtr
 
 object LoadReplayCauses {
@@ -151,6 +151,8 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
     val ren   = Input(Vec(numRead, Bool()))
     val raddr = Input(Vec(numRead, UInt(log2Up(numEntries).W)))
     val rdata = Output(Vec(numRead, gen))
+
+    val dataNoDelay = Output(Vec(numEntries, gen))
   })
   val data = Reg(Vec(numEntries, gen))
   for(i <- 0 until(numRead)){
@@ -160,6 +162,10 @@ class RawDataModule[T <: Data](gen: T, numEntries: Int, numRead: Int, numWrite: 
     when(io.wen(i)){
       data(io.waddr(i)) := io.wdata(i)
     }
+  }
+
+  for(i <- 0 until numEntries){
+    io.dataNoDelay(i) := data(i)
   }
 
 
@@ -211,6 +217,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
   private val counterRegMax = 32
   private val penaltyRegWidth = log2Up(counterRegMax) + 1
+  private val tlbMissCounter = 7
   private val issueSelectParallelN = 8
 
   // replayQueue state signs define
@@ -238,8 +245,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   val debugReplayTimesReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(3.W))))
   val currentTimes = WireInit(debugReplayTimesReg)
   dontTouch(currentTimes)
-  //tmp: use vaddr
-  val vaddrReg = RegInit(VecInit(List.fill(LoadReplayQueueSize)(0.U(VAddrBits.W))))
 
   // replayQueue enq\deq control
   val freeList = Module(new LsqFreeList(
@@ -260,6 +265,16 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     numEntries = LoadReplayQueueSize,
     numRead = LoadPipelineWidth + 1,
     numWrite = LoadPipelineWidth))
+
+  require(VAddrBits >= PAddrBits)
+  private val vaddrVec = addrModule.io.dataNoDelay
+  dontTouch(vaddrVec)
+  private val vpnVec = vaddrVec.map(_.asTypeOf(new VaBundle).vpn)
+
+  private def tlbWakeUpCompare(tlbVpn: UInt, replayVpn: UInt): Bool = {
+    tlbVpn === replayVpn
+  }
+
   // replayQueue Full Backpressure Logic
   val lqFull = freeList.io.empty
   val lqFreeNums = freeList.io.validCount
@@ -314,7 +329,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       debugReplayTimesReg(enqIndex(i)) := Mux(currentTimes(enqIndex(i))==="b111".U(3.W), currentTimes(enqIndex(i)), currentTimes(enqIndex(i)) + 1.U)
       entryReg(enqIndex(i)).uop := enq.bits.uop
       hintIDReg(enqIndex(i)) := 0.U
-      vaddrReg(enqIndex(i)) := enq.bits.vaddr
       causeReg(enqIndex(i)) := Mux(enqReqIsMMIO(i), 0.U, enq.bits.replay.replayCause.asUInt)
 
       addrModule.io.wen(i) := true.B
@@ -370,9 +384,10 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   (0 until LoadReplayQueueSize).foreach(i => {
     (0 until LoadPipelineWidth).foreach(j => {
       when(enqNeedAlloacteNew(j) && (enqIndex(j) === i.asUInt)){
+        val isReplay = io.enq(j).bits.replay.isReplayQReplay
         // case TLB MISS
         when(io.enq(j).bits.replay.tlb_miss){
-          counterReg(i) := 1.U << penaltyReg(i)
+          counterReg(i) := Mux(isReplay, tlbMissCounter.U * penaltyReg(i), tlbMissCounter.U)
           penaltyReg(i) := penaltyReg(i) + 1.U
           blockingReg(i) := true.B
         }
@@ -468,6 +483,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       debugReplayTimesReg(i) := 0.U
       freeMaskVec(i) := true.B
       causeReg(i) := 0.U
+      penaltyReg(i) := 0.U
     }
   }
   freeList.io.free := freeMaskVec.asUInt
@@ -660,6 +676,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     allocatedReg(s1_mmioEntryIdx) := false.B  //release Entry
     debugReplayTimesReg(s1_mmioEntryIdx) := 0.U
     freeMaskVec(s1_mmioEntryIdx) := true.B
+    penaltyReg(s1_mmioEntryIdx) := 0.U
 
     assert(mmioReg(s1_mmioEntryIdx))
     assert(allocatedReg(s1_mmioEntryIdx))
