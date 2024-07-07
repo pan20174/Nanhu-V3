@@ -151,10 +151,9 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
   })
 
   (0 until LoadRAWQueueSize).foreach({ rawIdx =>
-    val redirecValid = uopReg(rawIdx).robIdx.needFlush(io.redirect)
-    val w_enVec = Wire(Vec(StorePipelineWidth,Bool()))
+    val w_enVec = Wire(Vec(LoadPipelineWidth,Bool()))
     w_enVec.zipWithIndex.foreach({case (en,idx) =>
-      en := reqWriteValidVec(idx) && !redirecValid &&  needAllocateEntryVec(idx).bits === rawIdx.U
+      en := reqWriteValidVec(idx) && needAllocateEntryVec(idx).bits === rawIdx.U
     })
     val w_addr = OHToUInt(w_enVec)
     val w_data = io.loadEnq(w_addr).s2_enq.bits
