@@ -183,6 +183,20 @@ class PtwFsm()(implicit p: Parameters) extends XSModule with HasPtwConst with Ha
   io.refill.level := level
   io.refill.req_info.source := source
 
+
+  val timer = GTimer()
+  // Perf L1 PTW return time
+  val start_req = state === s_idle && io.req.fire
+  val time_pre = RegEnable(timer, start_req)
+  val init_level = RegEnable(Mux(io.req.bits.l1Hit, 1.U, 0.U), start_req)
+  val p_resp_valid =  io.resp.valid || io.llptw.valid
+  XSPerfAccumulate("l1_ptw_count", p_resp_valid && level === 0.U)
+  XSPerfAccumulate("Il1_Fl2_ptw_count", p_resp_valid && level === 1.U && init_level === 0.U) // init l1, final l2
+  XSPerfAccumulate("Il2_Fl2_ptw_count", p_resp_valid && level === 1.U && init_level === 1.U)
+  XSPerfAccumulate("l1_ptw_time", Mux(io.resp.valid && level === 0.U, timer - time_pre, 0.U))
+  XSPerfAccumulate("Il1_Fl2_ptw_time", Mux(p_resp_valid && level === 1.U && init_level === 0.U, timer - time_pre, 0.U))
+  XSPerfAccumulate("Il2_Fl2_ptw_time", Mux(p_resp_valid && level === 1.U && init_level === 1.U, timer - time_pre, 0.U))
+
   XSDebug(p"[ptw] state:${state} level:${level} notFound:${pageFault}\n")
 
   // perf
@@ -262,6 +276,8 @@ class LLPTW(implicit p: Parameters) extends XSModule with HasPtwConst with HasPe
   val entries = Reg(Vec(l2tlbParams.llptwsize, new LLPTWEntry()))
   val state_idle :: state_addr_check :: state_mem_req :: state_mem_waiting :: state_mem_out :: state_cache :: Nil = Enum(6)
   val state = RegInit(VecInit(Seq.fill(l2tlbParams.llptwsize)(state_idle)))
+  val time_pres = Reg(Vec(l2tlbParams.llptwsize, UInt(64.W)))
+  val timer = GTimer()
 
   val is_emptys = state.map(_ === state_idle)
   val is_mems = state.map(_ === state_mem_req)
@@ -313,6 +329,7 @@ class LLPTW(implicit p: Parameters) extends XSModule with HasPtwConst with HasPe
     entries(enq_ptr).wait_id := Mux(to_wait, wait_id, enq_ptr)
     entries(enq_ptr).af := false.B
     mem_resp_hit(enq_ptr) := to_mem_out
+    time_pres(enq_ptr) := timer
   }
 
   val enq_ptr_reg = RegNext(enq_ptr)
@@ -381,6 +398,9 @@ class LLPTW(implicit p: Parameters) extends XSModule with HasPtwConst with HasPe
 
   io.cache.valid := Cat(is_cache).orR
   io.cache.bits := ParallelMux(is_cache, entries.map(_.req_info))
+
+  XSPerfAccumulate("llptw_out_cnt", io.out.fire)
+  XSPerfAccumulate("llptw_time", Mux(io.out.fire, timer - time_pres(mem_ptr), 0.U))
 
   XSPerfAccumulate("llptw_in_count", io.in.fire)
   XSPerfAccumulate("llptw_in_block", io.in.valid && !io.in.ready)
