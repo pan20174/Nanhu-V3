@@ -680,7 +680,7 @@ class WritebackQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModu
 }
 
 class DataReadReq(implicit p: Parameters) extends DCacheBundle {
-  val idx = UInt((cfg.nReleaseEntries).W)
+  val idx = UInt((log2Up(cfg.nReleaseEntries)).W)
 }
 
 class DataWriteReq(implicit p: Parameters) extends DataReadReq with HasDCacheParameters {
