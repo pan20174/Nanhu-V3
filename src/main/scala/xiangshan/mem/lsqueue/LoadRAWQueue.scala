@@ -73,24 +73,6 @@ class LoadRAWQueue(implicit p: Parameters) extends XSModule
     val storeQuery = Vec(StorePipelineWidth,Flipped(ValidIO(new storeRAWQueryBundle))) //store S1 query
     val rollback = Output(Valid(new Redirect))
     val isFull = Output(Bool())
-
-//    val loadEnq_paddr = Vec(LoadPipelineWidth, new Bundle(){
-//      val valid = Input(Bool())
-//      val paddr = Input(UInt((PAddrBits - 3).W))
-//      val lqIdx = Input(UInt(log2Up(LoadRAWQueueSize).W))
-//    }) //tmp
-//    val loadEnq_mask = Vec(LoadPipelineWidth, new Bundle() {
-//      val valid = Input(Bool())
-//      val mask = Input(UInt(8.W))
-//      val lqIdx = Input(UInt(log2Up(LoadRAWQueueSize).W))
-//    }) //tmp
-
-//    val violation = Vec(StorePipelineWidth,new Bundle() {
-//      val paddr = Input(UInt((PAddrBits - 3).W))
-//      val mask = Input(UInt((XLEN / 8).W))
-//      val violationMask = Output(Vec(LoadRAWQueueSize,Bool()))
-//    }) //tmp
-
   })
 
   private val freeWidth = 4
