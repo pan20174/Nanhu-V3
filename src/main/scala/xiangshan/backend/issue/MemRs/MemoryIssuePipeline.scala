@@ -102,7 +102,7 @@ class MemoryIssuePipelineBlock(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth:In
   private val enqInfo = io.enq.bits.selectResp.info
   io.hold := false.B
 
-  io.enq.ready := io.deq.ready && !io.ldStop
+  io.enq.ready := io.deq.ready
   io.issueFire := io.deq.fire
 
   private val deqValidDriverReg = RegInit(false.B)
@@ -140,7 +140,7 @@ class MemoryIssuePipelineBlock(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth:In
 
 
   private val timer = GTimer()
-  io.deq.valid := deqValidDriverReg && !shouldBeCanceled && !io.ldStop
+  io.deq.valid := deqValidDriverReg && !shouldBeCanceled
   io.deq.bits.uop := io.enq.bits.uop
   io.deq.bits.uop.debugInfo.selectTime := timer
   io.deq.bits.uop.debugInfo.issueTime := timer + 1.U
