@@ -73,7 +73,7 @@ class LSQOldestSelectPolicy(inputNum:Int, haveEqual:Boolean, parallelN: Int = 8,
     (interRes, idx)
   }
 
-  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), parallelN, ReductionFunc)
+  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, UIntToOH(in._2.U))), parallelN, ReductionFunc)
   io.out.valid := res._1.valid
   io.out.bits := res._2
 }
@@ -99,7 +99,7 @@ class RAWQueueSelectPolicy(inputNum:Int, haveEqual:Boolean, parallelN: Int, idx:
     (interRes, idx)//((valid,rob),idx)
   }
 
-  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, (1L << in._2).U(inputNum.W))), parallelN, ReductionFunc)
+  private val res = ParallelOperationN(io.in.zipWithIndex.map(in => (in._1, UIntToOH(in._2.U))), parallelN, ReductionFunc)
   io.out.valid := res._1.valid
   io.out.bits := res._2
 }

@@ -108,6 +108,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val lduqueryAndUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
   })
 
+  dontTouch(io.tlb_hint)
   val loadQueue = Module(new LoadQueue)
   val storeQueue = Module(new StoreQueue)
 
