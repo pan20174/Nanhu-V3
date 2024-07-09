@@ -13,6 +13,8 @@ import xiangshan.backend.rob.RobPtr
 import xiangshan.cache.{DCacheTLDBypassLduIO, HasDCacheParameters, UncacheWordIO}
 import xiangshan.cache.mmu.{HasTlbConst, VaBundle}
 import xiangshan.frontend.FtqPtr
+import xiangshan.vector.VCtrlSignals
+import xiangshan.vector.writeback.VmbPtr
 
 object LoadReplayCauses {
   /*
@@ -59,64 +61,84 @@ class ReplayInfo(implicit p: Parameters) extends XSBundle{
   def raw_nack: Bool = replayCause(LoadReplayCauses.C_NK)
   def raw_violation: Bool = replayCause(LoadReplayCauses.C_RAW)
   def need_rep: Bool= replayCause.asUInt.orR
-  def canFastReplay: Bool = replayCause(LoadReplayCauses.C_BC)
 }
 
-class ReplayQUopInfo(implicit p: Parameters) extends XSBundle{
-  val robIdx = new RobPtr
-  val exceptionVec = ExceptionVec()
-}
 
 class LoadTLBWakeUpBundle(implicit p: Parameters) extends XSBundle with HasTlbConst{
   val vpn = UInt(vpnLen.W)
 }
 
 class ReplayQUopEntry(implicit p: Parameters) extends XSBundle{
-  val uop = new MicroOp
+//  val uop = new MicroOp
 
-//  val cf = new CtrlFlow
-//  val ctrl = new CtrlSignals
-//  val lqIdx = new LqPtr
-//  val robIdx = new RobPtr
-//  val fuOpType = FuOpType()
-//  val sqIdx = new SqPtr //data forward,raw
-//  val ftqPtr = new FtqPtr //raw
-//  val ftqOffset = UInt(log2Up(PredictWidth).W) //raw
+  val rfWen = Bool()
+  val fpWen = Bool()
+  val isVector = Bool()
+  val pc = UInt(VAddrBits.W)
+  val pdest = UInt(PhyRegIdxWidth.W)
+  val lqIdx = new LqPtr
+  val robIdx = new RobPtr
+  val fuOpType = FuOpType()
+  val sqIdx = new SqPtr //data forward,raw
+  val ftqPtr = new FtqPtr //raw
+  val ftqOffset = UInt(log2Up(PredictWidth).W) //raw
+  val loadStoreEnable = Bool()
+  val debugInfo = new PerfDebugInfo
+
 
   def getFromUop(input: MicroOp): Unit = {
-    uop := input
-
-    uop.cf.exceptionVec := DontCare
-    uop.cf.trigger := DontCare
-
-//    lqIdx := input.lqIdx
-//    robIdx := input.robIdx
-//    fuOpType := input.ctrl.fuOpType
-//    sqIdx := input.sqIdx
-//    ftqPtr := input.cf.ftqPtr
-//    ftqOffset := input.cf.ftqOffset
+    rfWen := input.ctrl.rfWen
+    fpWen := input.ctrl.fpWen
+    isVector := input.ctrl.isVector
+    pdest := input.pdest
+    pc := input.cf.pc
+    lqIdx := input.lqIdx
+    robIdx := input.robIdx
+    fuOpType := input.ctrl.fuOpType
+    sqIdx := input.sqIdx
+    ftqPtr := input.cf.ftqPtr
+    ftqOffset := input.cf.ftqOffset
+    loadStoreEnable := input.loadStoreEnable
+    debugInfo := input.debugInfo
   }
 
   def toIssueUop: MicroOp = {
-    val issueUop = WireInit(uop)
-    issueUop.cf.exceptionVec := DontCare
+    val issueUop = Wire(new MicroOp)
 
-
+    issueUop := DontCare
+    issueUop.ctrl.rfWen := rfWen
+    issueUop.ctrl.fpWen := fpWen
+    issueUop.ctrl.isVector := isVector
+    issueUop.pdest := pdest
+    issueUop.cf.pc := pc
+    issueUop.lqIdx := lqIdx
+    issueUop.robIdx := robIdx
+    issueUop.ctrl.fuOpType := fuOpType
+    issueUop.sqIdx := sqIdx
+    issueUop.cf.ftqPtr := ftqPtr
+    issueUop.cf.ftqOffset := ftqOffset
+    issueUop.loadStoreEnable := loadStoreEnable
+    issueUop.debugInfo := debugInfo
     issueUop
-//    uop := DontCare
-//    uop.lqIdx := lqIdx
-//    uop.robIdx := robIdx
-//    uop.ctrl.fuOpType := fuOpType
-//    uop.sqIdx := sqIdx
-//    uop.cf.ftqPtr := ftqPtr
-//    uop.cf.ftqOffset := ftqOffset
   }
 
   def toMMIOWbUop: MicroOp = {
-    val mmioUop = WireInit(uop)
+    val mmioUop = Wire(new MicroOp)
+    mmioUop := DontCare
+    mmioUop.ctrl.rfWen := rfWen
+    mmioUop.ctrl.fpWen := fpWen
+    mmioUop.ctrl.isVector := isVector
 
-    mmioUop.cf.exceptionVec := DontCare
-
+    mmioUop.pdest := pdest
+    mmioUop.cf.pc := pc
+    mmioUop.lqIdx := lqIdx
+    mmioUop.robIdx := robIdx
+    mmioUop.ctrl.fuOpType := fuOpType
+    mmioUop.sqIdx := sqIdx
+    mmioUop.cf.ftqPtr := ftqPtr
+    mmioUop.cf.ftqOffset := ftqOffset
+    mmioUop.loadStoreEnable := loadStoreEnable
+    mmioUop.debugInfo := debugInfo
     mmioUop
   }
 
@@ -327,7 +349,6 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
       // Extract some valid information
       entryReg(enqIndex(i)).getFromUop(enq.bits.uop)
       debugReplayTimesReg(enqIndex(i)) := Mux(currentTimes(enqIndex(i))==="b111".U(3.W), currentTimes(enqIndex(i)), currentTimes(enqIndex(i)) + 1.U)
-      entryReg(enqIndex(i)).uop := enq.bits.uop
       hintIDReg(enqIndex(i)) := 0.U
       causeReg(enqIndex(i)) := Mux(enqReqIsMMIO(i), 0.U, enq.bits.replay.replayCause.asUInt)
 
@@ -463,7 +484,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
 
     when(causeReg(i)(LoadReplayCauses.C_NK)) {
-      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === entryReg(i).uop.lqIdx) || !isAfter(entryReg(i).uop.sqIdx,io.stAddrReadyPtr), false.B, true.B)
+      blockingReg(i) := Mux(!io.rawIsFull || (io.loadDeqPtr === entryReg(i).lqIdx) || !isAfter(entryReg(i).sqIdx,io.stAddrReadyPtr), false.B, true.B)
     }
   })
 
@@ -477,7 +498,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   // misprediction recovery / exception redirect
   val needCancel = WireInit(VecInit.fill(LoadReplayQueueSize)(false.B))
   for (i <- 0 until LoadReplayQueueSize) {
-    needCancel(i) := entryReg(i).uop.robIdx.needFlush(io.redirect) && allocatedReg(i)
+    needCancel(i) := entryReg(i).robIdx.needFlush(io.redirect) && allocatedReg(i)
     when (needCancel(i)) {
       allocatedReg(i) := false.B
       debugReplayTimesReg(i) := 0.U
@@ -510,7 +531,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
 
   s1_selResSeq := (0 until LoadPipelineWidth).map{ rem =>
-    val s0_remReadyToReplay_rob = getRemUop(VecInit(entryReg.map(_.uop.robIdx)), rem)
+    val s0_remReadyToReplay_rob = getRemUop(VecInit(entryReg.map(_.robIdx)), rem)
     val s0_remReadyToReplay_mask = getRemBits(s0_readyToReplay_mask.asUInt, rem)
 
     val s0_s1SelRes_mask = getRemBits(s1_robOldestSelOH(rem),rem)
@@ -620,7 +641,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
 
   //S0: select mmio,read paddr
   allocatedReg.zipWithIndex.foreach({case (valid,idx) =>
-    headMMIOOH(idx) := valid && (io.robHead === entryReg(idx).uop.robIdx) && mmioReg(idx) && !mmioHasReq(idx)
+    headMMIOOH(idx) := valid && (io.robHead === entryReg(idx).robIdx) && mmioReg(idx) && !mmioHasReq(idx)
   })
   assert(PopCount(headMMIOOH) <= 1.U)
 
@@ -633,7 +654,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
   private val s1_mmioValid = RegNext(mmioEntry.valid, false.B)
   private val s1_mmioEntryIdx = RegEnable(mmioEntry.bits, mmioEntry.valid)
   private val s1_mmioPaddr = addrModule.io.rdata(mmioReadPortNum)
-  private val s1_mmioUop = entryReg(s1_mmioEntryIdx).uop
+  private val s1_mmioUop = entryReg(s1_mmioEntryIdx).toMMIOWbUop
   io.mmioReq.req.valid := s1_mmioValid && MMIO_State === s_req
   io.mmioReq.req.bits := DontCare
   io.mmioReq.req.bits.addr := s1_mmioPaddr
