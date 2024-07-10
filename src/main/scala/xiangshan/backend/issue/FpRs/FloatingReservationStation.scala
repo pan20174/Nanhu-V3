@@ -106,7 +106,7 @@ class FloatingReservationStationImpl(outer:FloatingReservationStation, param:RsP
   })
   private val wakeupWidth = (wakeupSignals ++ rsFmacWkp ++ mulWkp).length
   private val allocateNetwork = Module(new AllocateNetwork(param.bankNum, entriesNumPerBank, Some("FpAllocNetwork")))
-  private val floatingBusyTable = Module(new BusyTable(NRPhyRegs, param.bankNum * 3, wakeupWidth, RenameWidth))
+  private val floatingBusyTable = Module(new BusyTable(NRPhyRegs, param.bankNum * 3, wakeupWidth, RenameWidth, true))
   floatingBusyTable.io.allocPregs := io.floatingAllocPregs
   floatingBusyTable.io.wbPregs.zip(wakeupSignals ++ rsFmacWkp ++ mulWkp).foreach({ case (bt, wb) =>
     bt.valid := wb.valid && wb.bits.destType === SrcType.fp
