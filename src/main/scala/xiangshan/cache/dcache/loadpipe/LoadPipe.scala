@@ -55,7 +55,7 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
     // update state vec in replacement algo
     val replace_access = ValidIO(new ReplacementAccessBundle)
     // find the way to be replaced
-    val replace_way = new ReplacementWayReqIO
+    // val replace_way = new ReplacementWayReqIO
 
     // load fast wakeup should be disabled when data read is not ready
     val disable_ld_fast_wakeup = Input(Bool())
@@ -152,16 +152,19 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   val s1_hit_coh = s1_hit_meta
   val s1_hit_error = Mux(s1_tag_match_dup_dc, Mux1H(s1_tag_match_way_dup_dc, wayMap((w: Int) => io.error_flag_resp(w))), false.B)
 
-  io.replace_way.set.valid := RegNext(s0_fire)
-  io.replace_way.set.bits := get_idx(s1_vaddr)
-  val s1_repl_way_en = UIntToOH(io.replace_way.way)
-  val s1_repl_tag = Mux1H(s1_repl_way_en, wayMap(w => tag_resp(w)))
-  val s1_repl_coh = Mux1H(s1_repl_way_en, wayMap(w => meta_resp(w)))
+  // io.replace_way.set.valid := RegNext(s0_fire)
+  // io.replace_way.set.bits := get_idx(s1_vaddr)
+  // val s1_repl_way_en = UIntToOH(io.replace_way.way)
+  // val s1_repl_tag = Mux1H(s1_repl_way_en, wayMap(w => tag_resp(w)))
+  // val s1_repl_coh = Mux1H(s1_repl_way_en, wayMap(w => meta_resp(w)))
 
-  val s1_need_replacement = !s1_tag_match_dup_dc
-  val s1_way_en = Mux(s1_need_replacement, s1_repl_way_en, s1_tag_match_way_dup_dc)
-  val s1_coh = Mux(s1_need_replacement, s1_repl_coh, s1_hit_coh)
-  val s1_tag = Mux(s1_need_replacement, s1_repl_tag, get_tag(s1_paddr_dup_dcache))
+  // val s1_need_replacement = !s1_tag_match_dup_dc
+  // val s1_way_en = Mux(s1_need_replacement, s1_repl_way_en, s1_tag_match_way_dup_dc)
+  // val s1_coh = Mux(s1_need_replacement, s1_repl_coh, s1_hit_coh)
+  // val s1_tag = Mux(s1_need_replacement, s1_repl_tag, get_tag(s1_paddr_dup_dcache))
+  val s1_way_en = s1_tag_eq_way_dup_dc
+  val s1_coh = s1_hit_coh
+  val s1_tag = get_tag(s1_paddr_dup_dcache)
 
   // data read
   io.banked_data_read.valid := s1_fire && !s1_nack
@@ -217,9 +220,9 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   val s2_has_permission = s2_hit_coh.onAccess(s2_req.cmd)._1 // redundant
   val s2_new_hit_coh = s2_hit_coh.onAccess(s2_req.cmd)._3 // redundant
 
-  val s2_way_en = RegEnable(s1_way_en, s1_fire)
-  val s2_repl_coh = RegEnable(s1_repl_coh, s1_fire)
-  val s2_repl_tag = RegEnable(s1_repl_tag, s1_fire)
+  // val s2_way_en = RegEnable(s1_way_en, s1_fire)
+  // val s2_repl_coh = RegEnable(s1_repl_coh, s1_fire)
+  // val s2_repl_tag = RegEnable(s1_repl_tag, s1_fire)
   val s2_encTag = RegEnable(s1_encTag, s1_fire)
 
   // when req got nacked, upper levels should replay this request
@@ -259,10 +262,10 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   io.miss_req.bits.cmd := s2_req.cmd
   io.miss_req.bits.addr := get_block_addr(s2_paddr)
   io.miss_req.bits.vaddr := s2_vaddr
-  io.miss_req.bits.way_en := s2_way_en
+  // io.miss_req.bits.way_en := s2_way_en
   io.miss_req.bits.req_coh := s2_hit_coh
-  io.miss_req.bits.replace_coh := s2_repl_coh
-  io.miss_req.bits.replace_tag := s2_repl_tag
+  // io.miss_req.bits.replace_coh := s2_repl_coh
+  // io.miss_req.bits.replace_tag := s2_repl_tag
   io.miss_req.bits.cancel := io.lsu.s2_kill || s2_tag_error
 
   // send back response
@@ -334,13 +337,15 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   //  val replace_access_valid_s0 = RegNext(io.meta_read.fire)
   val replace_access_valid_s0 = RegNext(io.tag_read.fire)
   val replace_access_valid_s1 = RegNext(replace_access_valid_s0 && s1_valid && !io.lsu.s1_kill)
-  val replace_access_valid_s2 = RegNext(replace_access_valid_s1 && !s2_nack_no_mshr)
+  // val replace_access_valid_s2 = RegNext(replace_access_valid_s1 && !s2_nack_no_mshr)
+  //only when hit, access plru
+  val replace_access_valid_s2 = RegNext(replace_access_valid_s1 && !s2_hit_dup_lsu)
 
   val s2_req_valid = RegNext(s1_req_valid)
   val replace_access_set_s1 = RegEnable(get_idx(s1_req.addr), s1_req_valid)
   val replace_access_set_s2 = RegEnable(replace_access_set_s1, s2_req_valid)
 
-  val replace_access_way_s1 = RegEnable(Mux(s1_tag_match_dup_dc, OHToUInt(s1_tag_match_way_dup_dc), io.replace_way.way), s1_req_valid)
+  val replace_access_way_s1 = RegEnable(OHToUInt(s1_tag_match_way_dup_dc), s1_req_valid)
   val replace_access_way_s2 = RegEnable(replace_access_way_s1, s2_req_valid)
 
   io.replace_access.valid := replace_access_valid_s2

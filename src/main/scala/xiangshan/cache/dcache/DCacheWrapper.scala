@@ -807,13 +807,13 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   } .otherwise {
     assert (!bus.d.fire)
   }
-  class DCachePLRUWrapper(reqWidth: Int = 3, nSets: Int, nWays: Int) extends Module {
+  class DCachePLRUWrapper(reqWidth: Int = 1, accessWidth: Int = 3, nSets: Int, nWays: Int) extends Module {
     val io = IO(new Bundle() {
       val req_set = Input(Vec(reqWidth, Valid(UInt(log2Up(nSets).W))))
       val req_way = Output(Vec(reqWidth, UInt(log2Up(nWays).W)))
 
-      val touch_sets = Input(Vec(reqWidth, UInt(log2Up(nSets).W)))
-      val touch_ways = Input(Vec(reqWidth, Valid(UInt(log2Up(nWays).W))))
+      val touch_sets = Input(Vec(accessWidth, UInt(log2Up(nSets).W)))
+      val touch_ways = Input(Vec(accessWidth, Valid(UInt(log2Up(nWays).W))))
     })
     val replacer = ReplacementPolicy.fromString(cacheParams.replacer, nWays, nSets)
 
@@ -835,18 +835,23 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   //----------------------------------------
   // replacement algorithm
-  val replacer = Module(new DCachePLRUWrapper(3, nSets, nWays))
+  val replacer = Module(new DCachePLRUWrapper(reqWidth = 1,accessWidth = 3, nSets, nWays))
   replacer.suggestName("DCcachePLURWrapper_0")
-  val replWayReqs = ldu.map(_.io.replace_way) ++ Seq(mainPipe.io.replace_way)
-
-  replWayReqs.zipWithIndex.foreach {
-    case (req, i) => {
-      req.way := DontCare
-      replacer.io.req_set(i) := req.set
-      when(req.set.valid) {
-        req.way := replacer.io.req_way(i)
-      }
-    }
+  // val replWayReqs = ldu.map(_.io.replace_way) ++ Seq(mainPipe.io.replace_way)
+  
+  // replWayReqs.zipWithIndex.foreach {
+  //   case (req, i) => {
+  //     req.way := DontCare
+  //     replacer.io.req_set(i) := req.set
+  //     when(req.set.valid) {
+  //       req.way := replacer.io.req_way(i)
+  //     }
+  //   }
+  // }
+  mainPipe.io.replace_way.way := DontCare
+  replacer.io.req_set(0) := mainPipe.io.replace_way.set
+  when(mainPipe.io.replace_way.set.valid) {
+    mainPipe.io.replace_way.way := replacer.io.req_way(0)
   }
 
   val replAccessReqs = ldu.map(_.io.replace_access) ++ Seq(
