@@ -263,7 +263,7 @@ class PTWFilterEntry(Width: Int, Size: Int, hasHint: Boolean = false)(implicit p
     val hintIO = io.hint.getOrElse(new TlbHintIO)
     for (i <- 0 until exuParameters.LduCnt) {
       hintIO.req(i).id := enqidx(i)
-      hintIO.req(i).full := !canenq(i) || ptwResp_ReqMatchVec(i)
+      hintIO.req(i).full := !canenq(i) || (ptwResp_ReqMatchVec(i) && io.tlb.req(i).valid || RegNext(io.tlb.req(i).valid))
     }
     hintIO.resp.valid := io.refill
     hintIO.resp.bits.id := ptwResp_EntryMatchFirst
