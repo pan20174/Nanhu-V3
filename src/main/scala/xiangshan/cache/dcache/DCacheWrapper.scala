@@ -484,6 +484,9 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val tagArray = Module(new DuplicatedTagArray(readPorts = LoadPipelineWidth + 1, parentName = outer.parentName + "tagArray_"))
   bankedDataArray.dump()
 
+  //tag的低两位寄存器放在DcacheWrapper中，在每次写tag的时候把低两位写到这
+  val low2_tag = Reg(Vec(nSets, Vec(nWays, UInt(2.W))))
+
   //----------------------------------------
   // core modules
   val ldu = Seq.tabulate(LoadPipelineWidth)({ i => Module(new LoadPipe(i))})
@@ -528,12 +531,19 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   ldu.zipWithIndex.foreach {
     case (ld, i) =>
       tagArray.io.read(i) <> ld.io.tag_read
-      ld.io.tag_resp := tagArray.io.resp(i)
+//      ld.io.tag_resp := tagArray.io.resp(i)
+      //从tagArray返回的是23位，把低两位cat上再返回给loadpipe去
+      ld.io.tag_resp := tagArray.io.resp(i).zip(low2_tag(RegNext(tagArray.io.read(i).bits.idx))).map{ case(i, j) => Cat(i, j)}
       ld.io.tag_read.ready := !tag_write_intend
+      //单独返回低两位到loadpipe
+      ld.io.low2_tag := RegEnable(low2_tag(ld.io.tag_read.bits.idx), ld.io.tag_read.fire)
   }
   tagArray.io.read.last <> mainPipe.io.tag_read
-  mainPipe.io.tag_resp := tagArray.io.resp.last
-
+//  mainPipe.io.tag_resp := tagArray.io.resp.last
+  //从tagArray返回的是23位，把低两位cat上再返回到mainpipe去
+  mainPipe.io.tag_resp := tagArray.io.resp.last.zip(low2_tag(RegNext(tagArray.io.read.last.bits.idx))).map{ case (i, j) => Cat(i, j)}
+  //单独返回低两位到mainpipe
+  mainPipe.io.low2_tag := RegEnable(low2_tag(mainPipe.io.tag_read.bits.idx), mainPipe.io.tag_read.fire)
   val fake_tag_read_conflict_this_cycle = PopCount(ldu.map(ld=> ld.io.tag_read.valid))
   XSPerfAccumulate("fake_tag_read_conflict", fake_tag_read_conflict_this_cycle)
 
@@ -541,6 +551,15 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   // tag_write_arb.io.in(0) <> refillPipe.io.tag_write
   // tag_write_arb.io.in(1) <> mainPipe.io.tag_write
   tagArray.io.write <> mainPipe.io.tag_write
+
+  //写入
+  when(tagArray.io.write.valid) {
+    (0 until DCacheWays).foreach(i => {
+      //检查way_en的第i路是否为1，是的话就需要写入
+      when(tagArray.io.write.bits.way_en(i)){
+        low2_tag(tagArray.io.write.bits.idx)(i) := tagArray.io.write.bits.tag(1, 0)
+      }
+    })}
 
   //----------------------------------------
   // data array
@@ -562,7 +581,8 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   bankedDataArray.io.readline <> mainPipe.io.data_read
   bankedDataArray.io.readline_intend := mainPipe.io.data_read_intend
   mainPipe.io.readline_error_delayed := bankedDataArray.io.readline_error_delayed
-  mainPipe.io.data_resp := bankedDataArray.io.resp
+  //此处修改待定 具体看data里的定义
+  mainPipe.io.data_resp := bankedDataArray.io.readline_resp
 
   //loadPipe read bankedDataArray in s1
   bankedDataArray.io.readSel := RegNext(ldSelRead)
@@ -570,14 +590,14 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
     bankedDataArray.io.read(i) <> ldu(i).io.banked_data_read
     bankedDataArray.io.read_error_delayed(i) <> ldu(i).io.read_error_delayed
 
-    //    ldu(i).io.banked_data_resp := bankedDataArray.io.resp(i)
+    ldu(i).io.banked_data_resp := bankedDataArray.io.resp(i)
     ldu(i).io.bank_conflict_fast := bankedDataArray.io.bank_conflict_fast(i)
     ldu(i).io.bank_conflict_slow := bankedDataArray.io.bank_conflict_slow(i)
   })
 
-  (0 until LoadPipelineWidth).foreach({ case i => {
-    ldu(i).io.banked_data_resp := bankedDataArray.io.resp
-  }})
+//  (0 until LoadPipelineWidth).foreach({ case i => {
+//    ldu(i).io.banked_data_resp := bankedDataArray.io.resp
+//  }})
 
   //----------------------------------------
   // load pipe

@@ -32,14 +32,17 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
     val nack      = Input(Bool())
 
     val error_flag_resp = Input(Vec(nWays, Bool()))
+
     val tag_read = DecoupledIO(new TagReadReq)
     val tag_resp = Input(Vec(nWays, UInt(encTagBits.W)))
-
+    //用来接收低两位tag
+    val low2_tag = Input(Vec(nWays, UInt(2.W)))
 
     val banked_data_read = DecoupledIO(new L1BankedDataReadLsuReq)
+
     //    val banked_data_resp = Input(Vec(DCacheBanks, new L1BankedDataReadResult()))
-    //    val banked_data_resp = Input(new L1BankedDataReadResult())
-    val banked_data_resp = Input(Vec(DCacheBanks, new L1BankedDataReadResult()))
+    val banked_data_resp = Input(new L1BankedDataReadResult())
+//    val banked_data_resp = Input(Vec(DCacheBanks, new L1BankedDataReadResult()))
     val read_error_delayed = Input(Bool())
 
     // banked data read conflict
@@ -125,6 +128,10 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   val s1_tag_match_way_dup_dc = wayMap((w: Int) => s1_tag_eq_way_dup_dc(w) && meta_resp(w).isValid()).asUInt
   val s1_tag_match_dup_dc = Mux(s1_valid && !io.lsu.s1_kill, s1_tag_match_way_dup_dc.orR, false.B)
 
+  //单独用低两位得到匹配结果
+  val s1_low_2tag_way_dc = wayMap((w: Int) => io.low2_tag(w) === (get_tag(s1_paddr_dup_dcache)(1,0))).asUInt
+  val s1_low_2tag_match_way_dc = wayMap((w: Int) => s1_low_2tag_way_dc(w) && meta_resp(w).isValid()).asUInt
+
   when(s1_valid && !io.lsu.s1_kill) {
     assert(PopCount(s1_tag_match_way_dup_dc) <= 1.U, "tag should not match with more than 1 way")
   }
@@ -162,6 +169,7 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   io.banked_data_read.bits.way_en := s1_tag_match_way_dup_dc
   //  io.banked_data_read.bits.robIdx := s1_req.robIdx
   io.banked_data_read.bits.kill := io.lsu.s1_kill
+  io.banked_data_read.bits.read_way_en := s1_low_2tag_match_way_dc
 
   // get s1_will_send_miss_req in lpad_s1
   val s1_has_permission = s1_hit_coh.onAccess(s1_req.cmd)._1
@@ -262,8 +270,8 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   resp.valid := s2_valid
   resp.bits := DontCare
   //  resp.bits.load_data := Mux1H(s2_bank_oh,VecInit(banked_data_resp.map(i => i.raw_data)))
-  //  resp.bits.load_data := Mux(s2_valid,banked_data_resp.raw_data,0.U)  //to cut X state
-  resp.bits.load_data := Mux(s2_valid,Mux1H(s2_bank_oh,VecInit(banked_data_resp.map(i => i.raw_data))),0.U)  //to cut X state
+     resp.bits.load_data := Mux(s2_valid,banked_data_resp.raw_data,0.U)  //to cut X state
+//  resp.bits.load_data := Mux(s2_valid,Mux1H(s2_bank_oh,VecInit(banked_data_resp.map(i => i.raw_data))),0.U)  //to cut X state
   //  resp.bits.bank_data := VecInit(banked_data_resp.map(i => i.raw_data))
   //  resp.bits.bank_oh := s2_bank_oh
   // * on miss or nack, upper level should replay request

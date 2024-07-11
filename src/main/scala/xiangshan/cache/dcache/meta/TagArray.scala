@@ -30,7 +30,7 @@ class TagReadReq(implicit p: Parameters) extends DCacheBundle {
 }
 
 class TagWriteReq(implicit p: Parameters) extends TagReadReq {
-  val tag = UInt((tagBits + ClientStates.width).W)
+  val tag = UInt((tagBits + ClientStates.width).W) //写请求携带完整tag
 }
 
 class TagEccWriteReq(implicit p: Parameters) extends TagReadReq {
@@ -44,7 +44,8 @@ class ErrorWriteReq(implicit p: Parameters) extends MetaReadReq {
 class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DCacheModule {
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new TagReadReq))
-    val resp = Output(Vec(nWays, UInt((tagBits + ClientStates.width).W)))
+    val resp = Output(Vec(nWays, UInt((tagBits + ClientStates.width - 2).W))) //SRAM的返回缺了最低两位
+    //最低两位放在DCacheWrapper那，返回给loadpipe和mainpipe的时候会cat起来返回完整的，另外还会单独返回低两位
     val write = Flipped(DecoupledIO(new TagWriteReq))
 
     // ecc
@@ -54,11 +55,11 @@ class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DC
   })
 
   val waddr =  io.write.bits.idx
-  val wdata =  io.write.bits.tag
+  val wdata =  io.write.bits.tag(tagBits + ClientStates.width - 1, 2)
   val wmask = Mux((nWays == 1).B, (-1).asSInt, io.write.bits.way_en.asSInt).asBools
   val rmask = Mux((nWays == 1).B, (-1).asSInt, io.read.bits.way_en.asSInt).asBools
 
-  val tag_array = Module(new SRAMTemplate(UInt((tagBits + ClientStates.width).W), set = nSets, way = nWays,
+  val tag_array = Module(new SRAMTemplate(UInt((tagBits + ClientStates.width - 2).W), set = nSets, way = nWays,
     shouldReset = false, holdRead = false, singlePort = true, hasClkGate = true,
     hasMbist = coreParams.hasMbist,
     hasShareBus = coreParams.hasShareBus,

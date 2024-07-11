@@ -135,6 +135,8 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     val tag_write = DecoupledIO(new TagWriteReq)
     val tag_write_intend = Output(new Bool())
 
+    val low2_tag = Input(Vec(nWays, UInt(2.W)))
+
     // update state vec in replacement algo
     val replace_access = ValidIO(new ReplacementAccessBundle)
     // find the way to be replaced
@@ -242,9 +244,11 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val meta_resp = Wire(Vec(nWays, (new ClientMetadata).asUInt))
   val tag_resp = Wire(Vec(nWays, UInt(tagBits.W)))
   val ecc_resp = Wire(Vec(nWays, UInt(eccTagBits.W)))
+  val low2_tag_resp = Wire(Vec(nWays, UInt(2.W)))
   meta_resp := Mux(RegNext(s0_fire), VecInit(io.tag_resp.map(r => r(tagBits + ClientStates.width - 1, tagBits))), RegNext(meta_resp))
   tag_resp := Mux(RegNext(s0_fire), VecInit(io.tag_resp.map(r => r(tagBits - 1, 0))), RegNext(tag_resp))
   ecc_resp := Mux(RegNext(s0_fire), VecInit(io.tag_resp.map(r => r(encTagBits - 1, tagBits + ClientStates.width))), RegNext(ecc_resp))
+  low2_tag_resp := Mux(RegNext(s0_fire), io.low2_tag, RegNext(low2_tag_resp))
   val enc_tag_resp = Wire(io.tag_resp.cloneType)
   enc_tag_resp := Mux(RegNext(s0_fire), io.tag_resp, RegNext(enc_tag_resp))
 
@@ -252,6 +256,9 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val s1_tag_eq_way = wayMap((w: Int) => tag_resp(w) === get_tag(s1_req.addr)).asUInt
   val s1_tag_match_way = wayMap((w: Int) => s1_tag_eq_way(w) && ClientMetadata(meta_resp(w)).isValid()).asUInt
   val s1_tag_match = s1_tag_match_way.orR
+
+  val s1_low_2tag_eq_way = wayMap((w: Int) => low2_tag_resp(w) === get_tag(s1_req.addr)(1,0)).asUInt
+  val s1_low_2tag_match_way = wayMap((w: Int) => s1_low_2tag_eq_way(w) && ClientMetadata(meta_resp(w)).isValid()).asUInt
 
   val s1_hit_tag = Mux(s1_tag_match, Mux1H(s1_tag_match_way, wayMap(w => tag_resp(w))), get_tag(s1_req.addr))
   val s1_hit_coh = ClientMetadata(Mux(s1_tag_match, Mux1H(s1_tag_match_way, wayMap(w => meta_resp(w))), 0.U))
@@ -284,6 +291,8 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
       )
     )
   )
+  val s1_low_2tag_way_en = Mux(!s1_req.refill && !s1_req.miss && !s1_need_replacement, s1_low_2tag_match_way, s1_way_en)
+
   assert(!RegNext(s1_fire && PopCount(s1_way_en) > 1.U))
   val s1_tag = Mux(
     s1_req.replace && s1_req.refill,
@@ -752,6 +761,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     when (s3_fire_dup_for_data_w_bank) { s3_s_amoalu := false.B }
     when (s3_fire_dup_for_data_w_bank) { s3_valid := false.B }
 
+    io.data_write_dup(i).bits.read_way_en := DontCare
     io.data_write_dup(i).valid := s3_valid && s3_update_data_cango_dup_for_data_w_bank && update_data
     io.data_write_dup(i).bits.way_en := RegEnable(s2_way_en, s2_fire_to_s3)
     io.data_write_dup(i).bits.addr := RegEnable(s2_req_vaddr, s2_fire_to_s3)
@@ -785,6 +795,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.data_read.bits.rmask := s1_banked_rmask
   io.data_read.bits.way_en := s1_way_en
   io.data_read.bits.addr := s1_req_vaddr
+  io.data_read.bits.read_way_en := s1_low_2tag_way_en
 
   io.miss_req.valid := s2_valid && s2_can_go_to_mq
   val miss_req = io.miss_req.bits
@@ -873,6 +884,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
 
   assert(!RegNext(io.tag_write.valid && !io.tag_write_intend))
 
+  io.data_write.bits.read_way_en := DontCare
   io.data_write.valid := s3_valid && s3_update_data_cango_dup_for_data_w_valid && update_data
   io.data_write.bits.way_en := s3_way_en
   io.data_write.bits.addr := s3_req_vaddr

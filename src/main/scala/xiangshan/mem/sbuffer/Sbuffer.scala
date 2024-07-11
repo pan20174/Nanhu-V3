@@ -84,7 +84,7 @@ class MaskFlushReq(implicit p: Parameters) extends SbufferBundle {
   val wvec = UInt(StoreBufferSize.W)
 }
 
-class SbufferData(implicit p: Parameters) extends XSModule with HasSbufferConst {
+class SbufferData(implicit p: Parameters) extends DCacheModule with HasSbufferConst {
   val io = IO(new Bundle(){
     // update data and mask when alloc or merge
     val writeReq = Vec(EnsbufferWidth + beatRows, Flipped(ValidIO(new DataWriteReq)))
