@@ -479,7 +479,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   //----------------------------------------
   // core data structures
   val bankedDataArray = Module(new BankedDataArray(parentName = outer.parentName + "bankedDataArray_"))
-  //  val metaArray = Module(new AsynchronousMetaArray(readPorts = 3, writePorts = 1))
   val errorArray = Module(new ErrorArray(readPorts = 3, writePorts = 1)) // TODO: add it to meta array
   val tagArray = Module(new DuplicatedTagArray(readPorts = LoadPipelineWidth + 1, parentName = outer.parentName + "tagArray_"))
   bankedDataArray.dump()
@@ -492,7 +491,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val ldu = Seq.tabulate(LoadPipelineWidth)({ i => Module(new LoadPipe(i))})
   val atomicsReplayUnit = Module(new AtomicsReplayEntry)
   val mainPipe   = Module(new MainPipe)
-  // val refillPipe = Module(new RefillPipe)
   val missQueue  = Module(new MissQueue(edge))
   val probeQueue = Module(new ProbeQueue(edge))
   val wb         = Module(new WritebackQueue(edge))
@@ -511,7 +509,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   io.error <> RegNext(Mux1H(errors.map(e => RegNext(e.valid) -> RegNext(e))))
 
   //----------------------------------------
-  // meta array
   val tag_read_ports =ldu.map(_.io.tag_read) ++ Seq(mainPipe.io.tag_read)
   val error_flag_resp_ports = ldu.map(_.io.error_flag_resp) ++
     Seq(mainPipe.io.error_flag_resp)
@@ -525,21 +522,18 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   //----------------------------------------
   // tag array
   require(tagArray.io.read.size == (ldu.size + 1))
-  // val tag_write_intend = missQueue.io.refill_pipe_req.valid || mainPipe.io.tag_write_intend
   val tag_write_intend = mainPipe.io.tag_write_intend
   assert(!RegNext(!tag_write_intend && tagArray.io.write.valid))
   ldu.zipWithIndex.foreach {
     case (ld, i) =>
       tagArray.io.read(i) <> ld.io.tag_read
-//      ld.io.tag_resp := tagArray.io.resp(i)
-      //从tagArray返回的是23位，把低两位cat上再返回给loadpipe去
+      //从tagArray返回的是23位，把低两位cat上再返回给loadpipe
       ld.io.tag_resp := tagArray.io.resp(i).zip(low2_tag(RegNext(tagArray.io.read(i).bits.idx))).map{ case(i, j) => Cat(i, j)}
       ld.io.tag_read.ready := !tag_write_intend
       //单独返回低两位到loadpipe
       ld.io.low2_tag := RegEnable(low2_tag(ld.io.tag_read.bits.idx), ld.io.tag_read.fire)
   }
   tagArray.io.read.last <> mainPipe.io.tag_read
-//  mainPipe.io.tag_resp := tagArray.io.resp.last
   //从tagArray返回的是23位，把低两位cat上再返回到mainpipe去
   mainPipe.io.tag_resp := tagArray.io.resp.last.zip(low2_tag(RegNext(tagArray.io.read.last.bits.idx))).map{ case (i, j) => Cat(i, j)}
   //单独返回低两位到mainpipe
@@ -552,7 +546,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   // tag_write_arb.io.in(1) <> mainPipe.io.tag_write
   tagArray.io.write <> mainPipe.io.tag_write
 
-  //写入
+  //写入tag的低两位到寄存器low2_tag
   when(tagArray.io.write.valid) {
     (0 until DCacheWays).foreach(i => {
       //检查way_en的第i路是否为1，是的话就需要写入
