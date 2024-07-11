@@ -53,18 +53,18 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents wi
     io.out(i).bits.cf.predebugInfo.decodeTime := GTimer()
     io.in(i).ready       := io.out(i).ready
 
-    // We use the lsrc/ldest before fusion decoder to read RAT for better timing.
-    io.intRat(i)(0).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(0)
-    io.intRat(i)(1).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(1)
-    io.intRat(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
-    io.intRat(i).foreach(_.hold := !io.out(i).ready)
-
-    // Floating-point instructions can not be fused now.
-    io.fpRat(i)(0).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(0)
-    io.fpRat(i)(1).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(1)
-    io.fpRat(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(2)
-    io.fpRat(i)(3).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
-    io.fpRat(i).foreach(_.hold := !io.out(i).ready)
+//    // We use the lsrc/ldest before fusion decoder to read RAT for better timing.
+//    io.intRat(i)(0).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(0)
+//    io.intRat(i)(1).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(1)
+//    io.intRat(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
+//    io.intRat(i).foreach(_.hold := !io.out(i).ready)
+//
+//    // Floating-point instructions can not be fused now.
+//    io.fpRat(i)(0).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(0)
+//    io.fpRat(i)(1).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(1)
+//    io.fpRat(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(2)
+//    io.fpRat(i)(3).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
+//    io.fpRat(i).foreach(_.hold := !io.out(i).ready)
   }
 
   val hasValid = VecInit(io.in.map(_.valid)).asUInt.orR

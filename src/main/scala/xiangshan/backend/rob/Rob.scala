@@ -66,6 +66,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val exception = ValidIO(new ExceptionInfo)
     val mmuEnable = Input(Bool())
     val commits = new RobCommitIO
+    val rblCommits = Flipped(new RobToRblIO)
     val lsq = new RobLsqIO
     val csr = new RobCSRIO
     val robFull = Output(Bool())
@@ -460,6 +461,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     //val vecNum = PopCount(commits_vec.take(i + 1))
     v := canWalk && (i.U < walkCounter)
   }
+  val commits_needDest = entryDataRead.map(_.needDest)
 
   val deqPtrGenModule = Module(new RobCommitHelper)
   val deqPtrVec_next = deqPtrGenModule.io.deqPtrNextVec
@@ -472,6 +474,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   deqPtrGenModule.io.interrupt_safe := interrupt_safe(deqPtr.value)
   deqPtrGenModule.io.blockCommit := blockCommit
   deqPtrGenModule.io.deq_isVec := commits_vec
+  deqPtrGenModule.io.deq_needDest := commits_needDest
   deqPtrVec := deqPtrGenModule.io.deqPtrVec
 
   for (i <- 0 until CommitWidth) {
@@ -487,6 +490,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     io.commits.info(i).connectEntryData(entryDataRead(i))
     io.commits.info(i).vecWen := commits_vec(i)
     io.commits.robIdx(i) := Mux(state === s_idle, deqPtrVec(i), walkPtrVec(i))
+
+    io.rblCommits.commitSize := deqPtrGenModule.io.rabCommitSize
+    io.rblCommits.walkSize := deqPtrGenModule.io.rabCommitSize
+    io.rblCommits.walkValid := (state =/= s_idle)
+    io.rblCommits.commitValid := (state === s_idle) && (!blockCommit)
 
     // when (io.commits.isWalk && state === s_walk && shouldWalkVec(i)) {
     //   XSError(!walk_v(i), s"why not $i???\n")
@@ -613,10 +621,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
   // update the state depending on whether there is a redirect
   val state_next = Mux(io.redirect.valid,
-    Mux(io.enq.needAlloc.asUInt.orR,
-      s_extrawalk,
-      Mux(noNeedToWalk, s_idle, s_walk)
-    ),
+      Mux(noNeedToWalk, s_idle, s_walk),
     Mux(state === s_walk && walkFinished,
       s_idle,
       Mux(state === s_extrawalk,
@@ -811,6 +816,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.vtypeWb := req.ctrl.isVtype
       wdata.isVector := req.ctrl.isVector && !req.ctrl.isVtype
       wdata.isOrder := req.vctrl.ordered
+      wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
   }
 
   vectorMarkVec.zipWithIndex.foreach {

@@ -55,13 +55,18 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
   // (2) Reading is synchronous now.
   // (3) RAddr at T0 will be used to access the table and get data at T0.
   // (4) WData at T0 is bypassed to RData at T1.
-  val t1_rdata = io.readPorts.map(p => RegNext(Mux(p.hold, p.data, spec_table_next(p.addr))))
-  val t1_raddr = io.readPorts.map(p => RegEnable(p.addr, !p.hold))
+  val t1_rdata = io.readPorts.map(p => Mux(p.hold, p.data, spec_table_next(p.addr)))
+  val t1_raddr = io.readPorts.map(p => p.addr)
   val t1_wSpec = Wire(Vec(CommitWidth, new RatWritePort))
   t1_wSpec.zip(io.specWritePorts).foreach({case(a,b) =>
-    a.wen := RegNext(b.wen, false.B)
-    a.addr := RegEnable(b.addr, b.wen)
-    a.data := RegEnable(b.data, b.wen)
+//    a.wen := RegNext(b.wen, false.B)
+//    a.addr := RegEnable(b.addr, b.wen)
+//    a.data := RegEnable(b.data, b.wen)
+    when(b.wen) {
+      a.wen := b.wen
+      a.addr := b.addr
+      a.data := b.data
+    }
   })
 
   // WRITE: when instruction commits or walking
@@ -77,10 +82,12 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
   // READ: decode-rename stage
   for ((r, i) <- io.readPorts.zipWithIndex) {
     // We use two comparisons here because r.hold has bad timing but addrs have better timing.
-    val t0_bypass = io.specWritePorts.map(w => w.wen && Mux(r.hold, w.addr === t1_raddr(i), w.addr === r.addr))
-    val t1_bypass = RegNext(VecInit(t0_bypass))
+//    val t0_bypass = io.specWritePorts.map(w => w.wen && Mux(r.hold, w.addr === t1_raddr(i), w.addr === r.addr))
+//    val t1_bypass = RegNext(VecInit(t0_bypass))
+    val t1_bypass = io.specWritePorts.map(w => w.wen && Mux(r.hold, w.addr === t1_raddr(i), w.addr === r.addr))
+    val t1_bypassVec = VecInit(t1_bypass)
     val bypass_data = ParallelPriorityMux(t1_bypass.reverse, t1_wSpec.map(_.data).reverse)
-    r.data := Mux(t1_bypass.asUInt.orR, bypass_data, t1_rdata(i))
+    r.data := Mux(t1_bypassVec.asUInt.orR, bypass_data, t1_rdata(i))
   }
 
   for (w <- io.archWritePorts) {

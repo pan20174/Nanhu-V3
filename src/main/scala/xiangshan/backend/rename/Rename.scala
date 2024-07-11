@@ -29,7 +29,7 @@ import xiangshan.backend.execute.fu.jmp.JumpOpType
 import xiangshan.backend.execute.fu.FuOutput
 import xiangshan.backend.execute.fu.csr.CSROpType
 import xiangshan.backend.execute.fu.csr.vcsr.VCSRWithVtypeRenameIO
-import xiangshan.backend.rob.RobPtr
+import xiangshan.backend.rob.{RobEnqIO, RobPtr}
 import xiangshan.mem.mdp._
 import xiangshan.vector.SIRenameInfo
 import xiangshan.vector.vtyperename.{VtpToVCtl, VtypeRename}
@@ -40,13 +40,16 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     val redirect = Flipped(ValidIO(new Redirect))
     val robCommits = Flipped(new RobCommitIO)
     // from decode
-    val in = Vec(RenameWidth, Flipped(DecoupledIO(new CfCtrl)))
+    val in = Vec(RenameWidth, Flipped(DecoupledIO(new MicroOp)))
     val allowIn = Input(Bool())
     val fusionInfo = Vec(DecodeWidth - 1, Flipped(new FusionDecodeInfo))
     // ssit read result
     val ssit = Flipped(Vec(RenameWidth, Output(new SSITEntry)))
     // waittable read result
     val waittable = Flipped(Vec(RenameWidth, Output(Bool())))
+    // RAT read
+    val intRat = Vec(RenameWidth, Vec(3, Flipped(new RatReadPort)))
+    val fpRat = Vec(RenameWidth, Vec(4, Flipped(new RatReadPort)))
     // to rename table
     val intReadPorts  = Vec(RenameWidth, Vec(3, Input(UInt(PhyRegIdxWidth.W))))
     val fpReadPorts   = Vec(RenameWidth, Vec(4, Input(UInt(PhyRegIdxWidth.W))))
@@ -54,6 +57,8 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     val fpRenamePorts   = Vec(RenameWidth, Output(new RatWritePort))
     // to dispatch1
     val out = Vec(RenameWidth, DecoupledIO(new MicroOp))
+    // enq Rob
+    val enqRob = Flipped(new RobEnqIO)
     // to vector
     val toVCtl = Output(Vec(RenameWidth, new VtpToVCtl))
     val vcsrio  = Flipped(new VCSRWithVtypeRenameIO)
@@ -95,22 +100,22 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   }
   // walk has higher priority than allocation and thus we don't use isWalk here
   // only when both fp and int free list and dispatch1 has enough space can we do allocation
-  intFreeList.io.doAllocate := fpFreeList.io.canAllocate && vtyperename.io.canAccept && io.out(0).ready
-  fpFreeList.io.doAllocate := intFreeList.io.canAllocate && vtyperename.io.canAccept && io.out(0).ready
+  intFreeList.io.doAllocate := fpFreeList.io.canAllocate && vtyperename.io.canAccept && io.out(0).ready && io.enqRob.canAccept
+  fpFreeList.io.doAllocate := intFreeList.io.canAllocate && vtyperename.io.canAccept && io.out(0).ready && io.enqRob.canAccept
 
-  // dispatch1 ready ++ float point free list ready ++ int free list ready ++ not walk
-  val canOut = io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept
+  // dispatch1 ready ++ float point free list ready ++ int free list ready ++ not walk ++ rob canaccept
+  val canOut = io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.enqRob.canAccept
 
 
   // speculatively assign the instruction with an robIdx
-  val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
-  val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
-  val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
-  val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
-         Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
-                         Mux(canOut & io.allowIn, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
-                      /* default */  robIdxHead))) // no instructions passed by this cycle: stick to old value
-  robIdxHead := robIdxHeadNext
+//  val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
+//  val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
+//  val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
+//  val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
+//         Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
+//                         Mux(canOut & io.allowIn, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
+//                      /* default */  robIdxHead))) // no instructions passed by this cycle: stick to old value
+//  robIdxHead := robIdxHeadNext
 
   /**
     * Rename: allocate free physical register and update rename table
@@ -157,6 +162,19 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     uops(i).ctrl := io.in(i).bits.ctrl
     uops(i).fdiUntrusted := io.in(i).bits.cf.fdiUntrusted
 
+    // We use the lsrc/ldest before fusion decoder to read RAT for better timing.
+    io.intRat(i)(0).addr := uops(i).ctrl.lsrc(0)
+    io.intRat(i)(1).addr := uops(i).ctrl.lsrc(1)
+    io.intRat(i)(2).addr := uops(i).ctrl.ldest
+    io.intRat(i).foreach(_.hold := !io.out(i).ready)
+
+    // Floating-point instructions can not be fused now.
+    io.fpRat(i)(0).addr := uops(i).ctrl.lsrc(0)
+    io.fpRat(i)(1).addr := uops(i).ctrl.lsrc(1)
+    io.fpRat(i)(2).addr := uops(i).ctrl.lsrc(2)
+    io.fpRat(i)(3).addr := uops(i).ctrl.ldest
+    io.fpRat(i).foreach(_.hold := !io.out(i).ready)
+
     // update cf according to ssit result
     uops(i).cf.storeSetHit := io.ssit(i).valid
     uops(i).cf.loadWaitStrict := io.ssit(i).strict && io.ssit(i).valid
@@ -174,7 +192,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // no valid instruction from decode stage || all resources (dispatch1 + both free lists) ready
     io.in(i).ready := !hasValid || canOut
 
-    uops(i).robIdx  := robIdxHead + PopCount(io.in.take(i).map(_.valid))
+//    uops(i).robIdx  := robIdxHead + PopCount(io.in.take(i).map(_.valid))
     uops(i).psrc(0) := Mux(uops(i).ctrl.srcType(0) === SrcType.reg, io.intReadPorts(i)(0), io.fpReadPorts(i)(0))
     uops(i).psrc(1) := Mux(uops(i).ctrl.srcType(1) === SrcType.reg, io.intReadPorts(i)(1), io.fpReadPorts(i)(1))
     // int psrc2 should be bypassed from next instruction if it is fused
@@ -203,8 +221,11 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     vtyperename.io.vcsr <> io.vcsrio
 
     //out
-    io.out(i).valid := io.in(i).valid && intFreeList.io.canAllocate && fpFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.allowIn
+    io.out(i).valid := io.in(i).valid && intFreeList.io.canAllocate && fpFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.allowIn && io.enqRob.canAccept
     io.out(i).bits  := uops(i)
+    io.enqRob.needAlloc(i) := io.in(i).valid
+    io.enqRob.req(i).valid := io.in(i).valid && intFreeList.io.canAllocate && fpFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.allowIn && io.out(i).ready
+    io.enqRob.req(i).bits := uops(i)
     // dirty code for fence. The lsrc is passed by imm.
     when (io.out(i).bits.ctrl.fuType === FuType.fence) {
       io.out(i).bits.ctrl.imm := Cat(io.in(i).bits.ctrl.lsrc(1), io.in(i).bits.ctrl.lsrc(0))
@@ -225,8 +246,8 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
 
     // write speculative rename table
     // we update rat later inside commit code
-    intSpecWen(i) := needIntDest(i) && intFreeList.io.canAllocate && intFreeList.io.doAllocate && !io.robCommits.isWalk && !io.redirect.valid && io.allowIn
-    fpSpecWen(i)  := needFpDest(i) && fpFreeList.io.canAllocate && fpFreeList.io.doAllocate && !io.robCommits.isWalk && !io.redirect.valid && io.allowIn
+    intSpecWen(i) := needIntDest(i) && intFreeList.io.canAllocate && intFreeList.io.doAllocate && !io.robCommits.isWalk && !io.redirect.valid && io.allowIn && io.enqRob.canAccept
+    fpSpecWen(i)  := needFpDest(i) && fpFreeList.io.canAllocate && fpFreeList.io.doAllocate && !io.robCommits.isWalk && !io.redirect.valid && io.allowIn && io.enqRob.canAccept
 
     intRefCounter.io.allocate(i).valid  := intSpecWen(i)
     intRefCounter.io.allocate(i).bits   := io.out(i).bits.pdest

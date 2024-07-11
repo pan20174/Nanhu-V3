@@ -536,8 +536,8 @@ class FusionDecoder(implicit p: Parameters) extends XSModule with HasPerfLogging
       new FusedLogicZexth(pair)
     )
     val fire = io.in(i).valid && io.inReady(i)
-    val instrPairValid = RegEnable(VecInit(pair.map(_.valid)).asUInt.andR, false.B, io.inReady(i))
-    val fusionVec = RegEnable(VecInit(fusionList.map(_.isValid)), fire)
+    val instrPairValid = VecInit(pair.map(_.valid)).asUInt.andR
+    val fusionVec = VecInit(fusionList.map(_.isValid))
     val thisCleared = io.clear(i)
     out.valid := instrPairValid && !thisCleared && fusionVec.asUInt.orR
     XSError(instrPairValid && PopCount(fusionVec) > 1.U, "more then one fusion matched\n")

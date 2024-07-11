@@ -120,8 +120,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle {
   // needs to be checked by FDI
   val fdiUntrusted = Bool()
 
-  //vector
-
+  val predebugInfo = new PrePerfDebugInfo
 }
 
 // Decode DecodeWidth insts at Decode Stage
@@ -176,7 +175,7 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   }
 
   def isVset: Bool = (fuOpType===CSROpType.vsetivli || fuOpType===CSROpType.vsetvli || fuOpType===CSROpType.vsetvl)
-
+  def needWriteRf: Bool = (rfWen && ldest =/= 0.U) || fpWen
 }
 
 class CfCtrl(implicit p: Parameters) extends XSBundle {
@@ -197,6 +196,11 @@ class PerfDebugInfo(implicit p: Parameters) extends XSBundle {
   val writebackTime = UInt(XLEN.W)
   // val commitTime = UInt(64.W)
   val runahead_checkpoint_id = UInt(64.W)
+}
+
+class PrePerfDebugInfo(implicit p: Parameters) extends XSBundle {
+  val fetchTime = UInt(XLEN.W)
+  val decodeTime = UInt(XLEN.W)
 }
 
 // Separate LSQ
@@ -348,6 +352,7 @@ class RobEntryData(implicit p: Parameters) extends XSBundle {
   val vtypeWb = Bool()
   val isVector = Bool()
   val isOrder = Bool()
+  val needDest = Bool()
 }
 
 class RobCommitInfo(implicit p: Parameters) extends RobEntryData {
@@ -369,6 +374,7 @@ class RobCommitInfo(implicit p: Parameters) extends RobEntryData {
     vtypeWb := data.vtypeWb
     isVector := data.isVector
     isOrder := data.isOrder
+    needDest := (data.rfWen && data.ldest =/= 0.U) || data.fpWen || data.vecWen
   }
 }
 
