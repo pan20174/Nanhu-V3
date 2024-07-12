@@ -186,6 +186,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   }
 
   //Decode
+  decode.io.in.map(_.bits.predebugInfo.decodeTime := GTimer())
   decode.io.in      <> io.frontend.cfVec
 //  decode.io.intRat  <> rat.io.intReadPorts
 //  decode.io.fpRat   <> rat.io.fpReadPorts
