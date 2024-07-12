@@ -66,7 +66,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val exception = ValidIO(new ExceptionInfo)
     val mmuEnable = Input(Bool())
     val commits = new RobCommitIO
-    val rblCommits = Flipped(new RobToRblIO)
+//    val rblCommits = Flipped(new RobToRblIO)
     val lsq = new RobLsqIO
     val csr = new RobCSRIO
     val robFull = Output(Bool())
@@ -491,10 +491,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     io.commits.info(i).vecWen := commits_vec(i)
     io.commits.robIdx(i) := Mux(state === s_idle, deqPtrVec(i), walkPtrVec(i))
 
-    io.rblCommits.commitSize := deqPtrGenModule.io.rabCommitSize
-    io.rblCommits.walkSize := deqPtrGenModule.io.rabCommitSize
-    io.rblCommits.walkValid := (state =/= s_idle)
-    io.rblCommits.commitValid := (state === s_idle) && (!blockCommit)
+//    io.rblCommits.commitSize := deqPtrGenModule.io.rabCommitSize
+//    io.rblCommits.walkSize := deqPtrGenModule.io.rabCommitSize
+//    io.rblCommits.walkValid := (state =/= s_idle)
+//    io.rblCommits.commitValid := (state === s_idle) && (!blockCommit)
 
     // when (io.commits.isWalk && state === s_walk && shouldWalkVec(i)) {
     //   XSError(!walk_v(i), s"why not $i???\n")

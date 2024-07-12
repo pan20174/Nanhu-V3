@@ -26,11 +26,11 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   private class RouterQueuePtr extends CircularQueuePtr[RouterQueuePtr](size)
 
   private val dataModule = Reg(Vec(size, new RouterQueueEntry))
-  private val enqPtrVec = Wire(Vec(vecLen, new RouterQueuePtr))
+  private val enqPtrVec = Wire(VecInit(Seq.fill(vecLen)(0.U.asTypeOf(new RouterQueuePtr))))
   private val enqPtr = enqPtrVec.head
   private val enqPtrVecNext = Wire(enqPtrVec.cloneType)
 
-  private val deqPtrVec = Wire(Vec(vecLen, new RouterQueuePtr))
+  private val deqPtrVec = Wire(VecInit(Seq.fill(vecLen)(0.U.asTypeOf(new RouterQueuePtr))))
   private val deqPtrVecNext = deqPtrVec.map(WireInit(_))
   private val deqPtr = deqPtrVec.head
 
@@ -104,6 +104,7 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
       o.bits.ctrl.singleStep := io.singleStep && (if (i == 0) singleStepStatus else true.B)
     })
   })
+  io.allowOut := allowOut
 
   //pointers update
   private val enqMask = UIntToMask(enqPtr.value, size)

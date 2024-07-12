@@ -32,8 +32,8 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents wi
     // to Rename
     val out = Vec(DecodeWidth, DecoupledIO(new CfCtrl))
     // RAT read
-    val intRat = Vec(RenameWidth, Vec(3, Flipped(new RatReadPort)))
-    val fpRat = Vec(RenameWidth, Vec(4, Flipped(new RatReadPort)))
+//    val intRat = Vec(RenameWidth, Vec(3, Flipped(new RatReadPort)))
+//    val fpRat = Vec(RenameWidth, Vec(4, Flipped(new RatReadPort)))
     // csr control
     val csrCtrl = Input(new CustomCSRCtrlIO)
     // perf only
