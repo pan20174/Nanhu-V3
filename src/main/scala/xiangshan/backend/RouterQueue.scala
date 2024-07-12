@@ -39,20 +39,22 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
 
   private val singleStepStatus = RegInit(false.B)
 
-  //enq
+  //robidx allocate
   private val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
   private val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
+  private val robIdxHeadNext = RegInit(0.U.asTypeOf(new RobPtr))
   private val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
   private val allowOut = Wire(Vec(outNum, Bool()))
   allowOut.zipWithIndex.foreach({ case (a, i) =>
     a := io.out.zipWithIndex.filterNot(_._2 == i).map(_._1.head.ready).reduce(_ & _)
   })
   private val canOut = allowOut.reduce(_ && _)
-  private val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
+  robIdxHeadNext := Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
     Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
       Mux(canOut && allowEnqueue, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
         /* default */ robIdxHead))) // no instructions passed by this cycle: stick to old value
   robIdxHead := robIdxHeadNext
+  //enq
   private val allocatePtrVec = VecInit((0 until vecLen).map(i => enqPtrVec(PopCount(io.in.map(_.fire))).value))
   io.in.zipWithIndex.zip(allocatePtrVec).map { case ((in, i), enqaddr) =>
     when(in.fire) {
