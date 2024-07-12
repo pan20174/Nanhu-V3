@@ -19,7 +19,7 @@ package xiangshan.backend.decode
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import xs.utils.{LookupTree, SignExt, ZeroExt}
+import xs.utils.{GTimer, LookupTree, SignExt, ZeroExt}
 import xs.utils.perf.HasPerfLogging
 import freechips.rocketchip.util.uintToBitPat
 import utils._
@@ -1108,8 +1108,9 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   // fill in exception vector
   cf_ctrl.cf.exceptionVec := io.enq.ctrl_flow.exceptionVec
-  cf_ctrl.cf.exceptionVec(illegalInstr) := illegalInst || illegalFp || illegalVec || illegalFDI 
-
+  cf_ctrl.cf.exceptionVec(illegalInstr) := illegalInst || illegalFp || illegalVec || illegalFDI
+  private val time = GTimer()
+  cf_ctrl.cf.predebugInfo.decodeTime := time
   // fix frflags
   //                           fflags    zero csrrs rd    csr
   val isFrflags = BitPat("b000000000001_00000_010_?????_1110011") === ctrl_flow.instr
