@@ -87,6 +87,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     cf.ftqPtr := ftqPtr
     cf.ftqOffset := ftqOffset
     cf.fdiUntrusted := fdiUntrusted
+    cf.predebugInfo.fetchTime := GTimer()
+    cf.predebugInfo.decodeTime := DontCare
     cf
   }
 }
@@ -141,6 +143,7 @@ class Ibuffer(implicit p: Parameters) extends XSModule with HasCircularQueuePtrH
     io.out(i).valid := validVec(i)
     // by default, all bits are from the data module (slow path)
     io.out(i).bits := ibuf.io.rdata(i).toCtrlFlow
+    io.out(i).bits.predebugInfo.decodeTime := 0.U
     io.out(i).bits.predebugInfo.fetchTime := GTimer()
     // some critical bits are from the fast path
     val fastData = deqData(i).toCtrlFlow
