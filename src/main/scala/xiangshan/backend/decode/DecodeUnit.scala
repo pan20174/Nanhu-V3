@@ -1027,8 +1027,8 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   val ctrl_flow = Wire(new CtrlFlow) // input with RVC Expanded
   val cf_ctrl = Wire(new CfCtrl)
-  cf_ctrl.vCsrInfo := DontCare
-  cf_ctrl.vctrl := DontCare
+  ctrl_flow := DontCare
+  cf_ctrl := DontCare
   ctrl_flow := io.enq.ctrl_flow
   ctrl_flow.predebugInfo.fetchTime := io.enq.ctrl_flow.predebugInfo.fetchTime
   val time = GTimer()
