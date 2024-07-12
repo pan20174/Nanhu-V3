@@ -1060,6 +1060,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   // output
   cf_ctrl.cf := ctrl_flow
   val cs = Wire(new CtrlSignals)
+  cs := DontCare
   // val scs = Wire(new CtrlSignals)
   // val vcs = Wire(new CtrlSignals)
 //  scs := 0.U.asTypeOf(new CtrlSignals()).decode(ctrl_flow.instr, decode_table)
