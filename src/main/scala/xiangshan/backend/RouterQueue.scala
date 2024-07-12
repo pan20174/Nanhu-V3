@@ -26,13 +26,15 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   private class RouterQueuePtr extends CircularQueuePtr[RouterQueuePtr](size)
 
   private val dataModule = Reg(Vec(size, new RouterQueueEntry))
+
   private val enqPtrVec = VecInit(Seq.fill(vecLen)(0.U.asTypeOf(new RouterQueuePtr)))
   private val enqPtr = enqPtrVec.head
-  private val enqPtrVecNext = Wire(enqPtrVec.cloneType)
+  private val enqPtrVecNext = enqPtrVec.map(WireInit(_))
 
   private val deqPtrVec = VecInit(Seq.fill(vecLen)(0.U.asTypeOf(new RouterQueuePtr)))
-  private val deqPtrVecNext = deqPtrVec.map(WireInit(_))
   private val deqPtr = deqPtrVec.head
+  private val deqPtrVecNext = deqPtrVec.map(WireInit(_))
+
 
   private val singleStepStatus = RegInit(false.B)
 
