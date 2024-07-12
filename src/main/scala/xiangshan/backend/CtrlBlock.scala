@@ -153,7 +153,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   //ROB
   private val rob = outer.rob.module
-  private val rollbacklist = Module(new RollBackList(RblSize))
+//  private val rollbacklist = Module(new RollBackList(RblSize))
 
   //Vector
   private val vCtrlBlock = Module(new VectorCtrlBlock(vdWidth, vpdWidth, mempdWidth))
