@@ -8,8 +8,13 @@ import xs.utils.CircularQueuePtr
 import xiangshan.backend.rob.RobPtr
 import xs.utils._
 
+class FusionInfo extends Bundle {
+  val rs2FromRs1 = Bool()
+  val rs2FromRs2 = Bool()
+  val rs2FromZero = Bool()
+}
 class RouterQueueEntry(implicit p: Parameters) extends XSBundle {
-  val fusion = new FusionDecodeInfo
+  val fusion = new FusionInfo
   val uop = new MicroOp
 }
 
@@ -21,7 +26,7 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
     val allowOut = Output(Vec(outNum, Bool()))
     val redirect = Flipped(ValidIO(new Redirect))
     val robempty = Input(Bool())
-    val fusionInfoOut = Vec(DecodeWidth, Flipped(new FusionDecodeInfo))
+    val fusionInfoOut = Vec(DecodeWidth, new FusionDecodeInfo)
     val singleStep = Input(Bool())
   })
 
@@ -64,7 +69,9 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
       dataModule(enqaddr).uop.vCsrInfo := in.bits.vCsrInfo
       dataModule(enqaddr).uop.vctrl := in.bits.vctrl
       dataModule(enqaddr).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
-      dataModule(enqaddr).fusion := io.fusionInfoIn(i)
+      dataModule(enqaddr).fusion.rs2FromRs1 := io.fusionInfoIn(i).rs2FromRs1
+      dataModule(enqaddr).fusion.rs2FromRs2 := io.fusionInfoIn(i).rs2FromRs2
+      dataModule(enqaddr).fusion.rs2FromZero := io.fusionInfoIn(i).rs2FromZero
     }
   }
   private val enqCount    = PopCount(io.in.map(_.valid))
@@ -106,7 +113,9 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
       o.valid := thisCanActualOut(i)
       o.bits := deq.uop
       o.bits.ctrl.singleStep := io.singleStep && (if (i == 0) singleStepStatus else true.B)
-      io.fusionInfoOut(i) := deq.fusion
+      io.fusionInfoOut(i).rs2FromRs1 := deq.fusion.rs2FromRs1
+      io.fusionInfoOut(i).rs2FromRs2 := deq.fusion.rs2FromRs2
+      io.fusionInfoOut(i).rs2FromZero := deq.fusion.rs2FromZero
     })
   })
 
