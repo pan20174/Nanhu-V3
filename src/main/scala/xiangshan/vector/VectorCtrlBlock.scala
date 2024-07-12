@@ -46,7 +46,7 @@ class VectorCtrlBlock(vecDpWidth: Int, vpDpWidth: Int, memDpWidth: Int)(implicit
   val io = IO(new Bundle {
     //val hartId = Input(UInt(8.W))
     //from ctrl decode
-    val in = Vec(DecodeWidth, Flipped(DecoupledIO(new CfCtrl)))
+    val in = Vec(DecodeWidth, Flipped(DecoupledIO(new MicroOp)))
     val allowIn = Input(Bool())
     //from ctrl rename
     val fromVtpRn = Input(Vec(RenameWidth, new VtpToVCtl))
