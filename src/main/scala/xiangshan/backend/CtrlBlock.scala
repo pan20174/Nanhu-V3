@@ -349,7 +349,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   }
   dispatch.io.toLsDq.canAccept(0) := lsDq.io.enq.canAccept
   dispatch.io.allocPregs <> io.allocPregs
-  dispatch.io.singleStep := RegNext(io.csrCtrl.singlestep)
+//  dispatch.io.singleStep := RegNext(io.csrCtrl.singlestep)
   dispatch.io.vstart := RegNext(io.vstart)
 
   private val redirectDelay_dup_0 = Pipe(io.redirectIn)

@@ -42,7 +42,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // from decode
     val in = Vec(RenameWidth, Flipped(DecoupledIO(new MicroOp)))
     val allowIn = Input(Bool())
-    val fusionInfo = Vec(DecodeWidth - 1, Flipped(new FusionDecodeInfo))
+//    val fusionInfo = Vec(DecodeWidth - 1, Flipped(new FusionDecodeInfo))
     // ssit read result
     val ssit = Flipped(Vec(RenameWidth, Output(new SSITEntry)))
     // waittable read result
