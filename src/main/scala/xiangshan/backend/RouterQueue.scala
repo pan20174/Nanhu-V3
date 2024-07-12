@@ -10,7 +10,7 @@ import xs.utils._
 
 class RouterQueueEntry(implicit p: Parameters) extends XSBundle {
   val fusion = new FusionDecodeInfo
-  val uop = new MicroOp()
+  val uop = new MicroOp
 }
 
 class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper {
@@ -59,7 +59,10 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   private val allocatePtrVec = VecInit((0 until vecLen).map(i => enqPtrVec(PopCount(io.in.map(_.fire))).value))
   io.in.zipWithIndex.zip(allocatePtrVec).map { case ((in, i), enqaddr) =>
     when(in.fire) {
-      dataModule(enqaddr).uop := in.bits
+      dataModule(enqaddr).uop.ctrl := in.bits.ctrl
+      dataModule(enqaddr).uop.cf := in.bits.cf
+      dataModule(enqaddr).uop.vCsrInfo := in.bits.vCsrInfo
+      dataModule(enqaddr).uop.vctrl := in.bits.vctrl
       dataModule(enqaddr).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
       dataModule(enqaddr).fusion := io.fusionInfoIn(i)
     }
