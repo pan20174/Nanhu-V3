@@ -242,10 +242,10 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   // pipeline between decode and rename
   for (i <- 0 until RenameWidth) {
     // fusion decoder
-    val decodeHasException = io.frontend.cfVec(i).bits.exceptionVec(instrPageFault) || io.frontend.cfVec(i).bits.exceptionVec(instrAccessFault)
+    val decodeHasException = decode.io.out(i).bits.cf.exceptionVec(instrPageFault) || decode.io.out(i).bits.cf.exceptionVec(instrAccessFault)
     val disableFusion = decode.io.csrCtrl.singlestep || !decode.io.csrCtrl.fusion_enable
-    fusionDecoder.io.in(i).valid := io.frontend.cfVec(i).valid && !(decodeHasException || disableFusion)
-    fusionDecoder.io.in(i).bits := io.frontend.cfVec(i).bits.instr
+    fusionDecoder.io.in(i).valid := decode.io.out(i).valid && !(decodeHasException || disableFusion)
+    fusionDecoder.io.in(i).bits := decode.io.out(i).bits.cf.instr
     if (i > 0) {
       fusionDecoder.io.inReady(i - 1) := decode.io.out(i).ready
     }
@@ -260,7 +260,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     rename.io.fpReadPorts(i)  := rat.io.fpReadPorts(i).map(_.data)
     rename.io.waittable(i)    := RegEnable(waittable.io.rdata(i), decode.io.out(i).fire)
     rename.io.allowIn := decQueue.io.allowOut(0) && !rename.io.redirect.valid
-    rename.io.fusionInfo(i)   := decQueue.io.fusionInfoIn(i)
+    rename.io.fusionInfo(i)   := decQueue.io.fusionInfoOut(i)
 
     if (i < RenameWidth - 1) {
       // fusion decoder sees the raw decode info
@@ -272,9 +272,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
       when (fusionDecoder.io.out(i).valid) {
         fusionDecoder.io.out(i).bits.update(decQueue.io.in(i).bits.ctrl)
         // TODO: remove this dirty code for ftq update
-        val sameFtqPtr = decQueue.io.in(i).bits.cf.ftqPtr.value === decQueue.io.in(i + 1).bits.cf.ftqPtr.value
-        val ftqOffset0 = decQueue.io.in(i).bits.cf.ftqOffset
-        val ftqOffset1 = decQueue.io.in(i + 1).bits.cf.ftqOffset
+        val sameFtqPtr = decode.io.out(i).bits.cf.ftqPtr.value === decode.io.out(i + 1).bits.cf.ftqPtr.value
+        val ftqOffset0 = decode.io.out(i).bits.cf.ftqOffset
+        val ftqOffset1 = decode.io.out(i + 1).bits.cf.ftqOffset
         val ftqOffsetDiff = ftqOffset1 - ftqOffset0
         val cond1 = sameFtqPtr && ftqOffsetDiff === 1.U
         val cond2 = sameFtqPtr && ftqOffsetDiff === 2.U
@@ -283,6 +283,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
         decQueue.io.in(i).bits.ctrl.commitType := Mux(cond1, 4.U, Mux(cond2, 5.U, Mux(cond3, 6.U, 7.U)))
         XSError(!cond1 && !cond2 && !cond3 && !cond4, p"new condition $sameFtqPtr $ftqOffset0 $ftqOffset1\n")
       }
+    } else {
+      decQueue.io.fusionInfoIn(i) := 0.U
+      decQueue.io.in(i).bits.ctrl.commitType := 0.U
     }
   }
 
