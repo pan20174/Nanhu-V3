@@ -260,12 +260,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     rename.io.fpReadPorts(i)  := rat.io.fpReadPorts(i).map(_.data)
     rename.io.waittable(i)    := RegEnable(waittable.io.rdata(i), decode.io.out(i).fire)
     rename.io.allowIn := decQueue.io.allowOut(0) && !rename.io.redirect.valid
-    rename.io.fusionInfo(i)   := decQueue.io.fusionInfoOut(i)
-
     if (i < RenameWidth - 1) {
       // fusion decoder sees the raw decode info
-      fusionDecoder.io.dec(i) := renamePipe.bits.ctrl
-      decQueue.io.fusionInfoIn(i) := fusionDecoder.io.info(i)
+      fusionDecoder.io.dec(i) := decode.io.out(i).bits.ctrl
 
       // update the first RenameWidth - 1 instructions
       decode.io.fusion(i) := fusionDecoder.io.out(i).valid && decQueue.io.in(i).fire
@@ -283,9 +280,6 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
         decQueue.io.in(i).bits.ctrl.commitType := Mux(cond1, 4.U, Mux(cond2, 5.U, Mux(cond3, 6.U, 7.U)))
         XSError(!cond1 && !cond2 && !cond3 && !cond4, p"new condition $sameFtqPtr $ftqOffset0 $ftqOffset1\n")
       }
-    } else {
-      decQueue.io.fusionInfoIn(i) := 0.U
-      decQueue.io.in(i).bits.ctrl.commitType := 0.U
     }
   }
 
