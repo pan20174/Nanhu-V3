@@ -50,7 +50,6 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents wi
 
     io.out(i).valid      := io.in(i).valid
     io.out(i).bits       := decoders(i).io.deq.cf_ctrl
-    io.out(i).bits.cf.predebugInfo.decodeTime := GTimer()
     io.in(i).ready       := io.out(i).ready
 
 //    // We use the lsrc/ldest before fusion decoder to read RAT for better timing.
