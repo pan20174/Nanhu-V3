@@ -100,6 +100,7 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   io.out.zipWithIndex.foreach({case(out, deq) =>
     out.zipWithIndex.zip(deqEntries).foreach({case ((o, i), deq) =>
       o.valid := thisCanActualOut(i)
+      o.bits := DontCare
       o.bits := deq.uop
       o.bits.ctrl.singleStep := io.singleStep && (if (i == 0) singleStepStatus else true.B)
     })
