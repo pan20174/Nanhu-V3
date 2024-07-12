@@ -120,7 +120,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle {
   // needs to be checked by FDI
   val fdiUntrusted = Bool()
 
-  val predebugInfo = new PrePerfDebugInfo
+//  val predebugInfo = new PrePerfDebugInfo
 }
 
 // Decode DecodeWidth insts at Decode Stage

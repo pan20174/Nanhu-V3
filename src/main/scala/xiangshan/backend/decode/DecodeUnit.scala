@@ -1030,9 +1030,9 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   ctrl_flow := DontCare
   cf_ctrl := DontCare
   ctrl_flow := io.enq.ctrl_flow
-  ctrl_flow.predebugInfo.fetchTime := io.enq.ctrl_flow.predebugInfo.fetchTime
+//  ctrl_flow.predebugInfo.fetchTime := io.enq.ctrl_flow.predebugInfo.fetchTime
   val time = GTimer()
-  ctrl_flow.predebugInfo.decodeTime := time
+//  ctrl_flow.predebugInfo.decodeTime := time
 
   val vdecode_table = VectorArithDecode.table ++
     VectorStoreDecode.table ++
