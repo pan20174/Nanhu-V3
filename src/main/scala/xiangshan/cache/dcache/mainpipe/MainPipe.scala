@@ -27,6 +27,7 @@ import utils._
 import xs.utils._
 import xiangshan.L1CacheErrorInfo
 import xs.utils.perf.HasPerfLogging
+import xiangshan.mem.HasL1PrefetchSourceParameter
 
 class MainPipeReq(implicit p: Parameters) extends DCacheBundle {
   val miss = Bool() // only amo miss will refill in main pipe
@@ -49,6 +50,9 @@ class MainPipeReq(implicit p: Parameters) extends DCacheBundle {
   val vaddr  = UInt(VAddrBits.W)
   // must be aligned to block
   val addr   = UInt(PAddrBits.W)
+
+  //prefetch
+  val pf_source = UInt(L1PfSourceBits.W)
 
   // store
   val store_data = UInt((cfg.blockBytes * 8).W)
@@ -81,6 +85,7 @@ class MainPipeReq(implicit p: Parameters) extends DCacheBundle {
     req.probe := false.B
     req.probe_need_data := false.B
     req.source := STORE_SOURCE.U
+    req.pf_source := L1_HW_PREFETCH_NULL
     req.cmd := store.cmd
     req.addr := store.addr
     req.vaddr := store.vaddr
@@ -94,7 +99,7 @@ class MainPipeReq(implicit p: Parameters) extends DCacheBundle {
   }
 }
 
-class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents with HasPerfLogging {
+class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents with HasPerfLogging with HasL1PrefetchSourceParameter {
   val io = IO(new Bundle() {
     // probe queue
     val probe_req = Flipped(DecoupledIO(new MainPipeReq))
@@ -134,6 +139,9 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     val tag_resp = Input(Vec(nWays, UInt(encTagBits.W)))
     val tag_write = DecoupledIO(new TagWriteReq)
     val tag_write_intend = Output(new Bool())
+
+    //prefetch array
+    val prefetch_flag_write = DecoupledIO(new SourceMetaWriteReq)
 
     // update state vec in replacement algo
     val replace_access = ValidIO(new ReplacementAccessBundle)
@@ -752,8 +760,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   miss_req.cmd := s2_req.cmd
   miss_req.addr := s2_req.addr
   miss_req.vaddr := s2_req_vaddr
-  // miss_req.store_data := s2_req.store_data
-  // miss_req.store_mask := s2_req.store_mask
+  miss_req.pf_source := L1_HW_PREFETCH_NULL
   miss_req.full_overwrite := Mux(s2_tag_match, true.B, s2_req.store_mask.andR) 
   miss_req.word_idx := s2_req.word_idx
   miss_req.amo_data := s2_req.amo_data
@@ -823,6 +830,14 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.tag_write.bits.tag := Cat(new_coh.asUInt, get_tag(s3_req.addr))
   //  io.tag_write_intend := (s3_req_miss || refill_update_meta) && s3_valid
   io.tag_write_intend := (s3_req_miss || refill_update_meta || update_meta_dup_for_meta_w_valid) && s3_valid
+
+  io.prefetch_flag_write.valid := s3_valid && (
+    s3_req_refill || 
+    s3_req_miss &&
+        (s3_s_amoalu || !amo_wait_amoalu)) 
+  io.prefetch_flag_write.bits.idx := s3_idx
+  io.prefetch_flag_write.bits.way_en := s3_way_en
+  io.prefetch_flag_write.bits.source := s3_req.pf_source  
 
   XSPerfAccumulate("fake_tag_write_intend", io.tag_write_intend && !io.tag_write.valid)
   XSPerfAccumulate("mainpipe_tag_write", io.tag_write.valid)

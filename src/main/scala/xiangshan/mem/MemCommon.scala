@@ -21,9 +21,12 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import xiangshan._
+import xs.utils._
 import xiangshan.backend.issue.RsIdx
 import xiangshan.cache._
 import xs.utils.{LookupTree, UIntToMask}
+import xiangshan.mem.prefetch.PrefetchReqBundle
+import xiangshan.mem.HasL1PrefetchSourceParameter
 
 object genWmask {
   def apply(addr: UInt, sizeEncode: UInt): UInt = {
@@ -33,6 +36,24 @@ object genWmask {
       "b10".U -> 0xf.U, //1111
       "b11".U -> 0xff.U //11111111
     )) << addr(2, 0)).asUInt
+  }
+}
+
+object GatedValidRegNext {
+  // 3 is the default minimal width of EDA inserted clock gating cells.
+  // so using `GatedValidRegNext` to signals whoes width is less than 3 may not help.
+  
+  // It is useless to clockgate only one bit, so change to RegNext here
+  def apply(next: Bool, init: Bool = false.B): Bool = {
+    val last = WireInit(false.B)
+    last := RegNext(next, init)
+    last
+  }
+
+  def apply(last: Vec[Bool]): Vec[Bool] = {
+    val next = VecInit(Seq.fill(last.size)(false.B))
+    next := RegEnable(last, VecInit(Seq.fill(last.size)(false.B)), last.asUInt =/= next.asUInt)
+    next
   }
 }
 
@@ -47,7 +68,7 @@ object genWdata {
   }
 }
 
-class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
+class LsPipelineBundle(implicit p: Parameters) extends XSBundle with HasDCacheParameters{
   val vaddr = UInt(VAddrBits.W)
   val paddr = UInt(PAddrBits.W)
   // val func = UInt(6.W)
@@ -70,6 +91,35 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
 
   // For debug usage
   val isFirstIssue = Bool()
+
+   def fromLsPipelineBundle(input: LsPipelineBundle, latch: Boolean = false) = {
+    if (latch) vaddr := RegNext(input.vaddr) else vaddr := input.vaddr
+    if (latch) paddr := RegNext(input.paddr) else paddr := input.paddr
+    if (latch) mask := RegNext(input.mask) else mask := input.mask
+    if (latch) data := RegNext(input.data) else data := input.data
+    if (latch) uop := RegNext(input.uop) else uop := input.uop
+    if (latch) wlineflag := RegNext(input.wlineflag) else wlineflag := input.wlineflag
+    if (latch) miss := RegNext(input.miss) else miss := input.miss
+    if (latch) tlbMiss := RegNext(input.tlbMiss) else tlbMiss := input.tlbMiss
+    if (latch) ptwBack := RegNext(input.ptwBack) else ptwBack := input.ptwBack
+    if (latch) mmio := RegNext(input.mmio) else mmio := input.mmio
+    if (latch) rsIdx := RegNext(input.rsIdx) else rsIdx := input.rsIdx
+    if (latch) forwardMask := RegNext(input.forwardMask) else forwardMask := input.forwardMask
+    if (latch) forwardData := RegNext(input.forwardData) else forwardData := input.forwardData
+    // if (latch) isPrefetch := RegNext(input.isPrefetch) else isPrefetch := input.isPrefetch
+    // if (latch) isHWPrefetch := RegNext(input.isHWPrefetch) else isHWPrefetch := input.isHWPrefetch
+    if (latch) isFirstIssue := RegNext(input.isFirstIssue) else isFirstIssue := input.isFirstIssue
+
+  }
+
+  def asPrefetchReqBundle(): PrefetchReqBundle = {
+    val res = Wire(new PrefetchReqBundle)
+    res.vaddr := this.vaddr
+    res.paddr := this.paddr
+    res.pc    := this.uop.cf.pc
+    res.miss  := this.miss
+    res
+  }
 }
 
 class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
@@ -97,6 +147,40 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
     lq_data_wen_dup := DontCare
   }
 }
+
+// class LdPrefetchTrainBundle(implicit p: Parameters) extends LsPipelineBundle with HasL1PrefetchSourceParameter{
+//   // val meta_prefetch = UInt(L1PfSourceBits.W)
+//   // val meta_access = Bool()
+
+//   def fromLsPipelineBundle(input: LsPipelineBundle, latch: Boolean = false) = {
+//     if (latch) vaddr := RegNext(input.vaddr) else vaddr := input.vaddr
+//     if (latch) paddr := RegNext(input.paddr) else paddr := input.paddr
+//     if (latch) mask := RegNext(input.mask) else mask := input.mask
+//     if (latch) data := RegNext(input.data) else data := input.data
+//     if (latch) uop := RegNext(input.uop) else uop := input.uop
+//     if (latch) wlineflag := RegNext(input.wlineflag) else wlineflag := input.wlineflag
+//     if (latch) miss := RegNext(input.miss) else miss := input.miss
+//     if (latch) tlbMiss := RegNext(input.tlbMiss) else tlbMiss := input.tlbMiss
+//     if (latch) ptwBack := RegNext(input.ptwBack) else ptwBack := input.ptwBack
+//     if (latch) mmio := RegNext(input.mmio) else mmio := input.mmio
+//     if (latch) rsIdx := RegNext(input.rsIdx) else rsIdx := input.rsIdx
+//     if (latch) forwardMask := RegNext(input.forwardMask) else forwardMask := input.forwardMask
+//     if (latch) forwardData := RegNext(input.forwardData) else forwardData := input.forwardData
+//     // if (latch) isPrefetch := RegNext(input.isPrefetch) else isPrefetch := input.isPrefetch
+//     // if (latch) isHWPrefetch := RegNext(input.isHWPrefetch) else isHWPrefetch := input.isHWPrefetch
+//     if (latch) isFirstIssue := RegNext(input.isFirstIssue) else isFirstIssue := input.isFirstIssue
+
+//   }
+
+//   def asPrefetchReqBundle(): PrefetchReqBundle = {
+//     val res = Wire(new PrefetchReqBundle)
+//     res.vaddr := this.vaddr
+//     res.paddr := this.paddr
+//     res.pc    := this.uop.cf.pc
+//     res.miss  := this.miss
+//     res
+//   }
+// }
 
 class LoadForwardQueryIO(implicit p: Parameters) extends XSBundle {
   val vaddr = Output(UInt(VAddrBits.W))

@@ -37,8 +37,8 @@ class MissReqWoStoreData(implicit p: Parameters) extends DCacheBundle {
   val cmd = UInt(M_SZ.W)
   val addr = UInt(PAddrBits.W)
   val vaddr = UInt(VAddrBits.W)
-  // val way_en = UInt(DCacheWays.W)
-
+  //prefetch
+  val pf_source = UInt(L1PfSourceBits.W)
   // store
   val full_overwrite = Bool()
 
@@ -92,6 +92,7 @@ class MissReq(implicit p: Parameters) extends MissReqWoStoreData {
     out.cmd := cmd
     out.addr := addr
     out.vaddr := vaddr
+    out.pf_source := pf_source
     out.full_overwrite := full_overwrite
     out.word_idx := word_idx
     out.amo_data := amo_data

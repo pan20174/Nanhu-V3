@@ -529,7 +529,7 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper wi
   XSPerfAccumulate("replay_from_fetch_load_vio", io.out.valid && debug_ldldVioReplay)
 }
 
-class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with SdtrigExt with HasPerfLogging {
+class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with HasPerfEvents with SdtrigExt with HasPerfLogging with HasL1PrefetchSourceParameter {
   val io = IO(new Bundle() {
     val ldin = Flipped(Decoupled(new ExuInput))
     val auxValid = Input(Bool())
@@ -553,7 +553,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val fdiResp = Flipped(new FDIRespBundle())
 
     // provide prefetch info
+    val prefetch_train_l1 = ValidIO(new LsPipelineBundle())
+    val hit_prefetch = Output(Bool())
     val prefetch_train = ValidIO(new LsPipelineBundle())
+    
 
     val fastpathOut = Output(new LoadToLoadIO)
     val fastpathIn = Input(new LoadToLoadIO)
@@ -668,10 +671,18 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
 
   // load s2
   io.s2IsPointerChasing := RegEnable(s1_tryPointerChasing && !cancelPointerChasing, load_s1.io.out.fire)
-  io.prefetch_train.bits := load_s2.io.in.bits
+  
   // override miss bit
-  io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
   io.prefetch_train.valid := load_s2.io.in.fire && !load_s2.io.out.bits.mmio && !load_s2.io.in.bits.tlbMiss
+  io.prefetch_train.bits := load_s2.io.in.bits
+  io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
+
+  io.prefetch_train_l1.valid := load_s2.io.in.fire && !load_s2.io.out.bits.mmio 
+  io.prefetch_train_l1.bits := load_s2.io.in.bits
+  io.prefetch_train_l1.bits.miss := io.dcache.resp.bits.miss
+  io.hit_prefetch := isFromL1Prefetch(io.dcache.resp.bits.meta_prefetch)
+  
+
   io.dcache.s2_kill := load_s2.io.dcache_kill // to kill mmio resp which are redirected
   load_s2.io.dcacheResp <> io.dcache.resp
   load_s2.io.pmpResp <> io.pmp
