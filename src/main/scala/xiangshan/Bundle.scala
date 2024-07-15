@@ -143,6 +143,7 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   val fpu = new FPUCtrlSignals
   val isMove = Bool()
   val singleStep = Bool()
+  val robCanCompress = Bool()
   // This inst will flush all the pipe when it is the oldest inst in ROB,
   // then replay from this inst itself
   val replayInst = Bool()
@@ -155,7 +156,7 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   val wvstartType = VstartType()
 
   private def allSignals = srcType ++ Seq(fuType, fuOpType, rfWen, fpWen,
-    vdWen, isXSTrap, noSpecExec, blockBackward, flushPipe, wvxsat, wvstartType, selImm)
+    vdWen, isXSTrap, noSpecExec, blockBackward, flushPipe, robCanCompress, wvxsat, wvstartType, selImm)
 
   def decode(inst: UInt, table: Iterable[(BitPat, List[BitPat])]): CtrlSignals = {
     this := DontCare
