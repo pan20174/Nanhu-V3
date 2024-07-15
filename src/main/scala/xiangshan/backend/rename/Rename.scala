@@ -72,6 +72,17 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   vtyperename.io.vlUpdate := io.vlUpdate
   vtyperename.io.dispatchIn := io.dispatchIn
   io.toVCtl := vtyperename.io.toVCtl
+
+  // compressUnit: decode instructions guidelines to the ROB allocation logic
+  val compressUnit = Module(new CompressUnit())
+    compressUnit.io.in.zip(io.in).foreach{ case(sink, source) =>
+    sink.valid := source.valid
+    sink.bits := source.bits
+  }
+  val needRobFlags = compressUnit.io.out.needRobFlags
+  val instrSizesVec = compressUnit.io.out.instrSizes
+  val compressMasksVec = compressUnit.io.out.masks
+  dontTouch(needRobFlags);dontTouch(instrSizesVec);dontTouch(compressMasksVec)
   // decide if given instruction needs allocating a new physical register (CfCtrl: from decode; RobCommitInfo: from rob)
   def needDestReg[T <: CfCtrl](fp: Boolean, x: T): Bool = {
       if(fp) x.ctrl.fpWen
