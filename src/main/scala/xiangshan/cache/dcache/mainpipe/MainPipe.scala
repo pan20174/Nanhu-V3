@@ -1061,12 +1061,13 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
         (s3_s_amoalu || !amo_wait_amoalu)
     ) && need_wb
 
-  io.wb.bits.addr := get_block_addr(Cat(s3_tag, get_untag(s3_req.vaddr)))  //如果要替换，则肯定是同一个set：256，同一个set的话[5:0]肯定相同
+  io.wb.bits.addr := get_block_addr(Cat(s3_tag, get_untag(s3_req.vaddr)))
   io.wb.bits.param := writeback_param
   io.wb.bits.voluntary := s3_req_miss || s3_req_replace
   io.wb.bits.hasData := writeback_data
   io.wb.bits.dirty := s3_coh === ClientStates.Dirty
   io.wb.bits.data := s3_data.asUInt
+  io.wb.bits.wayIdx := OHToUInt(s3_way_en)
 
   io.replace_access.valid := RegNext(s1_fire && (s1_req.isAMO || s1_req.isStore) && !s1_req.probe)
   io.replace_access.bits.set := s2_idx
