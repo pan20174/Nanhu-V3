@@ -395,7 +395,7 @@ object BDecode extends DecodeConstants{
   */
 object FDIDecode extends DecodeConstants {
   val table: Array[(BitPat, List[BitPat])] = Array(
-    FDICALL_JR-> List(SrcType.reg,  SrcType.imm, SrcType.X,   FuType.jmp, JumpOpType.fdicall_jr,  Y, N, N, N, Y, Y, N, N, VstartType.hold, SelImm.IMM_I)
+    FDICALL_JR-> List(SrcType.reg,  SrcType.imm, SrcType.X,   FuType.jmp, JumpOpType.fdicall_jr,  Y, N, N, N, Y, Y, N, N, N, VstartType.hold, SelImm.IMM_I)
   )
 }
 
@@ -534,7 +534,7 @@ object VectorArithDecode extends DecodeConstants {
     VFCVT_F_XU_V ->List(SrcType.DC,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     VFCVT_RTZ_X_F_V ->List(SrcType.DC,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     VFCVT_RTZ_XU_F_V ->List(SrcType.DC,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
-    VFCVT_X_F_V ->List(SrcType.DC,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
+    VFCVT_X_F_V ->List(SrcType.DC,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     VFCVT_XU_F_V ->List(SrcType.DC,  SrcType.vec, SrcType.DC, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     VFMACC_VF ->List(SrcType.fp,  SrcType.vec, SrcType.vec, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
     VFMACC_VV ->List(SrcType.vec,  SrcType.vec, SrcType.vec, FuType.vfp, FuOpType.X, N, N, Y, N, N, N, N, N, N, VstartType.write, SelImm.IMM_VA),
