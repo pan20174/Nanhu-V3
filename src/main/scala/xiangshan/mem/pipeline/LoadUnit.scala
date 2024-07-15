@@ -94,7 +94,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val enqRAWQueue = new LoadEnqRAWBundle
     // S2,S3: store violation query
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(Valid(new storeRAWQueryBundle)))
-    val feedbackFast = ValidIO(new RSFeedback) // todo: will be deleted soon
     // S3: feedback reservationStation to replay
     val feedbackSlow = ValidIO(new RSFeedback)
     val feedbackFast = ValidIO(new RSFeedback) // todo: will be deleted soon
