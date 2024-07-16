@@ -35,13 +35,12 @@ import xiangshan.backend.execute.fu.fence.{FenceToSbuffer, SfenceBundle}
 import xiangshan.backend.issue.EarlyWakeUpInfo
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
-import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, TLB, TlbIO, TlbReplace}
+import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, PtwSectorResp, TLB, TlbHintIO, TlbIO, TlbReplace}
 import xiangshan.mem._
 import xiangshan.mem.prefetch.{BasePrefecher, SMSParams, SMSPrefetcher}
 import xs.utils.mbist.MBISTPipeline
 import xs.utils.perf.HasPerfLogging
 import xs.utils.{DelayN, ParallelPriorityMux, RegNextN, ValidIODelay}
-import xiangshan.cache.mmu.TlbHintIO
 
 class Std(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle{
@@ -261,6 +260,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val stIn = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
     val ptw = new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt)
     val tlb_hint = Flipped(new TlbHintIO)
+    val tlb_wakeUp = Flipped(ValidIO(new PtwSectorResp))
     val sfence = Input(new SfenceBundle)
     val tlbCsr = Input(new TlbCsrBundle)
     val fenceToSbuffer = Flipped(new FenceToSbuffer)
@@ -470,10 +470,18 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     })
   }
 
-  val loadTlbWakeup = Wire(Valid(new LoadTLBWakeUpBundle))
-  loadTlbWakeup.valid := dtlb_ld.head.ptw.resp.valid
-  loadTlbWakeup.bits.vpn := dtlb_ld.head.ptw.resp.bits.entry.tag
+  private val loadTlbWakeup = Wire(Valid(new LoadTLBWakeUpBundle))
+  private val contiguousVpn = WireInit(0.U((log2Up(tlbContiguous)).W))
+  when(io.tlb_wakeUp.valid){
+    contiguousVpn := OHToUInt(io.tlb_wakeUp.bits.pteidx)
+    assert(PopCount(io.tlb_wakeUp.bits.pteidx) <= 1.U)
+  }
+
+  loadTlbWakeup.valid := io.tlb_wakeUp.valid
+  loadTlbWakeup.bits.vpn := Cat(io.tlb_wakeUp.bits.entry.tag, contiguousVpn)
+  loadTlbWakeup.bits.level := io.tlb_wakeUp.bits.entry.level.get
   lsq.io.tlbWakeup := loadTlbWakeup
+  require(contiguousVpn.getWidth + io.tlb_wakeUp.bits.entry.tag.getWidth == loadTlbWakeup.bits.vpn.getWidth)
 
   val dtlb = dtlb_ld ++ dtlb_st
   val dtlb_reqs = dtlb.flatMap(_.requestor)

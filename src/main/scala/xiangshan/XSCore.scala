@@ -209,6 +209,8 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   private val dtlbRepeater2  = PTWRepeaterNB(passReady = false, dtlbRepeater1.io.ptw, ptw.io.tlb(1), fenceio.sfence, csrioIn.tlb)
 
   exuBlock.io.tlb_hint <> dtlbRepeater1.io.hint.get
+  exuBlock.io.tlb_wakeUp.valid := dtlbRepeater1.io.ptw.resp.valid
+  exuBlock.io.tlb_wakeUp.bits := dtlbRepeater1.io.ptw.resp.bits
 
   ptw.io.sfence := fenceio.sfence
   ptw.io.csr.tlb <> csrioIn.tlb
