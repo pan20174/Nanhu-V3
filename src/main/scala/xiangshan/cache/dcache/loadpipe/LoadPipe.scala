@@ -209,7 +209,7 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
 
   val s2_hit_prefetch = RegEnable(s1_hit_prefetch, s1_fire)
 
-  // val s2_way_en = RegEnable(s1_way_en, s1_fire)
+   val s2_way_en = RegEnable(s1_way_en, s1_fire)
   // val s2_repl_coh = RegEnable(s1_repl_coh, s1_fire)
   // val s2_repl_tag = RegEnable(s1_repl_tag, s1_fire)
   val s2_encTag = RegEnable(s1_encTag, s1_fire)

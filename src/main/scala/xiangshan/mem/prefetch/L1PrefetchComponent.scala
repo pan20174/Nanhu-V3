@@ -532,7 +532,7 @@ class MutiLevelPrefetchFilter(implicit p: Parameters) extends XSModule with HasL
   val s1_tlb_evict = s1_l1_tlb_evict || s1_l2_tlb_evict
   io.tlb_req.req.valid := s1_tlb_req_valid && !s1_tlb_evict
   io.tlb_req.req.bits := s1_tlb_req_bits
-  io.tlb_req.req_kill := false.B
+//  io.tlb_req.req_kill := false.B
   tlb_req_arb.io.out.ready := true.B
 
   XSPerfAccumulate("s1_tlb_req_sent", io.tlb_req.req.valid)

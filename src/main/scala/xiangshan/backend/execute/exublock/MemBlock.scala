@@ -693,10 +693,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
         source.bits.miss || hit_prefetch
       )
       pf.stride_train(i).bits := source.bits
-      pf.stride_train(i).bits.uop.cf.pc := Mux(loadUnits(i).io.s2IsPointerChasing,
-        pcDelay1Bits,
-        pcDelay2Bits
-      )
+      pf.stride_train(i).bits.uop.cf.pc := pcDelay2Bits
       // pf.io.ld_in(i).valid := source.valid && source.bits.isFirstIssue
       pf.io.ld_in(i).valid := source.valid
       pf.io.ld_in(i).bits := source.bits

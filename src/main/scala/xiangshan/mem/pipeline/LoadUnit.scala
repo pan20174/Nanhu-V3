@@ -56,6 +56,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   with HasDCacheParameters
   with SdtrigExt
   with HasPerfLogging
+  with HasL1PrefetchSourceParameter
   with HasCircularQueuePtrHelper {
   val io = IO(new Bundle() {
 
@@ -90,6 +91,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val pmp = Flipped(new PMPRespBundle()) // arrive same to tlb now
     // S2: preftech train output
     val prefetch_train = ValidIO(new LsPipelineBundle())
+    val prefetch_train_l1 = ValidIO(new LsPipelineBundle())
+    val hit_prefetch = Output(Bool())
+
     // S2: load enq LoadRAWQueue
     val enqRAWQueue = new LoadEnqRAWBundle
     // S2,S3: store violation query
@@ -477,9 +481,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
   io.prefetch_train.valid := s2_in.fire && !s2_out.bits.mmio && !s2_in.bits.tlbMiss
 
-  io.prefetch_train_l1.valid := load_s2.io.in.fire && !load_s2.io.out.bits.mmio
-  io.prefetch_train_l1.bits := load_s2.io.in.bits
+  io.prefetch_train_l1.valid := s2_out.valid && !s2_out.bits.mmio
+  io.prefetch_train_l1.bits := s2_out.bits
   io.prefetch_train_l1.bits.miss := io.dcache.resp.bits.miss
+  io.prefetch_train_l1.bits.isFirstIssue := !s2_out.bits.replay.isReplayQReplay
   io.hit_prefetch := isFromL1Prefetch(io.dcache.resp.bits.meta_prefetch)
 
 
