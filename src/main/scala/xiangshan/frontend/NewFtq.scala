@@ -142,6 +142,19 @@ class FtqToBpuIO(implicit p: Parameters) extends XSBundle {
   val enq_ptr = Output(new FtqPtr)
 }
 
+class FtqToPrefetchIO(implicit p: Parameters) extends XSBundle with HasCircularQueuePtrHelper {
+  val req = Decoupled(new FtqICacheInfo)
+  val flushFromBpu = new Bundle {
+    val s2 = Valid(new FtqPtr)
+    val s3 = Valid(new FtqPtr)
+    def shouldFlushBy(src: Valid[FtqPtr], idx_to_flush: FtqPtr) = {
+      src.valid && !isAfter(src.bits, idx_to_flush)
+    }
+    def shouldFlushByStage2(idx: FtqPtr) = shouldFlushBy(s2, idx)
+    def shouldFlushByStage3(idx: FtqPtr) = shouldFlushBy(s3, idx)
+  }
+}
+
 class FtqToIfuIO(implicit p: Parameters) extends XSBundle with HasCircularQueuePtrHelper {
   val req = Decoupled(new FetchRequestBundle)
   val redirect = Valid(new Redirect)
@@ -162,6 +175,7 @@ class FtqToICacheIO(implicit p: Parameters) extends XSBundle with HasCircularQue
   //NOTE: req.bits must be prepare in T cycle
   // while req.valid is set true in T + 1 cycle
   val req = Decoupled(new FtqToICacheRequestBundle)
+  val flush = Output(Bool())
 }
 
 class FtqToCtrlIO(implicit p: Parameters) extends XSBundle {
@@ -329,44 +343,44 @@ class FTBEntryGen(implicit p: Parameters) extends XSModule with HasBPUParameter 
   io.is_br_full := hit && is_new_br && may_have_to_replace
 }
 
-class FtqPcMemWrapper(numOtherReads: Int)(implicit p: Parameters) extends XSModule {
+class FtqPcMemWrapper(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle {
     val ifuPtr_w       = Input(new FtqPtr)
     val ifuPtrPlus1_w  = Input(new FtqPtr)
     val ifuPtrPlus2_w  = Input(new FtqPtr)
+    val pfPtr_w        = Input(new FtqPtr)
+    val pfPtrPlus1_w   = Input(new FtqPtr)
     val commPtr_w      = Input(new FtqPtr)
     val commPtrPlus1_w = Input(new FtqPtr)
     val ifuPtr_rdata       = Output(new FtqPCEntry)
     val ifuPtrPlus1_rdata  = Output(new FtqPCEntry)
     val ifuPtrPlus2_rdata  = Output(new FtqPCEntry)
+    val pfPtr_rdata        = Output(new FtqPCEntry)
+    val pfPtrPlus1_rdata   = Output(new FtqPCEntry)
     val commPtr_rdata      = Output(new FtqPCEntry)
     val commPtrPlus1_rdata = Output(new FtqPCEntry)
-
-    val other_raddrs = Input(Vec(numOtherReads, UInt(log2Ceil(FtqSize).W)))
-    val other_rdatas = Output(Vec(numOtherReads, new FtqPCEntry))
 
     val wen = Input(Bool())
     val waddr = Input(UInt(log2Ceil(FtqSize).W))
     val wdata = Input(new FtqPCEntry)
   })
 
-  val num_pc_read = numOtherReads + 5
-  val mem = Module(new SyncDataModuleTemplate(new FtqPCEntry, FtqSize,
-    num_pc_read, 1, "FtqPC"))
+  val raddr_vec = VecInit(Seq(io.ifuPtr_w.value, io.ifuPtrPlus1_w.value, io.ifuPtrPlus2_w.value,
+                              io.pfPtr_w.value, io.pfPtrPlus1_w.value,
+                              io.commPtrPlus1_w.value, io.commPtr_w.value))
+
+  val mem = Module(new SyncDataModuleTemplate(new FtqPCEntry, FtqSize, raddr_vec.length, 1, "FtqPC"))
   mem.io.wen(0)   := io.wen
   mem.io.waddr(0) := io.waddr
   mem.io.wdata(0) := io.wdata
 
-  // read one cycle ahead for ftq local reads
-  val raddr_vec = VecInit(io.other_raddrs ++
-    Seq(io.ifuPtr_w.value, io.ifuPtrPlus1_w.value, io.ifuPtrPlus2_w.value, io.commPtrPlus1_w.value, io.commPtr_w.value))
-
   mem.io.raddr := raddr_vec
 
-  io.other_rdatas       := mem.io.rdata.dropRight(5)
-  io.ifuPtr_rdata       := mem.io.rdata.dropRight(4).last
-  io.ifuPtrPlus1_rdata  := mem.io.rdata.dropRight(3).last
-  io.ifuPtrPlus2_rdata  := mem.io.rdata.dropRight(2).last
+  io.ifuPtr_rdata       := mem.io.rdata.dropRight(6).last
+  io.ifuPtrPlus1_rdata  := mem.io.rdata.dropRight(5).last
+  io.ifuPtrPlus2_rdata  := mem.io.rdata.dropRight(4).last
+  io.pfPtr_rdata        := mem.io.rdata.dropRight(3).last
+  io.pfPtrPlus1_rdata   := mem.io.rdata.dropRight(2).last
   io.commPtrPlus1_rdata := mem.io.rdata.dropRight(1).last
   io.commPtr_rdata      := mem.io.rdata.last
 }
@@ -385,7 +399,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     val toBackend = new FtqToCtrlIO
     val toIbuffer = Valid(new FtqPtr)
 
-    val toPrefetch = new FtqPrefechBundle
+    val toPrefetch = new FtqToPrefetchIO
 
     val bpuInfo = new Bundle {
       val bpRight = Output(UInt(XLEN.W))
@@ -411,9 +425,10 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   allowToIfu := !ifuFlush && !backendRedirect.valid && !backendRedirectReg.valid
 
   def copyNum = 5
-  val bpuPtr, ifuPtr, ifuWbPtr, commPtr = RegInit(FtqPtr(false.B, 0.U))
+  val bpuPtr, pfPtr, ifuPtr, ifuWbPtr, commPtr = RegInit(FtqPtr(false.B, 0.U))
   val ifuPtrPlus1 = RegInit(FtqPtr(false.B, 1.U))
   val ifuPtrPlus2 = RegInit(FtqPtr(false.B, 2.U))
+  val pfPtrPlus1  = RegInit(FtqPtr(false.B, 1.U))
   val commPtrPlus1 = RegInit(FtqPtr(false.B, 1.U))
   val copied_ifu_ptr = Seq.fill(copyNum)(RegInit(FtqPtr(false.B, 0.U)))
   val copied_bpu_ptr = Seq.fill(copyNum)(RegInit(FtqPtr(false.B, 0.U)))
@@ -421,6 +436,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val ifuPtr_write       = WireInit(ifuPtr)
   val ifuPtrPlus1_write  = WireInit(ifuPtrPlus1)
   val ifuPtrPlus2_write  = WireInit(ifuPtrPlus2)
+  val pfPtr_write = WireInit(pfPtr)
+  val pfPtrPlus1_write = WireInit(pfPtrPlus1)
   val ifuWbPtr_write     = WireInit(ifuWbPtr)
   val commPtr_write      = WireInit(commPtr)
   val commPtrPlus1_write = WireInit(commPtrPlus1)
@@ -428,6 +445,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   ifuPtrPlus1  := ifuPtrPlus1_write
   ifuPtrPlus2  := ifuPtrPlus2_write
   ifuWbPtr     := ifuWbPtr_write
+  pfPtr        := pfPtr_write
+  pfPtrPlus1   := pfPtrPlus1_write
   commPtr      := commPtr_write
   commPtrPlus1 := commPtrPlus1_write
   copied_ifu_ptr.map{ptr =>
@@ -462,8 +481,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val bpuInRespPtr = Mux(bpuInStage === BP_S1, bpuPtr, bpuInResp.ftqIdx)
   val bpuInRespIdx = bpuInRespPtr.value
 
-  // read ports:      prefetchReq ++  ifuReq1 + ifuReq2 + ifuReq3 + commitUpdate2 + commitUpdate
-  val ftqPcMem = Module(new FtqPcMemWrapper(1))
+  // read ports:      pfReq1 + pfReq2 + ifuReq1 + ifuReq2 + ifuReq3 + commitUpdate2 + commitUpdate
+  val ftqPcMem = Module(new FtqPcMemWrapper())
   // resp from uBTB
   ftqPcMem.io.wen := bpuInFire
   ftqPcMem.io.waddr := bpuInRespIdx
@@ -571,6 +590,11 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     ifuPtrPlus2_write := ifuPtrPlus2 + 1.U
   }
 
+  when (io.toPrefetch.req.fire && allowToIfu) {
+    pfPtr_write := pfPtrPlus1
+    pfPtrPlus1_write := pfPtrPlus1 + 1.U
+  }
+
   // only use ftb result to assign hit status
   when (bpus2Resp.valid(dupForFtq)) {
     entryHitStatus(bpus2Resp.ftqIdx.value) := Mux(bpus2Resp.fullPred(dupForFtq).hit, h_hit, h_not_hit)
@@ -578,6 +602,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
 
   io.toIfu.flushFromBpu.s2.valid := bpuS2Redirect
   io.toIfu.flushFromBpu.s2.bits := bpus2Resp.ftqIdx
+  io.toPrefetch.flushFromBpu.s2.valid := bpuS2Redirect
+  io.toPrefetch.flushFromBpu.s2.bits := bpus2Resp.ftqIdx
   when (bpuS2Redirect) {
     bpuPtr := bpus2Resp.ftqIdx + 1.U
     io.toIbuffer.bits := bpus2Resp.ftqIdx + 1.U
@@ -589,10 +615,16 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
       ifuPtrPlus1_write := bpus2Resp.ftqIdx + 1.U
       ifuPtrPlus2_write := bpus2Resp.ftqIdx + 2.U
     }
+    when (!isBefore(pfPtr, bpus2Resp.ftqIdx)) {
+      pfPtr_write := bpus2Resp.ftqIdx
+      pfPtrPlus1_write := bpus2Resp.ftqIdx + 1.U
+    }
   }
 
   io.toIfu.flushFromBpu.s3.valid := bpuS3Redirect
   io.toIfu.flushFromBpu.s3.bits := bpuS3Resp.ftqIdx
+  io.toPrefetch.flushFromBpu.s3.valid := bpuS3Redirect
+  io.toPrefetch.flushFromBpu.s3.bits := bpuS3Resp.ftqIdx
   when (bpuS3Redirect) {
     bpuPtr := bpuS3Resp.ftqIdx + 1.U
     io.toIbuffer.valid := true.B
@@ -604,9 +636,15 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
       ifuPtrPlus1_write := bpuS3Resp.ftqIdx + 1.U
       ifuPtrPlus2_write := bpuS3Resp.ftqIdx + 2.U
     }
+    when (!isBefore(pfPtr, bpuS3Resp.ftqIdx)) {
+      pfPtr_write := bpuS3Resp.ftqIdx
+      pfPtrPlus1_write := bpuS3Resp.ftqIdx + 1.U
+    }
   }
 
   XSError(isBefore(bpuPtr, ifuPtr) && !isFull(bpuPtr, ifuPtr), "\nifuPtr is before bpuPtr!\n")
+  XSError(isBefore(bpuPtr, pfPtr) && !isFull(bpuPtr, pfPtr), "\npfPtr is before bpuPtr!\n")
+  XSError(isBefore(ifuWbPtr, commPtr) && !isFull(ifuWbPtr, commPtr), "\ncommPtr is before ifuWbPtr!\n")
 
   (0 until copyNum).map{i =>
     XSError(copied_bpu_ptr(i) =/= bpuPtr, "\ncopiedBpuPtr is different from bpuPtr!\n")
@@ -623,6 +661,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val bpuInBypass           = RegEnable(ftqPcMem.io.wdata, bpuInFire)
   val bpuInBypassPtr        = RegNext(bpuInRespPtr)
   val lastCycleToIfuFire    = RegNext(io.toIfu.req.fire)
+  val lastCycleToPfFire     = RegNext(io.toPrefetch.req.fire)
   val bpuInBypassDup        = VecInit(Seq.fill(copyNum)(RegEnable(ftqPcMem.io.wdata, bpuInFire)))
   val bpuInBypassPtrDup     = VecInit(Seq.fill(copyNum)(RegNext(bpuInRespPtr)))
   val lastCycleToIfuFireDup = VecInit(Seq.fill(copyNum)(RegNext(io.toIfu.req.fire)))
@@ -631,6 +670,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   ftqPcMem.io.ifuPtr_w       := ifuPtr_write
   ftqPcMem.io.ifuPtrPlus1_w  := ifuPtrPlus1_write
   ftqPcMem.io.ifuPtrPlus2_w  := ifuPtrPlus2_write
+  ftqPcMem.io.pfPtr_w        := pfPtr_write
+  ftqPcMem.io.pfPtrPlus1_w   := pfPtrPlus1_write
   ftqPcMem.io.commPtr_w      := commPtr_write
   ftqPcMem.io.commPtrPlus1_w := commPtrPlus1_write
 
@@ -638,6 +679,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
 
   val toICachePcBundle    = Wire(Vec(copyNum,new FtqPCEntry))
   val toICacheEntryToSend = Wire(Vec(copyNum,Bool()))
+  val toPrefetchPcBundle    = Wire(new FtqPCEntry)
+  val toPrefetchEntryToSend = Wire(Bool())
   val toIfuPcBundle       = Wire(new FtqPCEntry)
   val entryIsToSend       = WireInit(entryFetchStatus(ifuPtr.value) === f_to_send)
   val entryFtqOffset      = WireInit(cfiIndexVec(ifuPtr.value))
@@ -690,6 +733,19 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
                             RegNext(ftqPcMem.io.ifuPtrPlus1_rdata.startAddr))) // ifuPtr+1
   }
 
+  when(lastCycleBpuIn && bpuInBypassPtr === pfPtr){
+    toPrefetchPcBundle      := bpuInBypass
+    toPrefetchEntryToSend   := true.B
+  }.elsewhen(lastCycleToPfFire){
+    toPrefetchPcBundle      := RegNext(ftqPcMem.io.pfPtrPlus1_rdata)
+    toPrefetchEntryToSend   := RegNext(entryFetchStatus(pfPtrPlus1.value) === f_to_send) ||
+                               RegNext(lastCycleBpuIn && bpuInBypassPtr === (pfPtrPlus1))
+  }.otherwise{
+    toPrefetchPcBundle      := RegNext(ftqPcMem.io.pfPtr_rdata)
+    toPrefetchEntryToSend   := RegNext(entryFetchStatus(pfPtr.value) === f_to_send) ||
+                               RegNext(lastCycleBpuIn && bpuInBypassPtr === pfPtr) // reduce potential bubbles
+  }
+
   io.toIfu.req.valid := entryIsToSend && ifuPtr =/= bpuPtr
   io.toIfu.req.bits.nextStartAddr := entryNextAddr
   io.toIfu.req.bits.ftqOffset := entryFtqOffset
@@ -697,8 +753,14 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
 
   io.toICache.req.valid := entryIsToSend && ifuPtr =/= bpuPtr
   io.toICache.req.bits.readValid.zipWithIndex.foreach{case(copy, i) => copy := toICacheEntryToSend(i) && copied_ifu_ptr(i) =/= copied_bpu_ptr(i)}
-  io.toICache.req.bits.pcMemRead.zipWithIndex.map{case(copy,i) => copy.fromFtqPcBundle(toICachePcBundle(i))}
+  io.toICache.req.bits.pcMemRead.zipWithIndex.map{case(copy,i) => 
+    copy.fromFtqPcBundle(toICachePcBundle(i))
+    copy.ftqIdx := ifuPtr
+  }
 
+  io.toPrefetch.req.valid := toPrefetchEntryToSend && pfPtr =/= bpuPtr
+  io.toPrefetch.req.bits.fromFtqPcBundle(toPrefetchPcBundle)
+  io.toPrefetch.req.bits.ftqIdx := pfPtr
 
   // TODO: remove this
   XSError(io.toIfu.req.valid && diff_entry_next_addr =/= entryNextAddr,
@@ -906,6 +968,10 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
    */
   val redirectVec = VecInit(backendRedirect, fromIfuRedirect)
 
+  io.toICache.flush := redirectVec.map(r => r.valid).reduce(_||_)
+  XSPerfAccumulate("icacheFlushFromBackend", backendRedirect.valid)
+  XSPerfAccumulate("icacheFlushFromIFU", fromIfuRedirect.valid)
+
   // when redirect, we should reset ptrs and status queues
   when(redirectVec.map(r => r.valid).reduce(_||_)){
     val r = PriorityMux(redirectVec.map(r => (r.valid -> r.bits)))
@@ -920,6 +986,10 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     ifuWbPtr_write := next
     ifuPtrPlus1_write := idx + 2.U
     ifuPtrPlus2_write := idx + 3.U
+
+    pfPtr_write := next
+    pfPtrPlus1_write := idx + 2.U
+
     when (notIfu) {
       commitStateQueue(idx.value).zipWithIndex.foreach({ case (s, i) =>
         when(i.U > offset || i.U === offset && flushItSelf){
@@ -1064,60 +1134,6 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   update.predHit          := commitHit === h_hit || commitHit === h_false_hit
   update.br_taken     := ftbEntryGen.taken_mask
   update.jmp_taken         := ftbEntryGen.jmp_taken
-
-  // ****************************************************************
-  // *********************** to prefetch ****************************
-  // ****************************************************************
-
-  ftqPcMem.io.other_raddrs(0) := DontCare
-  if(cacheParams.hasPrefetch){
-    val prefetchPtr = RegInit(FtqPtr(false.B, 0.U))
-    val diff_prefetch_addr = WireInit(updateTarget(prefetchPtr.value)) //TODO: remove this
-
-    prefetchPtr := prefetchPtr + io.toPrefetch.req.fire
-
-    ftqPcMem.io.other_raddrs(0) := prefetchPtr.value
-
-    when (bpuS2Redirect && !isBefore(prefetchPtr, bpus2Resp.ftqIdx)) {
-      prefetchPtr := bpus2Resp.ftqIdx
-    }
-
-    when (bpuS3Redirect && !isBefore(prefetchPtr, bpuS3Resp.ftqIdx)) {
-      prefetchPtr := bpuS3Resp.ftqIdx
-      // XSError(true.B, "\ns3_redirect mechanism not implemented!\n")
-    }
-
-
-    val prefetch_is_to_send = WireInit(entryFetchStatus(prefetchPtr.value) === f_to_send)
-    val prefetch_addr = Wire(UInt(VAddrBits.W))
-
-    when (lastCycleBpuIn && bpuInBypassPtr === prefetchPtr) {
-      prefetch_is_to_send := true.B
-      prefetch_addr := lastCycleBpuTarget
-      diff_prefetch_addr := lastCycleBpuTarget // TODO: remove this
-    }.otherwise{
-      prefetch_addr := RegNext( ftqPcMem.io.other_rdatas(0).startAddr)
-    }
-    io.toPrefetch.req.valid := prefetchPtr =/= bpuPtr && prefetch_is_to_send
-    io.toPrefetch.req.bits.target := prefetch_addr
-
-    when(redirectVec.map(r => r.valid).reduce(_||_)){
-      val r = PriorityMux(redirectVec.map(r => (r.valid -> r.bits)))
-      val next = r.ftqIdx + 1.U
-      prefetchPtr := next
-    }
-
-    // TODO: remove this
-    // XSError(io.toPrefetch.req.valid && diff_prefetch_addr =/= prefetch_addr,
-    //         f"\nprefetch_req_target wrong! prefetchPtr: ${prefetchPtr}, prefetch_addr: ${Hexadecimal(prefetch_addr)} diff_prefetch_addr: ${Hexadecimal(diff_prefetch_addr)}\n")
-
-
-    XSError(isBefore(bpuPtr, prefetchPtr) && !isFull(bpuPtr, prefetchPtr), "\nprefetchPtr is before bpuPtr!\n")
-    XSError(isBefore(prefetchPtr, ifuPtr) && !isFull(ifuPtr, prefetchPtr), "\nifuPtr is before prefetchPtr!\n")
-  }
-  else {
-    io.toPrefetch.req <> DontCare
-  }
 
   // ******************************************************************************
   // **************************** commit perf counters ****************************

@@ -67,7 +67,7 @@ class NewIFUIO(implicit p: Parameters) extends XSBundle {
   val uncacheInter   =  new UncacheInterface
   val frontendTrigger = Flipped(new FrontendTdataDistributeIO)
   val rob_commits = Flipped(Vec(CommitWidth, Valid(new RobCommitInfo)))
-  val iTLBInter       = new BlockTlbRequestIO
+  val iTLBInter       = new TlbRequestIO
   val pmp             =   new ICachePMPBundle
   val mmioCommitRead  = new mmioCommitRead
   val mmioFetchPending = Output(Bool())
@@ -127,6 +127,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val frontendTrigger = Module(new FrontendTrigger)
   val (checkerIn, checkerOutStage1, checkerOutStage2)         = (predChecker.io.in, predChecker.io.out.stage1Out,predChecker.io.out.stage2Out)
 
+  io.iTLBInter.req_kill := false.B
   io.iTLBInter.resp.ready := true.B
 
   /**
@@ -253,12 +254,6 @@ class NewIFU(implicit p: Parameters) extends XSModule
   .elsewhen(f1_fire && !f1_flush) {f2_valid := true.B }
   .elsewhen(f2_fire)              {f2_valid := false.B}
 
-  // val f2_cache_response_data = ResultHoldBypass(valid = f2_icache_all_resp_wire, data = VecInit(fromICache.map(_.bits.readData)))
-  val f2_cache_response_reg_data  = VecInit(fromICache.map(_.bits.registerData))
-  val f2_cache_response_sram_data = VecInit(fromICache.map(_.bits.sramData))
-  val f2_cache_response_select    = VecInit(fromICache.map(_.bits.select))
-
-
   val f2_except_pf    = VecInit((0 until PortNumber).map(i => fromICache(i).bits.tlbExcp.pageFault))
   val f2_except_af    = VecInit((0 until PortNumber).map(i => fromICache(i).bits.tlbExcp.accessFault))
   val f2_mmio         = fromICache(0).bits.tlbExcp.mmio && !fromICache(0).bits.tlbExcp.accessFault &&
@@ -308,17 +303,9 @@ class NewIFU(implicit p: Parameters) extends XSModule
     // }
   }
 
-  val f2_data_2_cacheline =  Wire(Vec(4, UInt((2 * blockBits).W)))
-  f2_data_2_cacheline(0) := Cat(f2_cache_response_reg_data(1) , f2_cache_response_reg_data(0))
-  f2_data_2_cacheline(1) := Cat(f2_cache_response_reg_data(1) , f2_cache_response_sram_data(0))
-  f2_data_2_cacheline(2) := Cat(f2_cache_response_sram_data(1) , f2_cache_response_reg_data(0))
-  f2_data_2_cacheline(3) := Cat(f2_cache_response_sram_data(1) , f2_cache_response_sram_data(0))
-
-  val f2_predecod_ptr = Wire(UInt(2.W))
-  f2_predecod_ptr := Cat(f2_cache_response_select(1),f2_cache_response_select(0))
-
-  val f2_data = Mux1H(UIntToOH(f2_predecod_ptr), f2_data_2_cacheline)
-  val f2_cut_data   = cut(f2_data, f2_cut_ptr)
+  val f2_cache_response_data = fromICache.map(_.bits.data)
+  val f2_data_2_cacheline = Cat(f2_cache_response_data(0), f2_cache_response_data(0))
+  val f2_cut_data   = cut(f2_data_2_cacheline, f2_cut_ptr)
 
   /** predecode (include RVC expander) */
   // preDecoderRegIn.data := f2_reg_cut_data
@@ -326,7 +313,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   // preDecoderRegInIn.csrTriggerEnable := io.csrTriggerEnable
   // preDecoderRegIn.pc  := f2_pc
 
-  val preDecoderOut = preDecoder.io.out  
+  val preDecoderOut = preDecoder.io.out
 
   preDecoder.io.in.data := f2_cut_data
   preDecoder.io.in.frontendTrigger := io.frontendTrigger  
@@ -560,6 +547,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.iTLBInter.req.bits.vaddr    := f3_resend_vaddr
   io.iTLBInter.req.bits.debug.pc := f3_resend_vaddr
 
+//  io.iTLBInter.req.bits.kill                := false.B
   io.iTLBInter.req.bits.cmd                 := TlbCmd.exec
   io.iTLBInter.req.bits.robIdx              := DontCare
   io.iTLBInter.req.bits.debug.isFirstIssue  := DontCare

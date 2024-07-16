@@ -162,6 +162,8 @@ case class XSCoreParameters
   EnableAccurateLoadError: Boolean = true,
   MMUAsidLen: Int = 16, // max is 16, 0 is not supported now
   UseOneDtlb: Boolean = false,
+  itlbPortNum: Int = ICacheParameters().PortNumber + 1,
+  ipmpPortNum: Int = 2 * ICacheParameters().PortNumber + 1,
   itlbParameters: TLBParameters = TLBParameters(
     name = "itlb",
     fetchi = true,
@@ -220,13 +222,9 @@ case class XSCoreParameters
   l2tlbParameters: L2TLBParameters = L2TLBParameters(),
   NumPerfCounters: Int = 16,
   icacheParameters: ICacheParameters = ICacheParameters(
-    tagECC = None,
-    dataECC = None,
+    tagECC = Some("parity"),
+    dataECC = Some("parity"),
     replacer = Some("setplru"),
-    nMissEntries = 2,
-    nProbeEntries = 2,
-    nPrefetchEntries = 2,
-    hasPrefetch = false,
   ),
   dcacheParametersOpt: Option[DCacheParameters] = Some(DCacheParameters(
     tagECC = Some("secded"),

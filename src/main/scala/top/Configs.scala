@@ -89,11 +89,6 @@ class MinimalConfig(n: Int = 1) extends Config(
           tagECC = Some("parity"),
           dataECC = Some("parity"),
           replacer = Some("setplru"),
-          nMissEntries = 2,
-          nReleaseEntries = 1,
-          nProbeEntries = 2,
-          nPrefetchEntries = 2,
-          hasPrefetch = false
         ),
         dcacheParametersOpt = Some(DCacheParameters(
           nSets = 64, // 32KB DCache
