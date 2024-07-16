@@ -477,6 +477,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.prefetch_train.bits.miss := io.dcache.resp.bits.miss
   io.prefetch_train.valid := s2_in.fire && !s2_out.bits.mmio && !s2_in.bits.tlbMiss
 
+  io.prefetch_train_l1.valid := load_s2.io.in.fire && !load_s2.io.out.bits.mmio
+  io.prefetch_train_l1.bits := load_s2.io.in.bits
+  io.prefetch_train_l1.bits.miss := io.dcache.resp.bits.miss
+  io.hit_prefetch := isFromL1Prefetch(io.dcache.resp.bits.meta_prefetch)
+
+
   val hasDcacheErrButForwarded = !(s2_cache_miss || s2_cache_replay || s2_bank_conflict || s2_cancel_inner) || s2_fullForward
   val exceptionWb = s2_hasException
   val normalWb = !s2_tlb_miss && hasDcacheErrButForwarded && !s2_data_invalid && !s2_mmio && !s2_allStLdViolation && !s2_enqRAWFail
@@ -676,7 +682,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   )
   generatePerfEvent()
 
-  
+
   XSPerfAccumulate("NHV5_load_issueFromRs", io.rsIssueIn.fire)
   XSPerfAccumulate("NHV5_load_issueFromReplay", io.replayQIssueIn.fire)
 

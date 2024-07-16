@@ -24,6 +24,7 @@ import freechips.rocketchip.tile.HasFPUParameters
 import coupledL2.PrefetchRecv
 import coupledL2.prefetch.PrefetchReceiverParams
 import utils._
+import xs.utils._
 import xiangshan._
 import xiangshan.backend.execute.exu.{ExuConfig, ExuInputNode, ExuOutputMultiSinkNode, ExuOutputNode, ExuType}
 import xiangshan.backend.execute.exucx.ExuComplexIssueNode
@@ -37,7 +38,7 @@ import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
 import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, PtwSectorResp, TLB, TlbHintIO, TlbIO, TlbReplace}
 import xiangshan.mem._
-import xiangshan.mem.prefetch.{BasePrefecher, SMSParams, SMSPrefetcher}
+import xiangshan.mem.prefetch._
 import xs.utils.mbist.MBISTPipeline
 import xs.utils.perf.HasPerfLogging
 import xs.utils.{DelayN, ParallelPriorityMux, RegNextN, ValidIODelay}
@@ -318,6 +319,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   private val storeUnits = Seq.fill(exuParameters.StuCnt)(Module(new StoreUnit))
   private val stdUnits = Seq.fill(exuParameters.StuCnt)(Module(new Std))
   private val stData = stdUnits.map(_.io.out)
+  
+  val l1_pf_req = Wire(Decoupled(new L1PrefetchReq()))
   val prefetcherOpt: Option[BasePrefecher] = coreParams.prefetcher match {
     case Some(sms_sender: SMSParams) =>
       val sms = Module(new SMSPrefetcher(parentName = outer.parentName + "sms_"))
@@ -337,13 +340,43 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     //   Some(sms)
     case _ => None
   }
+  val hartId = p(XSCoreParamsKey).HartId
+  val l1PrefetcherOpt: Option[L1Prefetcher] = coreParams.prefetcher.map {
+    case _ =>
+      val l1Prefetcher = Module(new L1Prefetcher())
+      // l1Prefetcher.io.enable := Constantin.createRecord(s"enableL1StreamPrefetcher$hartId", initValue = true.B) 
+      l1Prefetcher.io.enable := true.B
+      l1Prefetcher.pf_ctrl.dynamic_depth := 32.U
+      l1Prefetcher.pf_ctrl.flush := false.B
+      l1Prefetcher.pf_ctrl.enable := true.B
+      l1Prefetcher.pf_ctrl.confidence := 0.U 
+      l1Prefetcher.l2PfqBusy := false.B
+
+      l1Prefetcher
+  }
+
+  val l1PfReqQ  = Module(new Queue(new L1PrefetchReq(), 16, flow = true, pipe = true))
+  l1PrefetcherOpt match {
+    // case Some(pf) => l1PfReqQ.io.enq <> Pipeline(in = pf.io.l1_req, depth = 1, pipe = false, name = Some("pf_queue_to_ldu_reg"))
+    case Some(pf) => l1PfReqQ.io.enq <> pf.io.l1_req
+    case None =>
+      l1PfReqQ.io.enq.valid := false.B
+      l1PfReqQ.io.enq.bits := DontCare
+  }
+  l1_pf_req.valid := l1PfReqQ.io.deq.valid
+  l1_pf_req.bits := l1PfReqQ.io.deq.bits
+  l1PfReqQ.io.deq.ready := Mux(l1PfReqQ.io.count === 16.U && l1PfReqQ.io.enq.valid, true.B, l1_pf_req.ready)
+
+  dcache.io.pf_req <> l1_pf_req
+  
+  prefetcherOpt.foreach{ pf => pf.io.l1_req.ready := false.B }
   prefetcherOpt match {
     case Some(sms) => // memblock can only have sms or not
       outer.pf_sender_opt match{
         case Some(sender) =>
-        val pf_to_l2 = Pipe(sms.io.pf_addr, 2)
+        val pf_to_l2 = Pipe(sms.io.l2_req, 2)
         sender.out.head._1.addr_valid := pf_to_l2.valid
-        sender.out.head._1.addr := pf_to_l2.bits
+        sender.out.head._1.addr := pf_to_l2.bits.addr
         sender.out.head._1.l2_pf_en := RegNextN(io.csrCtrl.l2_pf_enable, 2, Some(true.B))
         sender.out.head._1.l2_pf_ctrl := RegNextN(io.csrCtrl.l2_pf_ctrl,2,Some(0.U(Csr_PfCtrlBits.W)))
         sms.io.enable := RegNextN(io.csrCtrl.l1D_pf_enable, 2, Some(false.B))
@@ -649,6 +682,25 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       pf.io.ld_in(i).bits := loadUnits(i).io.prefetch_train.bits
       pf.io.ld_in(i).bits.uop.cf.pc := pcDelay2Bits
     })
+    l1PrefetcherOpt.foreach(pf => {
+      // stride will train on miss or prefetch hit
+      val source = loadUnits(i).io.prefetch_train_l1
+      val hit_prefetch = loadUnits(i).io.hit_prefetch
+      // pf.stride_train(i).valid := source.valid && source.bits.isFirstIssue && (
+      //   source.bits.miss || hit_prefetch
+      // )
+      pf.stride_train(i).valid := source.valid && (
+        source.bits.miss || hit_prefetch
+      )
+      pf.stride_train(i).bits := source.bits
+      pf.stride_train(i).bits.uop.cf.pc := Mux(loadUnits(i).io.s2IsPointerChasing,
+        pcDelay1Bits,
+        pcDelay2Bits
+      )
+      // pf.io.ld_in(i).valid := source.valid && source.bits.isFirstIssue
+      pf.io.ld_in(i).valid := source.valid
+      pf.io.ld_in(i).bits := source.bits
+    })
 
     lsq.io.loadExcepWbInfo(i) <> loadUnits(i).io.lsq.s2_excepWb2LQ
     lsq.io.trigger(i) <> loadUnits(i).io.lsq.trigger
@@ -704,6 +756,9 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   // Prefetcher
   prefetcherOpt.foreach(pf => {
+    dtlb_reqs(ld_tlb_ports - 2) <> pf.io.tlb_req
+  })
+  l1PrefetcherOpt.foreach(pf => {
     dtlb_reqs(ld_tlb_ports - 1) <> pf.io.tlb_req
   })
 

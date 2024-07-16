@@ -32,6 +32,8 @@ import xs.utils.FastArbiter
 import mem.AddPipelineReg
 import xiangshan.backend.rob.RobPtr
 import xs.utils.perf.HasPerfLogging
+import xiangshan.mem.HasL1PrefetchSourceParameter
+import xiangshan.mem.L1PrefetchReq
 
 import scala.math.max
 
@@ -93,17 +95,18 @@ trait HasDCacheParameters extends HasL1CacheParameters {
   def encRowBits = encWordBits * rowWords // for DuplicatedDataArray only
   def eccBits = encWordBits - wordBits
 
-  def encTagBits = cacheParams.tagCode.width(tagBits)
-  def eccTagBits = encTagBits - tagBits
+  def encTagBits = cacheParams.tagCode.width(tagBits + ClientStates.width)
+  def eccTagBits = encTagBits - tagBits - ClientStates.width
 
   def blockProbeAfterGrantCycles = 8 // give the processor some time to issue a request after a grant
 
-  def nSourceType = 3
+  def nSourceType = 4
   def sourceTypeWidth = log2Up(nSourceType)
   def LOAD_SOURCE = 0
   def STORE_SOURCE = 1
   def AMO_SOURCE = 2
   def SOFT_PREFETCH = 3
+  def DCACHE_PREFETCH_SOURCE = 4
 
   // each source use a id to distinguish its multiple reqs
   def reqIdWidth = log2Up(nEntries) max log2Up(StoreBufferSize)
@@ -140,18 +143,18 @@ trait HasDCacheParameters extends HasL1CacheParameters {
 
   // parameters about duplicating regs to solve fanout
   // In Main Pipe:
-    // tag_write.ready -> data_write.valid * 8 banks
-    // tag_write.ready -> meta_write.valid
-    // tag_write.ready -> tag_write.valid
-    // tag_write.ready -> err_write.valid
-    // tag_write.ready -> wb.valid
+  // tag_write.ready -> data_write.valid * 8 banks
+  // tag_write.ready -> meta_write.valid
+  // tag_write.ready -> tag_write.valid
+  // tag_write.ready -> err_write.valid
+  // tag_write.ready -> wb.valid
   val nDupTagWriteReady = DCacheBanks + 4
   // In Main Pipe:
-    // data_write.ready -> data_write.valid * 8 banks
-    // data_write.ready -> meta_write.valid
-    // data_write.ready -> tag_write.valid
-    // data_write.ready -> err_write.valid
-    // data_write.ready -> wb.valid
+  // data_write.ready -> data_write.valid * 8 banks
+  // data_write.ready -> meta_write.valid
+  // data_write.ready -> tag_write.valid
+  // data_write.ready -> err_write.valid
+  // data_write.ready -> wb.valid
   val nDupDataWriteReady = DCacheBanks + 4
   val nDupWbReady = DCacheBanks + 4
   val nDupStatus = nDupTagWriteReady + nDupDataWriteReady
@@ -259,7 +262,7 @@ abstract class DCacheModule(implicit p: Parameters) extends L1CacheModule
   with HasDCacheParameters
 
 abstract class DCacheBundle(implicit p: Parameters) extends L1CacheBundle
-  with HasDCacheParameters
+  with HasDCacheParameters with HasL1PrefetchSourceParameter
 
 class ReplacementAccessBundle(implicit p: Parameters) extends DCacheBundle {
   val set = UInt(log2Up(nSets).W)
@@ -325,11 +328,12 @@ class DCacheWordResp(implicit p: Parameters) extends BaseDCacheWordResp
   val error_delayed = Bool() // all kinds of errors, include tag error
 }
 
-class BankedDCacheWordResp(implicit p: Parameters) extends DCacheWordResp
+class BankedDCacheWordResp(implicit p: Parameters) extends DCacheWordResp with HasL1PrefetchSourceParameter
 {
-//  val bank_data = Vec(DCacheBanks, Bits(DCacheSRAMRowBits.W))
-//  val bank_oh = UInt(DCacheBanks.W)
+  //  val bank_data = Vec(DCacheBanks, Bits(DCacheSRAMRowBits.W))
+  //  val bank_oh = UInt(DCacheBanks.W)
   val load_data = UInt(DCacheSRAMRowBits.W)
+  val meta_prefetch = UInt(L1PfSourceBits.W)
   val wayIdx = UInt(log2Up(DCacheWays).W)
 }
 
@@ -447,6 +451,7 @@ class DCacheIO(implicit p: Parameters) extends DCacheBundle {
   val csr = new L1CacheToCsrIO
   val error = new L1CacheErrorInfo
   val mshrFull = Output(Bool())
+  val pf_req = Flipped(DecoupledIO(new L1PrefetchReq()))
 }
 
 
@@ -486,12 +491,16 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   println("  DCacheTagOffset: " + DCacheTagOffset)
   println("  DCacheAboveIndexOffset: " + DCacheAboveIndexOffset)
 
+  val LoadPrefetchL1Enabled = true
+  val PrefetchArrayReadPort = if(LoadPrefetchL1Enabled) LoadPipelineWidth  else 0
+
   //----------------------------------------
   // core data structures
   val bankedDataArray = Module(new BankedDataArray(parentName = outer.parentName + "bankedDataArray_"))
-  val metaArray = Module(new AsynchronousMetaArray(readPorts = 3, writePorts = 1))
+  //  val metaArray = Module(new AsynchronousMetaArray(readPorts = 3, writePorts = 1))
   val errorArray = Module(new ErrorArray(readPorts = 3, writePorts = 1)) // TODO: add it to meta array
   val tagArray = Module(new DuplicatedTagArray(readPorts = LoadPipelineWidth + 1, parentName = outer.parentName + "tagArray_"))
+  val prefetchArray = Module(new L1PrefetchSourceArray(readPorts = PrefetchArrayReadPort, writePorts = 1 + LoadPipelineWidth)) // prefetch flag array
   bankedDataArray.dump()
 
   //----------------------------------------
@@ -504,9 +513,19 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val probeQueue = Module(new ProbeQueue(edge))
   val wb         = Module(new WritebackQueue(edge))
 
+  //load req s0
+//  require(io.lsu.load.length == 2)
   val ldAllValid = io.lsu.load(0).req.valid && io.lsu.load(1).req.valid
   val ldRob = io.lsu.load.map(_.req.bits.robIdx)
   val ldSelRead = Mux(ldAllValid,Mux(ldRob(0) < ldRob(1),0.U,1.U),0.U)
+
+  //pf req read tag
+  val pf_tag_read = Wire(new TagReadReq())
+  val pf_tag_resp = Wire(Vec(nWays, UInt(encTagBits.W)))
+
+  pf_tag_read.idx := get_idx(io.pf_req.bits.getVaddr())
+  pf_tag_read.way_en := ~0.U(nWays.W)
+  pf_tag_resp := DontCare
 
   missQueue.io.hartId := io.hartId
   missQueue.io.l2_pf_store_only := RegNext(io.l2_pf_store_only, false.B)
@@ -516,29 +535,18 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   io.error <> RegNext(Mux1H(errors.map(e => RegNext(e.valid) -> RegNext(e))))
 
   //----------------------------------------
-  // meta array
-  val meta_read_ports = ldu.map(_.io.meta_read) ++
-    Seq(mainPipe.io.meta_read)
-  val meta_resp_ports = ldu.map(_.io.meta_resp) ++
-    Seq(mainPipe.io.meta_resp)
-  val meta_write_ports = Seq(
-    mainPipe.io.meta_write
-  )
-  meta_read_ports.zip(metaArray.io.read).foreach { case (p, r) => r <> p }
-  meta_resp_ports.zip(metaArray.io.resp).foreach { case (p, r) => p := r }
-  meta_write_ports.zip(metaArray.io.write).foreach { case (p, w) => w <> p }
-
+  // error array
+  val tag_read_ports =ldu.map(_.io.tag_read) ++ Seq(mainPipe.io.tag_read)
   val error_flag_resp_ports = ldu.map(_.io.error_flag_resp) ++
     Seq(mainPipe.io.error_flag_resp)
   val error_flag_write_ports = Seq(
     mainPipe.io.error_flag_write,
   )
-  meta_read_ports.zip(errorArray.io.read).foreach { case (p, r) => r <> p }
+  tag_read_ports.zip(errorArray.io.read).foreach { case (p, r) => r <> p }
   error_flag_resp_ports.zip(errorArray.io.resp).foreach { case (p, r) => p := r }
   error_flag_write_ports.zip(errorArray.io.write).foreach { case (p, w) => w <> p }
 
-  //----------------------------------------
-  // tag array
+  //tag array
   require(tagArray.io.read.size == (ldu.size + 1))
   // val tag_write_intend = missQueue.io.refill_pipe_req.valid || mainPipe.io.tag_write_intend
   val tag_write_intend = mainPipe.io.tag_write_intend
@@ -551,6 +559,61 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   }
   tagArray.io.read.last <> mainPipe.io.tag_read
   mainPipe.io.tag_resp := tagArray.io.resp.last
+
+
+
+  val pipe_invalid = Cat((ldu.map(!_.io.tag_read.valid) ++ Seq(!mainPipe.io.tag_read.valid)).reverse)
+  val pf_req_can_go = pipe_invalid.orR && !tag_write_intend
+  val idx = PriorityEncoder(pipe_invalid)
+  when(io.pf_req.fire){
+    tagArray.io.read(idx).valid := true.B
+    tagArray.io.read(idx).bits := pf_tag_read
+  }
+  io.pf_req.ready := pf_req_can_go
+
+
+  val pf_req_s1 = RegEnable(io.pf_req.bits, io.pf_req.fire)
+  val pf_req_s1_valid = RegNext(io.pf_req.fire)
+  // val pipe_invalid_s1 = RegEnable(pipe_invalid, io.pf_req.fire)
+  val s1_idx = RegEnable(idx, io.pf_req.fire)
+  when(pf_req_s1_valid){
+    pf_tag_resp := tagArray.io.resp(s1_idx)
+  }
+  val meta_resp = pf_tag_resp.map {r =>
+    ClientMetadata(r(tagBits + ClientStates.width - 1, tagBits))
+  }
+  val s1_tag_match = VecInit((0 until nWays).map((w: Int) => pf_tag_resp(w)(tagBits - 1, 0) === get_tag(pf_req_s1.paddr)))
+  val s1_hit  = VecInit((0 until nWays).map((w: Int) => s1_tag_match(w) && meta_resp(w).isValid())).asUInt.orR
+
+  val pf_req_s2 = RegEnable(pf_req_s1, pf_req_s1_valid)
+  val pf_req_s2_valid = RegNext(pf_req_s1_valid)
+  val s2_hit = RegEnable(s1_hit, pf_req_s1_valid)
+  // val pipe_invalid_s2 = RegEnable(pipe_invalid_s1, pf_req_s1_valid)
+
+  val pf_miss_req = Wire(new MissReq())
+  pf_miss_req := DontCare
+  pf_miss_req.source := DCACHE_PREFETCH_SOURCE.U
+  pf_miss_req.cmd := M_PFR
+  pf_miss_req.addr := pf_req_s2.paddr
+  pf_miss_req.vaddr := pf_req_s2.getVaddr()
+  pf_miss_req.pf_source := pf_req_s2.pf_source.value
+
+  val miss_valid = Cat(Seq(!mainPipe.io.miss_req.valid) ++ ldu.map(!_.io.miss_req.valid))
+  val s2_idx = PriorityEncoder(Reverse(miss_valid))
+
+  //----------------------------------------
+  // prefetch array
+  ldu.zipWithIndex.foreach {
+    case (ld, i) =>
+      prefetchArray.io.read(i).valid := ld.io.tag_read.valid
+      prefetchArray.io.read(i).bits := ld.io.tag_read.bits
+      ld.io.extra_meta_resp := prefetchArray.io.resp(i)
+  }
+  val prefetch_flag_write_ports = ldu.map(_.io.prefetch_flag_write) ++ Seq(
+    mainPipe.io.prefetch_flag_write // set prefetch_flag to false if coh is set to Nothing
+  )
+  prefetch_flag_write_ports.zip(prefetchArray.io.write).foreach { case (p, w) => w <> p }
+
 
   val fake_tag_read_conflict_this_cycle = PopCount(ldu.map(ld=> ld.io.tag_read.valid))
   XSPerfAccumulate("fake_tag_read_conflict", fake_tag_read_conflict_this_cycle)
@@ -632,6 +695,13 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   missReqArb.io.in(MainPipeMissReqPort) <> mainPipe.io.miss_req
   for (w <- 0 until LoadPipelineWidth) { missReqArb.io.in(w + 1) <> ldu(w).io.miss_req }
+
+  //prefetch
+  when(pf_req_s2_valid && !s2_hit){
+    missReqArb.io.in(s2_idx).valid := true.B
+    missReqArb.io.in(s2_idx).bits := pf_miss_req
+    // assert( !miss_valid(s2_idx) && RegNext(RegNext(pipe_invalid(idx))))
+  }
 
   wb.io.miss_req.valid := missReqArb.io.out.valid
   wb.io.miss_req.bits  := missReqArb.io.out.bits.addr
@@ -795,15 +865,13 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   } .otherwise {
     assert (!bus.d.fire)
   }
-
-
-  class DCachePLRUWrapper(reqWidth: Int = 3, nSets: Int, nWays: Int) extends Module {
+  class DCachePLRUWrapper(reqWidth: Int = 1, accessWidth: Int = 3, nSets: Int, nWays: Int) extends Module {
     val io = IO(new Bundle() {
       val req_set = Input(Vec(reqWidth, Valid(UInt(log2Up(nSets).W))))
       val req_way = Output(Vec(reqWidth, UInt(log2Up(nWays).W)))
 
-      val touch_sets = Input(Vec(reqWidth, UInt(log2Up(nSets).W)))
-      val touch_ways = Input(Vec(reqWidth, Valid(UInt(log2Up(nWays).W))))
+      val touch_sets = Input(Vec(accessWidth, UInt(log2Up(nSets).W)))
+      val touch_ways = Input(Vec(accessWidth, Valid(UInt(log2Up(nWays).W))))
     })
     val replacer = ReplacementPolicy.fromString(cacheParams.replacer, nWays, nSets)
 
@@ -825,18 +893,13 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   //----------------------------------------
   // replacement algorithm
-  val replacer = Module(new DCachePLRUWrapper(3, nSets, nWays))
+  val replacer = Module(new DCachePLRUWrapper(reqWidth = 1,accessWidth = 3, nSets, nWays))
   replacer.suggestName("DCcachePLURWrapper_0")
-  val replWayReqs = ldu.map(_.io.replace_way) ++ Seq(mainPipe.io.replace_way)
 
-  replWayReqs.zipWithIndex.foreach {
-    case (req, i) => {
-      req.way := DontCare
-      replacer.io.req_set(i) := req.set
-      when(req.set.valid) {
-        req.way := replacer.io.req_way(i)
-      }
-    }
+  mainPipe.io.replace_way.way := DontCare
+  replacer.io.req_set(0) := mainPipe.io.replace_way.set
+  when(mainPipe.io.replace_way.set.valid) {
+    mainPipe.io.replace_way.way := replacer.io.req_way(0)
   }
 
   val replAccessReqs = ldu.map(_.io.replace_access) ++ Seq(
