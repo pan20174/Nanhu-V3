@@ -108,14 +108,14 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
 
 
   // speculatively assign the instruction with an robIdx
-//  val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
-//  val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
-//  val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
-//  val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
-//         Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
-//                         Mux(canOut & io.allowIn, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
-//                      /* default */  robIdxHead))) // no instructions passed by this cycle: stick to old value
-//  robIdxHead := robIdxHeadNext
+ val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
+ val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
+ val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
+ val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
+        Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
+                        Mux(canOut & io.allowIn, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
+                     /* default */  robIdxHead))) // no instructions passed by this cycle: stick to old value
+ robIdxHead := robIdxHeadNext
 
   /**
     * Rename: allocate free physical register and update rename table
@@ -192,7 +192,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // no valid instruction from decode stage || all resources (dispatch1 + both free lists) ready
     io.in(i).ready := !hasValid || canOut
 
-//    uops(i).robIdx  := robIdxHead + PopCount(io.in.take(i).map(_.valid))
+    uops(i).robIdx  := robIdxHead + PopCount(io.in.take(i).map(_.valid))
     uops(i).psrc(0) := Mux(uops(i).ctrl.srcType(0) === SrcType.reg, io.intReadPorts(i)(0), io.fpReadPorts(i)(0))
     uops(i).psrc(1) := Mux(uops(i).ctrl.srcType(1) === SrcType.reg, io.intReadPorts(i)(1), io.fpReadPorts(i)(1))
     // int psrc2 should be bypassed from next instruction if it is fused
@@ -225,7 +225,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     io.out(i).bits  := uops(i)
     io.enqRob.needAlloc(i) := io.in(i).valid
     io.enqRob.req(i).valid := io.in(i).valid && intFreeList.io.canAllocate && fpFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.allowIn && io.out(i).ready
-    io.enqRob.req(i).bits := uops(i)
+    io.enqRob.req(i).bits := io.out(i).bits
     // dirty code for fence. The lsrc is passed by imm.
     when (io.out(i).bits.ctrl.fuType === FuType.fence) {
       io.out(i).bits.ctrl.imm := Cat(io.in(i).bits.ctrl.lsrc(1), io.in(i).bits.ctrl.lsrc(0))

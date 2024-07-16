@@ -59,9 +59,9 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
   val t1_raddr = io.readPorts.map(p => p.addr)
   val t1_wSpec = WireInit(VecInit(Seq.fill(CommitWidth)(0.U.asTypeOf(new RatWritePort))))
   t1_wSpec.zip(io.specWritePorts).foreach({case(a,b) =>
-//    a.wen := RegNext(b.wen, false.B)
-//    a.addr := RegEnable(b.addr, b.wen)
-//    a.data := RegEnable(b.data, b.wen)
+  //  a.wen := RegNext(b.wen, false.B)
+  //  a.addr := RegEnable(b.addr, b.wen)
+  //  a.data := RegEnable(b.data, b.wen)
     when(b.wen) {
       a.wen := b.wen
       a.addr := b.addr
@@ -71,6 +71,7 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
 
   // WRITE: when instruction commits or walking
   val t1_wSpec_addr = t1_wSpec.map(w => Mux(w.wen, UIntToOH(w.addr), 0.U))
+  val hasSpecWrite = t1_wSpec.map(_.wen).reduce(_ || _)
   for ((next, i) <- spec_table_next.zipWithIndex) {
     val matchVec = t1_wSpec_addr.map(w => w(i))
     val wMatch = ParallelPriorityMux(matchVec.reverse, t1_wSpec.map(_.data).reverse)
@@ -87,7 +88,7 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
     val t1_bypass = io.specWritePorts.map(w => w.wen && Mux(r.hold, w.addr === t1_raddr(i), w.addr === r.addr))
     val t1_bypassVec = VecInit(t1_bypass)
     val bypass_data = ParallelPriorityMux(t1_bypass.reverse, t1_wSpec.map(_.data).reverse)
-    r.data := Mux(t1_bypassVec.asUInt.orR, bypass_data, t1_rdata(i))
+    r.data := spec_table(r.addr)
   }
 
   for (w <- io.archWritePorts) {

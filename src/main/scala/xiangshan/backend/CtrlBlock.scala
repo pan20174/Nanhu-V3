@@ -130,7 +130,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   //Dec-Rename Pipeline
   private val pipeHolds_dup = RegInit(VecInit(Seq.fill(DecodeWidth)(false.B)))
 //  private val decPipe = Module(new PipelineRouter(new CfCtrl, DecodeWidth, 2))
-  private val decQueue = Module(new RouterQueue(DecodeWidth,2,2 * DecodeWidth))
+  private val decQueue = Module(new RouterQueue(DecodeWidth, 2, 2 * DecodeWidth))
 //  decPipe.io.holds := pipeHolds_dup
 
   //Rename
@@ -235,7 +235,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 //  decPipe.io.flush := redirectDelay.valid || pendingRedirect
 //  decPipe.io.in <> decode.io.out
   decQueue.io.redirect := redirectDelay
-  decQueue.io.redirect.valid := redirectDelay.valid || pendingRedirect
+  decQueue.io.flush := pendingRedirect
+  // decQueue.io.redirect.valid := redirectDelay.valid || pendingRedirect
   decQueue.io.robempty := rob.io.enq.isEmpty
   decQueue.io.singleStep := RegNext(io.csrCtrl.singlestep)
 
@@ -251,6 +252,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     }
     decQueue.io.in(i).valid := decode.io.out(i).valid && !fusionDecoder.io.clear(i)
     decQueue.io.in(i).bits  := decode.io.out(i).bits
+    decode.io.out(i).ready := decQueue.io.in(i).ready
     // Pipeline
     val renamePipe = decQueue.io.out(0)(i)
     renamePipe.ready := rename.io.in(i).ready
