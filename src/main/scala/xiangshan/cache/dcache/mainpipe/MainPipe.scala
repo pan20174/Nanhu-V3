@@ -883,7 +883,8 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.wb.bits.dirty := s3_coh === ClientStates.Dirty
   io.wb.bits.data := s3_data.asUInt
 
-  io.replace_access.valid := RegNext(s1_fire && (s1_req.isAMO || s1_req.isStore || s1_req.isLoad) && !s1_req.probe)
+  // io.replace_access.valid := RegNext(s1_fire && (s1_req.isAMO || s1_req.isStore || s1_req.isLoad) && !s1_req.probe)
+  io.replace_access.valid := RegNext(s1_fire && (s1_need_replacement || s1_hit) && !s1_req.probe)
   io.replace_access.bits.set := s2_idx
   io.replace_access.bits.way := RegNext(OHToUInt(s1_way_en))
 

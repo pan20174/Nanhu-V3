@@ -330,7 +330,7 @@ class LoadPipe(id: Int)(implicit p: Parameters) extends DCacheModule with HasPer
   val replace_access_valid_s1 = RegNext(replace_access_valid_s0 && s1_valid && !io.lsu.s1_kill)
   // val replace_access_valid_s2 = RegNext(replace_access_valid_s1 && !s2_nack_no_mshr)
   //only when hit, access plru
-  val replace_access_valid_s2 = RegNext(replace_access_valid_s1 && !s2_hit_dup_lsu)
+  val replace_access_valid_s2 = RegNext(replace_access_valid_s1 && s2_hit_dup_lsu)
 
   val s2_req_valid = RegNext(s1_req_valid)
   val replace_access_set_s1 = RegEnable(get_idx(s1_req.addr), s1_req_valid)

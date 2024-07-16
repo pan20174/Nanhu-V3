@@ -345,7 +345,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   val l1PfReqQ  = Module(new Queue(new L1PrefetchReq(), 16, flow = true, pipe = true))
   l1PrefetcherOpt match {
-    case Some(pf) => l1PfReqQ.io.enq <> Pipeline(in = pf.io.l1_req, depth = 1, pipe = false, name = Some("pf_queue_to_ldu_reg"))
+    // case Some(pf) => l1PfReqQ.io.enq <> Pipeline(in = pf.io.l1_req, depth = 1, pipe = false, name = Some("pf_queue_to_ldu_reg"))
+    case Some(pf) => l1PfReqQ.io.enq <> pf.io.l1_req
     case None =>
       l1PfReqQ.io.enq.valid := false.B
       l1PfReqQ.io.enq.bits := DontCare
