@@ -91,17 +91,28 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
 
   //enq
   //  private val allocatePtrVec = VecInit((0 until vecLen).map(i => enqPtrVec(PopCount(io.in.map(_.fire))).value))
-  io.in.zipWithIndex.zip(enqPtrVec).map { case ((in, i), enqaddr) =>
-    when(in.fire && !(io.redirect.valid || io.flush)) {
-      dataModule(enqaddr.value).uop.ctrl := in.bits.ctrl
-      dataModule(enqaddr.value).uop.cf := in.bits.cf
-      dataModule(enqaddr.value).uop.vCsrInfo := in.bits.vCsrInfo
-      dataModule(enqaddr.value).uop.vctrl := in.bits.vctrl
-      dataModule(enqaddr.value).robidx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
-      dataModule(enqaddr.value).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
-      dataModule(enqaddr.value).initMicroOp
-    }
+  // io.in.zipWithIndex.zip(enqPtr).map { case ((in, i), enqaddr) =>
+  //   when(in.fire && !(io.redirect.valid || io.flush)) {
+  //     val currentaddr = enqPtr.value + PopCount(io.in.take(i).map(_.valid))
+  //     dataModule(currentaddr).uop.ctrl := in.bits.ctrl
+  //     dataModule(currentaddr).uop.cf := in.bits.cf
+  //     dataModule(currentaddr).uop.vCsrInfo := in.bits.vCsrInfo
+  //     dataModule(currentaddr).uop.vctrl := in.bits.vctrl
+  //     dataModule(currentaddr).robidx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
+  //     dataModule(currentaddr).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
+  //     dataModule(currentaddr).initMicroOp
+  //   }
+  // }
+    for (i <- 0 until vecLen) {
+    val currentAddr = enqPtr.value + PopCount(io.in.take(i).map(_.valid))
+    dataModule(currentAddr).uop.ctrl := io.in(i).bits.ctrl
+    dataModule(currentAddr).uop.cf := io.in(i).bits.cf
+    dataModule(currentAddr).uop.vctrl := io.in(i).bits.vctrl
+    dataModule(currentAddr).uop.vCsrInfo := io.in(i).bits.vCsrInfo
+    dataModule(currentAddr).robidx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
+    dataModule(currentAddr).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
   }
+
   private val enqCount    = PopCount(io.in.map(_.valid))
   private val numValidEntries = distanceBetween(enqPtr, deqPtr)
   private val allowEnqueue = RegNext(numValidEntries + enqCount <= (size - RenameWidth).U, true.B)
