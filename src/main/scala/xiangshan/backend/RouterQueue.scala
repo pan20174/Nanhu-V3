@@ -138,9 +138,10 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   val isNoSpecExec = VecInit(deqEntries.map(req => req.uop.ctrl.noSpecExec))
   val thisIsBlocked = VecInit((0 until vecLen).map(i => {
     // for i > 0, when Rob is empty but dispatch1 have valid instructions to enqueue, it's blocked
-    if (i > 0) isNoSpecExec(i) && !io.robempty
+    if (i > 0) isNoSpecExec(i)
     else isNoSpecExec(i) && !io.robempty
   }))
+  dontTouch(thisIsBlocked)
   val nextCanOut = VecInit((0 until vecLen).map(i =>
     (!isNoSpecExec(i) && !isBlockBackward(i))
   ))
@@ -149,6 +150,7 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
     else Cat((0 until i).map(j => nextCanOut(j))).andR
   ))
   val thisCanActualOut = (0 until RenameWidth).map(i => !thisIsBlocked(i) && notBlockedByPrevious(i))
+  // dontTouch(thisCanActualOut)
   io.out.zipWithIndex.foreach({case(out, deq) =>
     out.zipWithIndex.zip(deqEntries).foreach({case ((o, i), deq) =>
       o.valid := thisCanActualOut(i) && (i.U < numValidEntries) && !(io.redirect.valid || io.flush)

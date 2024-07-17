@@ -119,8 +119,8 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle {
   val ftqOffset = UInt(log2Up(PredictWidth).W)
   // needs to be checked by FDI
   val fdiUntrusted = Bool()
-
-//  val predebugInfo = new PrePerfDebugInfo
+  // ibuffer and decode debug info
+  val predebugInfo = new PrePerfDebugInfo
 }
 
 // Decode DecodeWidth insts at Decode Stage
