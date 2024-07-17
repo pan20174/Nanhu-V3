@@ -349,7 +349,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       l1Prefetcher.pf_ctrl.dynamic_depth := 32.U
       l1Prefetcher.pf_ctrl.flush := false.B
       l1Prefetcher.pf_ctrl.enable := true.B
-      l1Prefetcher.pf_ctrl.confidence := 0.U 
+      l1Prefetcher.pf_ctrl.confidence := 0.U
       l1Prefetcher.l2PfqBusy := false.B
 
       l1Prefetcher
