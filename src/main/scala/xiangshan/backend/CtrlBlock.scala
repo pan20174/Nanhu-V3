@@ -265,11 +265,15 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     if (i < RenameWidth - 1) {
       // fusion decoder sees the raw decode info
       fusionDecoder.io.dec(i) := decode.io.out(i).bits.ctrl
-
       // update the first RenameWidth - 1 instructions
       decode.io.fusion(i) := fusionDecoder.io.out(i).valid && decQueue.io.in(i).fire
       when (fusionDecoder.io.out(i).valid) {
         fusionDecoder.io.out(i).bits.update(decQueue.io.in(i).bits.ctrl)
+        when(fusionDecoder.io.info(i).rs2FromRs2 || fusionDecoder.io.info(i).rs2FromRs1) {
+          decQueue.io.in(i).bits.ctrl.lsrc(1) := Mux(fusionDecoder.io.info(i).rs2FromRs2, decode.io.out(i + 1).bits.ctrl.lsrc(1), decode.io.out(i + 1).bits.ctrl.lsrc(0))
+        }.elsewhen(fusionDecoder.io.info(i).rs2FromZero) {
+          decQueue.io.in(i).bits.ctrl.lsrc(1) := 0.U
+        }
         // TODO: remove this dirty code for ftq update
         val sameFtqPtr = decode.io.out(i).bits.cf.ftqPtr.value === decode.io.out(i + 1).bits.cf.ftqPtr.value
         val ftqOffset0 = decode.io.out(i).bits.cf.ftqOffset
@@ -395,14 +399,14 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   io.cpu_halt := DelayN(rob.io.cpu_halt, 5)
   private val robRedirect = Pipe(io.redirectIn)
   private val robPreWalk = Pipe(io.preWalk)
-  rob.io.redirect.valid := robRedirect.valid | robPreWalk.valid
-  rob.io.redirect.bits := Mux(robRedirect.valid, robRedirect.bits, robPreWalk.bits)
+  rob.io.redirect := robRedirect
+  // rob.io.redirect.bits := Mux(robRedirect.valid, robRedirect.bits, robPreWalk.bits)
   when(io.redirectIn.valid) {
     pipeHolds_dup.foreach(_ := false.B)
   }.elsewhen(io.preWalk.valid) {
     pipeHolds_dup.foreach(_ := true.B)
   }
-  flushRenamePipe := robRedirect.valid | robPreWalk.valid
+  flushRenamePipe := robRedirect.valid
   private val preWalkDbgValid = RegInit(false.B)
   private val preWalkDbgBits = RegEnable(io.preWalk.bits, io.preWalk.valid)
   when(robRedirect.valid) {
