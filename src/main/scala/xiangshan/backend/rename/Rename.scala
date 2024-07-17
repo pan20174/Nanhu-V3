@@ -78,15 +78,6 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   vtyperename.io.dispatchIn := io.dispatchIn
   io.toVCtl := vtyperename.io.toVCtl
 
-  // compressUnit: decode instructions guidelines to the ROB allocation logic
-  val compressUnit = Module(new CompressUnit())
-    compressUnit.io.in.zip(io.in).foreach{ case(sink, source) =>
-    sink.valid := source.valid
-    sink.bits := source.bits
-  }
-  val needRobFlags = compressUnit.io.out.needRobFlags
-  val instrSizesVec = compressUnit.io.out.instrSizes
-  val compressMasksVec = compressUnit.io.out.masks
   dontTouch(needRobFlags);dontTouch(instrSizesVec);dontTouch(compressMasksVec)
   // decide if given instruction needs allocating a new physical register (CfCtrl: from decode; RobCommitInfo: from rob)
   def needDestReg[T <: CfCtrl](fp: Boolean, x: T): Bool = {
@@ -117,9 +108,19 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   // dispatch1 ready ++ float point free list ready ++ int free list ready ++ not walk ++ rob canaccept
   val canOut = io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.enqRob.canAccept
 
-
+  // compressUnit: decode instructions guidelines to the ROB allocation logic
+  val compressUnit = Module(new CompressUnit())
+    compressUnit.io.in.zip(io.in).foreach{ case(sink, source) =>
+    sink.valid := source.valid
+    sink.bits := source.bits
+  }
+  val needRobFlags = compressUnit.io.out.needRobFlags
+  val instrSizesVec = compressUnit.io.out.instrSizes
+  val compressMasksVec = compressUnit.io.out.masks
+  
   // speculatively assign the instruction with an robIdx
- val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
+ val validCount = PopCount(io.in.map(_.valid).zip(needRobFlags).map{
+  case(valid, needRob) => valid && needRob}) // number of instructions waiting to enter rob (from decode)
  val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
  val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
  val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
