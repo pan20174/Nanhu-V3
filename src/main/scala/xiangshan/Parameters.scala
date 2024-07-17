@@ -142,6 +142,7 @@ case class XSCoreParameters
   StoreQueueSize: Int = 64,
   StoreQueueNWriteBanks: Int = 8,
   RobSize: Int = 192,
+  RobCompressSize: Int = 6,
   RblSize: Int = 160,
   intRsDepth:Int = 32,
   fpRsDepth:Int = 32,

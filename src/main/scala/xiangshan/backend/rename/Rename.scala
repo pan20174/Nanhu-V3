@@ -34,6 +34,8 @@ import xiangshan.mem.mdp._
 import xiangshan.vector.SIRenameInfo
 import xiangshan.vector.vtyperename.{VtpToVCtl, VtypeRename}
 import xs.utils.perf.HasPerfLogging
+import xiangshan.ExceptionNO.selectFrontend
+import xiangshan.ExceptionNO.illegalInstr
 
 class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with HasPerfLogging{
   val io = IO(new Bundle() {
@@ -78,7 +80,6 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   vtyperename.io.dispatchIn := io.dispatchIn
   io.toVCtl := vtyperename.io.toVCtl
 
-  dontTouch(needRobFlags);dontTouch(instrSizesVec);dontTouch(compressMasksVec)
   // decide if given instruction needs allocating a new physical register (CfCtrl: from decode; RobCommitInfo: from rob)
   def needDestReg[T <: CfCtrl](fp: Boolean, x: T): Bool = {
       if(fp) x.ctrl.fpWen
@@ -117,7 +118,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   val needRobFlags = compressUnit.io.out.needRobFlags
   val instrSizesVec = compressUnit.io.out.instrSizes
   val compressMasksVec = compressUnit.io.out.masks
-  
+  dontTouch(needRobFlags);dontTouch(instrSizesVec);dontTouch(compressMasksVec)
   // speculatively assign the instruction with an robIdx
  val validCount = PopCount(io.in.map(_.valid).zip(needRobFlags).map{
   case(valid, needRob) => valid && needRob}) // number of instructions waiting to enter rob (from decode)
@@ -204,20 +205,24 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // no valid instruction from decode stage || all resources (dispatch1 + both free lists) ready
     io.in(i).ready := !hasValid || canOut
 
-    uops(i).robIdx  := robIdxHead + PopCount(io.in.take(i).map(_.valid))
+    uops(i).robIdx  := robIdxHead + PopCount(io.in.map(_.valid).zip(needRobFlags).map{
+      case(valid, needRob) => valid && needRob})
     uops(i).psrc(0) := Mux(uops(i).ctrl.srcType(0) === SrcType.reg, io.intReadPorts(i)(0), io.fpReadPorts(i)(0))
     uops(i).psrc(1) := Mux(uops(i).ctrl.srcType(1) === SrcType.reg, io.intReadPorts(i)(1), io.fpReadPorts(i)(1))
-    // int psrc2 should be bypassed from next instruction if it is fused
-//    if (i < RenameWidth - 1) {
-//      when (io.fusionInfo(i).rs2FromRs2 || io.fusionInfo(i).rs2FromRs1) {
-//        uops(i).psrc(1) := Mux(io.fusionInfo(i).rs2FromRs2, io.intReadPorts(i + 1)(1), io.intReadPorts(i + 1)(0))
-//      }.elsewhen(io.fusionInfo(i).rs2FromZero) {
-//        uops(i).psrc(1) := 0.U
-//      }
-//    }
     uops(i).psrc(2)         := io.fpReadPorts(i)(2)
     uops(i).old_pdest       := Mux(uops(i).ctrl.rfWen, io.intReadPorts(i).last, io.fpReadPorts(i).last)
     uops(i).eliminatedMove  := isMove(i)
+  
+    uops(i).compressInstNum := instrSizesVec(i)
+    uops(i).compressWbNum   := instrSizesVec(i) - PopCount(compressMasksVec(i) & Cat(isMove.reverse))
+    val hasException = Cat(selectFrontend(uops(i).cf.exceptionVec) :+ uops(i).cf.exceptionVec(illegalInstr)).orR 
+    val needFlushPipe = hasException || uops(i).cf.trigger.getFrontendCanFire
+    when(isMove(i) || needFlushPipe) {
+      uops(i).compressWbNum := 0.U
+    }.otherwise{
+      uops(i).compressWbNum := instrSizesVec(i) - PopCount(compressMasksVec(i) & Cat(isMove.reverse))
+    }
+    uops(i).lastUop := needRobFlags(i)
     // update pdest
     uops(i).pdest := Mux(needIntDest(i), intFreeList.io.allocatePhyReg(i), // normal int inst
       // normal fp inst
