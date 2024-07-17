@@ -142,6 +142,7 @@ case class XSCoreParameters
   StoreQueueSize: Int = 64,
   StoreQueueNWriteBanks: Int = 8,
   RobSize: Int = 192,
+  RblSize: Int = 160,
   intRsDepth:Int = 32,
   fpRsDepth:Int = 32,
   memRsDepth:Int = 48,
@@ -341,6 +342,7 @@ trait HasXSParameter {
   val NRPhyRegs = coreParams.NRPhyRegs
 
   val RobSize = coreParams.RobSize
+  val RblSize = coreParams.RblSize
   val IntRefCounterWidth = log2Ceil(RobSize + 1)
   val LoadQueueSize = coreParams.LoadQueueSize
   val loadLoadViolationCheckBits = coreParams.loadLoadViolationCheckBits

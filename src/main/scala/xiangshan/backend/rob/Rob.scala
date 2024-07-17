@@ -66,6 +66,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val exception = ValidIO(new ExceptionInfo)
     val mmuEnable = Input(Bool())
     val commits = new RobCommitIO
+//    val rblCommits = Flipped(new RobToRblIO)
     val lsq = new RobLsqIO
     val csr = new RobCSRIO
     val robFull = Output(Bool())
@@ -296,6 +297,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       debug_microOp(wbIdx).debugInfo.selectTime := wb.bits.uop.debugInfo.selectTime
       debug_microOp(wbIdx).debugInfo.issueTime := wb.bits.uop.debugInfo.issueTime
       debug_microOp(wbIdx).debugInfo.writebackTime := wb.bits.uop.debugInfo.writebackTime
+//      debug_microOp(wbIdx).cf.predebugInfo.fetchTime := wb.bits.uop.cf.predebugInfo.fetchTime
+//      debug_microOp(wbIdx).cf.predebugInfo.decodeTime := wb.bits.uop.cf.predebugInfo.decodeTime
+      debug_microOp(wbIdx).debugInfo.renameTime := wb.bits.uop.debugInfo.renameTime
+      debug_microOp(wbIdx).debugInfo.dispatchTime := wb.bits.uop.debugInfo.dispatchTime
       debug_microOp(wbIdx).sqIdx := wb.bits.uop.sqIdx
       debug_microOp(wbIdx).lqIdx := wb.bits.uop.lqIdx
 
@@ -324,6 +329,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       val wbIdx = wb.bits.uop.robIdx.value
       debug_exuData(wbIdx) := wb.bits.data
       debug_exuDebug(wbIdx) := wb.bits.debug
+//      debug_microOp(wbIdx).cf.predebugInfo.fetchTime := wb.bits.uop.cf.predebugInfo.fetchTime
+//      debug_microOp(wbIdx).cf.predebugInfo.decodeTime := wb.bits.uop.cf.predebugInfo.decodeTime
+      debug_microOp(wbIdx).debugInfo.renameTime := wb.bits.uop.debugInfo.renameTime
+      debug_microOp(wbIdx).debugInfo.dispatchTime := wb.bits.uop.debugInfo.dispatchTime
       debug_microOp(wbIdx).debugInfo.enqRsTime := wb.bits.uop.debugInfo.enqRsTime
       debug_microOp(wbIdx).debugInfo.selectTime := wb.bits.uop.debugInfo.selectTime
       debug_microOp(wbIdx).debugInfo.issueTime := wb.bits.uop.debugInfo.issueTime
@@ -452,6 +461,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     //val vecNum = PopCount(commits_vec.take(i + 1))
     v := canWalk && (i.U < walkCounter)
   }
+  val commits_needDest = entryDataRead.map(_.needDest)
 
   val deqPtrGenModule = Module(new RobCommitHelper)
   val deqPtrVec_next = deqPtrGenModule.io.deqPtrNextVec
@@ -464,6 +474,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   deqPtrGenModule.io.interrupt_safe := interrupt_safe(deqPtr.value)
   deqPtrGenModule.io.blockCommit := blockCommit
   deqPtrGenModule.io.deq_isVec := commits_vec
+  deqPtrGenModule.io.deq_needDest := commits_needDest
   deqPtrVec := deqPtrGenModule.io.deqPtrVec
 
   for (i <- 0 until CommitWidth) {
@@ -479,6 +490,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     io.commits.info(i).connectEntryData(entryDataRead(i))
     io.commits.info(i).vecWen := commits_vec(i)
     io.commits.robIdx(i) := Mux(state === s_idle, deqPtrVec(i), walkPtrVec(i))
+
+//    io.rblCommits.commitSize := deqPtrGenModule.io.rabCommitSize
+//    io.rblCommits.walkSize := deqPtrGenModule.io.rabCommitSize
+//    io.rblCommits.walkValid := (state =/= s_idle)
+//    io.rblCommits.commitValid := (state === s_idle) && (!blockCommit)
 
     // when (io.commits.isWalk && state === s_walk && shouldWalkVec(i)) {
     //   XSError(!walk_v(i), s"why not $i???\n")
@@ -605,10 +621,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
   // update the state depending on whether there is a redirect
   val state_next = Mux(io.redirect.valid,
-    Mux(io.enq.needAlloc.asUInt.orR,
-      s_extrawalk,
-      Mux(noNeedToWalk, s_idle, s_walk)
-    ),
+      Mux(noNeedToWalk, s_idle, s_walk),
     Mux(state === s_walk && walkFinished,
       s_idle,
       Mux(state === s_extrawalk,
@@ -803,6 +816,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.vtypeWb := req.ctrl.isVtype
       wdata.isVector := req.ctrl.isVector && !req.ctrl.isVtype
       wdata.isOrder := req.vctrl.ordered
+      wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
   }
 
   vectorMarkVec.zipWithIndex.foreach {
@@ -972,6 +986,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   XSPerfAccumulate("waitBranchCycle", deqNotWritebacked && deqUopCommitType === CommitType.BRANCH)
   XSPerfAccumulate("waitLoadCycle", deqNotWritebacked && deqUopCommitType === CommitType.LOAD)
   XSPerfAccumulate("waitStoreCycle", deqNotWritebacked && deqUopCommitType === CommitType.STORE)
+//  val decodeLatency = commitDebugUop.map(uop => uop.cf.predebugInfo.decodeTime - uop.cf.predebugInfo.fetchTime)
+//  val renameLatency = commitDebugUop.map(uop => uop.debugInfo.renameTime - uop.cf.predebugInfo.decodeTime)
   val dispatchLatency = commitDebugUop.map(uop => uop.debugInfo.dispatchTime - uop.debugInfo.renameTime)
   val enqRsLatency = commitDebugUop.map(uop => uop.debugInfo.enqRsTime - uop.debugInfo.dispatchTime)
   val selectLatency = commitDebugUop.map(uop => uop.debugInfo.selectTime - uop.debugInfo.enqRsTime)
@@ -988,6 +1004,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val fuName = FuType.functionNameMap(fuType)
     val commitIsFuType = io.commits.commitValid.zip(commitDebugUop).map(x => x._1 && x._2.ctrl.fuType === fuType.U)
     XSPerfAccumulate(s"${fuName}_instr_cnt", ifCommit(PopCount(commitIsFuType)))
+//    XSPerfAccumulate(s"${fuName}_latency_decode", ifCommit(latencySum(commitIsFuType, decodeLatency)))
+//    XSPerfAccumulate(s"${fuName}_latency_rename", ifCommit(latencySum(commitIsFuType, renameLatency)))
     XSPerfAccumulate(s"${fuName}_latency_dispatch", ifCommit(latencySum(commitIsFuType, dispatchLatency)))
     XSPerfAccumulate(s"${fuName}_latency_enq_rs", ifCommit(latencySum(commitIsFuType, enqRsLatency)))
     XSPerfAccumulate(s"${fuName}_latency_select", ifCommit(latencySum(commitIsFuType, selectLatency)))

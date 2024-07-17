@@ -19,7 +19,7 @@ package xiangshan.backend.decode
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import xs.utils.{LookupTree, SignExt, ZeroExt}
+import xs.utils.{GTimer, LookupTree, SignExt, ZeroExt}
 import xs.utils.perf.HasPerfLogging
 import freechips.rocketchip.util.uintToBitPat
 import utils._
@@ -1028,9 +1028,12 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   val ctrl_flow = Wire(new CtrlFlow) // input with RVC Expanded
   val cf_ctrl = Wire(new CfCtrl)
-  cf_ctrl.vCsrInfo := DontCare
-  cf_ctrl.vctrl := DontCare
+  ctrl_flow := DontCare
+  cf_ctrl := DontCare
   ctrl_flow := io.enq.ctrl_flow
+//  ctrl_flow.predebugInfo.fetchTime := io.enq.ctrl_flow.predebugInfo.fetchTime
+  val time = GTimer()
+//  ctrl_flow.predebugInfo.decodeTime := time
 
   val vdecode_table = VectorArithDecode.table ++
     VectorStoreDecode.table ++
@@ -1058,6 +1061,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   // output
   cf_ctrl.cf := ctrl_flow
   val cs = Wire(new CtrlSignals)
+  cs := DontCare
   // val scs = Wire(new CtrlSignals)
   // val vcs = Wire(new CtrlSignals)
 //  scs := 0.U.asTypeOf(new CtrlSignals()).decode(ctrl_flow.instr, decode_table)
@@ -1109,8 +1113,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   // fill in exception vector
   cf_ctrl.cf.exceptionVec := io.enq.ctrl_flow.exceptionVec
-  cf_ctrl.cf.exceptionVec(illegalInstr) := illegalInst || illegalFp || illegalVec || illegalFDI 
-
+  cf_ctrl.cf.exceptionVec(illegalInstr) := illegalInst || illegalFp || illegalVec || illegalFDI
   // fix frflags
   //                           fflags    zero csrrs rd    csr
   val isFrflags = BitPat("b000000000001_00000_010_?????_1110011") === ctrl_flow.instr
