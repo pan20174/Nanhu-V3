@@ -7,18 +7,16 @@ import xiangshan.backend.decode.FusionDecodeInfo
 import xs.utils.CircularQueuePtr
 import xiangshan.backend.rob.RobPtr
 import xs.utils._
+import xs.utils.perf.HasPerfLogging
 
 class RouterQueueEntry(implicit p: Parameters) extends XSBundle {
   val uop = new MicroOp
-  val robidx = new RobPtr
   def initMicroOp: MicroOp = {
     val umop = Wire(new MicroOp)
     umop := uop
     umop.srcState(0) := DontCare
     umop.srcState(1) := DontCare
     umop.srcState(2) := DontCare
-    umop.robIdx := robidx
-    dontTouch(umop.robIdx)
     umop.debugInfo := DontCare
     umop.lqIdx := DontCare
     umop.sqIdx := DontCare
@@ -42,7 +40,7 @@ class RouterQueueEntry(implicit p: Parameters) extends XSBundle {
   }
 }
 
-class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper {
+class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper with HasPerfLogging {
   val io = IO(new Bundle {
     val in = Flipped(Vec(vecLen, Decoupled(new CfCtrl)))
     val out = Vec(outNum, Vec(vecLen, Decoupled(new MicroOp)))
@@ -90,19 +88,6 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   robIdxHead := robIdxHeadNext
 
   //enq
-  //  private val allocatePtrVec = VecInit((0 until vecLen).map(i => enqPtrVec(PopCount(io.in.map(_.fire))).value))
-  // io.in.zipWithIndex.zip(enqPtr).map { case ((in, i), enqaddr) =>
-  //   when(in.fire && !(io.redirect.valid || io.flush)) {
-  //     val currentaddr = enqPtr.value + PopCount(io.in.take(i).map(_.valid))
-  //     dataModule(currentaddr).uop.ctrl := in.bits.ctrl
-  //     dataModule(currentaddr).uop.cf := in.bits.cf
-  //     dataModule(currentaddr).uop.vCsrInfo := in.bits.vCsrInfo
-  //     dataModule(currentaddr).uop.vctrl := in.bits.vctrl
-  //     dataModule(currentaddr).robidx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
-  //     dataModule(currentaddr).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
-  //     dataModule(currentaddr).initMicroOp
-  //   }
-  // }
   for (i <- 0 until vecLen) {
     when(io.in(i).fire && !(io.redirect.valid || io.flush)) {
       val currentAddr = enqPtr.value + PopCount(io.in.take(i).map(_.valid))
@@ -110,8 +95,6 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
       dataModule(currentAddr).uop.cf := io.in(i).bits.cf
       dataModule(currentAddr).uop.vctrl := io.in(i).bits.vctrl
       dataModule(currentAddr).uop.vCsrInfo := io.in(i).bits.vCsrInfo
-      dataModule(currentAddr).robidx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
-      dataModule(currentAddr).uop.robIdx := robIdxHead + PopCount(io.in.take(i).map(_.valid))
     }
   }
 
@@ -149,27 +132,27 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
     if (i == 0) true.B
     else Cat((0 until i).map(j => nextCanOut(j))).andR
   ))
-  val thisCanActualOut = (0 until RenameWidth).map(i => !thisIsBlocked(i) && notBlockedByPrevious(i))
+  val thisCanActualOut = (0 until vecLen).map(i => !thisIsBlocked(i) && notBlockedByPrevious(i))
   // dontTouch(thisCanActualOut)
-  io.out.zipWithIndex.foreach({case(out, deq) =>
+  val updatedCommitType = Wire(Vec(vecLen, CommitType()))
+  val updatedUop = Wire(Vec(RenameWidth, new MicroOp))
+  io.out.zipWithIndex.foreach({case(out, idx) =>
     out.zipWithIndex.zip(deqEntries).foreach({case ((o, i), deq) =>
       o.valid := thisCanActualOut(i) && (i.U < numValidEntries) && !(io.redirect.valid || io.flush)
-      o.bits := deq.uop
-      o.bits.robIdx := deq.robidx
-      o.bits.ctrl.singleStep := io.singleStep && (if (i == 0) singleStepStatus else true.B)
+      updatedUop(i) := deq.uop
+      updatedUop(i).ctrl.singleStep := io.singleStep && (if (i == 0) singleStepStatus else true.B)
+      updatedCommitType(i) := Cat(FuType.isLoadStore(deq.uop.ctrl.fuType), (FuType.isStore(deq.uop.ctrl.fuType) && !FuType.isAMO(deq.uop.ctrl.fuType)) | (FuType.isJumpExu(deq.uop.ctrl.fuType) || !deq.uop.cf.pd.notCFI ))
+      when(!CommitType.isFused(deq.uop.ctrl.commitType)) {
+        updatedUop(i).ctrl.commitType := updatedCommitType(i)
+      }.otherwise {
+        XSError(o.valid && updatedCommitType(i) =/= CommitType.NORMAL, "why fused?\n")
+      }
+      o.bits := updatedUop(i)
     })
   })
   io.allowOut := allowOut
 
   //pointers update
-  private val enqMask = UIntToMask(enqPtr.value, size)
-  private val deqMask = UIntToMask(deqPtr.value, size)
-  private val enqXorDeq = enqMask ^ deqMask
-  private val validsMask = Mux(deqPtr.value < enqPtr.value || deqPtr === enqPtr, enqXorDeq, (~enqXorDeq).asUInt)
-  private val redirectHits = dataModule.map(_.uop.robIdx.needFlush(io.redirect))
-  private val flushVec = Cat(redirectHits.reverse)
-  private val redirectMask = validsMask & flushVec
-  private val flushNum = PopCount(redirectMask)
   private val actualEnqNum = Mux(io.in(0).fire, PopCount(io.in.map(_.valid)), 0.U)
   enqPtrVec.zipWithIndex.foreach({case (ptr, i) =>
     when(io.redirect.valid) {
