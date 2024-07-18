@@ -223,6 +223,13 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
       uops(i).compressWbNum := instrSizesVec(i) - PopCount(compressMasksVec(i) & Cat(isMove.reverse))
     }
     uops(i).lastUop := needRobFlags(i)
+    when(i.U === 0.U){uops(i).firstUop := true.B
+    }.otherwise{uops(i).firstUop := needRobFlags(i - 1)}
+    assert(instrSizesVec(i)>=1.U, "uop num at least is 1")
+    assert(instrSizesVec(i)===1.U && uops(i).lastUop && uops(i).firstUop,
+    "when compress num is 1, must be first and last uop")
+    assert(instrSizesVec(i)=/=1.U && !(uops(i).lastUop && uops(i).firstUop),
+    "when compress num great than 1, first and last uop can't be same")
     // update pdest
     uops(i).pdest := Mux(needIntDest(i), intFreeList.io.allocatePhyReg(i), // normal int inst
       // normal fp inst

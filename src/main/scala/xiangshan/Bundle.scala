@@ -225,6 +225,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val compressInstNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction number per robEntry
   val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W)   // instruction writeback number per robEntry
   val lastUop = Bool() // compress rob last uop sign
+  val firstUop = Bool() // compress rob first uop sign
   //vector
   val vm = UInt(PhyRegIdxWidth.W)
   val vmState = SrcState()
