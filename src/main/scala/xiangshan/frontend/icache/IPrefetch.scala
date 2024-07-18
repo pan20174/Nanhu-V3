@@ -152,7 +152,7 @@ class IPrefetchPipe(implicit p: Parameters) extends IPrefetchModule with HasPerf
 //    toITLB(i).bits.no_translate := false.B
   }
   fromITLB.foreach(_.ready := true.B)
-  io.itlb.foreach(_.req_kill := false.B)
+//  io.itlb.foreach(_.req_kill := false.B)
 
   /**
     ******************************************************************************

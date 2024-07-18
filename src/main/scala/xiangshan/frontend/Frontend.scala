@@ -74,7 +74,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   val ifu     = Module(new NewIFU)
   val ibuffer =  Module(new IBuffer)
   val ftq = Module(new Ftq(parentName = outer.parentName + s"ftq_"))
-  val itlb = Module(new TLB(coreParams.itlbPortNum, 1, itlbParams)(Seq(false,false,true)))
+  val itlb = Module(new TLB_frontend(coreParams.itlbPortNum, 1, itlbParams)(Seq(false,false,true)))
 
   val tlbCsr = DelayN(io.tlbCsr, 2)
   val csrCtrl = DelayN(io.csrCtrl, 2)
@@ -82,6 +82,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
 
   // trigger
   ifu.io.frontendTrigger := csrCtrl.frontend_trigger
+  ifu.io.fdi := DontCare
 
   io.mmioFetchPending := ifu.io.mmioFetchPending
 
@@ -109,7 +110,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   // itlb
   itlb.io.requestor.take(PortNumber) zip icache.io.itlb foreach {case (a,b) => a <> b}
   itlb.io.requestor.last <> ifu.io.iTLBInter
-  itlb.io.requestor.foreach(_.req_kill := false.B)
+//  itlb.io.requestor.foreach(_.req_kill := false.B)
   itlb.io.flushPipe.foreach(_ := needFlush)
   itlb.io.sfence := DelayN(io.sfence, 1)
   itlb.io.csr    := DelayN(io.tlbCsr, 1)

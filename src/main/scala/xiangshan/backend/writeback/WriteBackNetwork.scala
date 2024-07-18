@@ -27,6 +27,7 @@ import freechips.rocketchip.diplomacy._
 import xiangshan.{ExuOutput, HasXSParameter, MemPredUpdateReq, Redirect, XSCoreParamsKey}
 import xiangshan.frontend.FtqPCEntry
 import difftest._
+import xiangshan.ExceptionNO.fdiUJumpFault
 import xs.utils.GTimer
 
 class WriteBackNetwork(implicit p:Parameters) extends LazyModule {

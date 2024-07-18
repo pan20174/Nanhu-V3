@@ -135,7 +135,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val frontendTrigger = Module(new FrontendTrigger)
   val (checkerIn, checkerOutStage1, checkerOutStage2)         = (predChecker.io.in, predChecker.io.out.stage1Out,predChecker.io.out.stage2Out)
 
-  io.iTLBInter.req_kill := false.B
+//  io.iTLBInter.req_kill := false.B
   io.iTLBInter.resp.ready := true.B
 
   /**
