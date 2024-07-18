@@ -268,7 +268,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       }
     }
   }
-  val enqNum = Mux(io.enq.canAccept, PopCount(io.enq.req.map(_.valid)), 0.U)
+  val enqNum = Mux(io.enq.canAccept, PopCount(io.enq.req.map(req => req.valid && req.bits.firstUop)), 0.U)
   io.enq.isEmpty := RegNext(isEmpty && !VecInit(io.enq.req.map(_.valid)).asUInt.orR)
 
   /**
