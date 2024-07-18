@@ -738,7 +738,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val enqHasException = ExceptionNO.selectFrontend(io.enq.req(i).bits.cf.exceptionVec).asUInt.orR
     val enqHasTriggerCanFire = io.enq.req(i).bits.cf.trigger.getFrontendCanFire
     val enqIsWritebacked = io.enq.req(i).bits.eliminatedMove
-    wbStatusArray.enqueue(canEnqueue(i), allocatePtrVec(i), enqIsWritebacked && !enqHasException && !enqHasTriggerCanFire)
+    val compressWbNum = io.enq.req(i).bits.compressInstNum
+    wbStatusArray.enqueue(canEnqueue(i), allocatePtrVec(i), enqHasException || enqHasTriggerCanFire, compressWbNum)
     when(canEnqueue(i)) {
       val isScalarStu = io.enq.req(i).bits.ctrl.fuType === FuType.stu && !io.enq.req(i).bits.ctrl.isVector
       store_data_writebacked(allocatePtrVec(i).value) := !isScalarStu
@@ -818,7 +819,6 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.isVector := req.ctrl.isVector && !req.ctrl.isVtype
       wdata.isOrder := req.vctrl.ordered
       wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
-      wdata.compressWbNum := req.compressWbNum
   }
   /*
    * connect with rab

@@ -357,7 +357,7 @@ class RobEntryData(implicit p: Parameters) extends XSBundle {
   val isVector = Bool()
   val isOrder = Bool()
   val needDest = Bool()
-  val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction writeback number per robEntry
+  // val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction writeback number per robEntry
 }
 
 class DiffCommitIO(implicit p: Parameters) extends XSBundle {
