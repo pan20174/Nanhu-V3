@@ -232,12 +232,12 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   //************************ptr move************************
   val allocatePtrVec = VecInit((0 until RenameWidth).map(
-    i => enqPtrVec(PopCount(io.enq.needAlloc.take(i)))
+    i => enqPtrVec(PopCount(io.enq.req.take(i).map(req => req.valid && req.bits.firstUop)))
   ))
   io.enq.canAccept := allowEnqueue && !hasBlockBackward
   io.enq.canAccept_dup.zip(allowEnqueuedupRegs).zip(hasBlockBackwarddupRegs).foreach({case ((c,a),b) => c:= a && !b})
   io.enq.resp := allocatePtrVec
-  val canEnqueue = VecInit(io.enq.req.map(_.valid && io.enq.canAccept))
+  val canEnqueue = VecInit(io.enq.req.map( enq => enq.valid && io.enq.canAccept && enq.bits.firstUop))
   val timer = GTimer()
   for (i <- 0 until RenameWidth) {
     // we don't check whether io.redirect is valid here since redirect has higher priority
@@ -652,7 +652,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   enqPtrGenModule.io.redirect := io.redirect
   enqPtrGenModule.io.allowEnqueue := allowEnqueue
   enqPtrGenModule.io.hasBlockBackward := hasBlockBackward
-  enqPtrGenModule.io.enq := VecInit(io.enq.req.map(_.valid))
+  enqPtrGenModule.io.enq := VecInit(io.enq.req.map(req => req.valid && req.bits.firstUop))
   enqPtrVec := enqPtrGenModule.io.out
 
   val thisCycleWalkCount = canWalkNum
