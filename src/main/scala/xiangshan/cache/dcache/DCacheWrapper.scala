@@ -716,13 +716,16 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   // refill to load queue
   io.lsu.lsq <> missQueue.io.refill_to_ldq
   io.lsu.loadReqHandledResp <> missQueue.io.loadReqHandledResp
-  val (_, _, done, _) = edge.count(bus.d)
-  when (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant) {
-    io.lsu.tl_d_channel.valid := bus.d.fire && done
-    io.lsu.tl_d_channel.mshrid := bus.d.bits.source
-  } .otherwise {
-    io.lsu.tl_d_channel := DontCare
-  }
+//  val (_, _, done, _) = edge.count(bus.d)
+//  when (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant) {
+//    io.lsu.tl_d_channel.valid := bus.d.valid && done
+//    io.lsu.tl_d_channel.mshrid := bus.d.bits.source
+//  } .otherwise {
+//    io.lsu.tl_d_channel := DontCare
+//  }
+  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
+  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
+
 
   // tilelink stuff
   bus.a <> missQueue.io.mem_acquire

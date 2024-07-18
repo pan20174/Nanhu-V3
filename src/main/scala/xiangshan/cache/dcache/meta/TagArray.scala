@@ -53,10 +53,17 @@ class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DC
     val ecc_write = Flipped(DecoupledIO(new TagEccWriteReq))
   })
 
-  val waddr =  io.write.bits.idx
-  val wdata =  io.write.bits.tag
-  val wmask = Mux((nWays == 1).B, (-1).asSInt, io.write.bits.way_en.asSInt).asBools
-  val rmask = Mux((nWays == 1).B, (-1).asSInt, io.read.bits.way_en.asSInt).asBools
+  // TODO: reset is unnecessary?
+  val rst_cnt = RegInit(0.U(log2Up(nSets + 1).W))
+  val rst = rst_cnt < nSets.U
+  val rstVal = 0.U
+  val waddr = Mux(rst, rst_cnt, io.write.bits.idx)
+  val wdata = Mux(rst, rstVal, io.write.bits.tag)
+  val wmask = Mux(rst || (nWays == 1).B, (-1).asSInt, io.write.bits.way_en.asSInt).asBools
+  val rmask = Mux(rst || (nWays == 1).B, (-1).asSInt, io.read.bits.way_en.asSInt).asBools
+  when(rst) {
+    rst_cnt := rst_cnt + 1.U
+  }
 
   val tag_array = Module(new SRAMTemplate(UInt((tagBits + ClientStates.width).W), set = nSets, way = nWays,
     shouldReset = false, holdRead = false, singlePort = true, hasClkGate = true,
@@ -68,7 +75,7 @@ class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DC
   // val ecc_array = Module(new SRAMTemplate(UInt(eccTagBits.W), set = nSets, way = nWays,
   //   shouldReset = false, holdRead = false, singlePort = true))
 
-  val wen =  io.write.valid
+  val wen = rst || io.write.valid
   tag_array.io.w.req.valid := wen
   tag_array.io.w.req.bits.apply(
     setIdx = waddr,

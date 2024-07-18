@@ -353,10 +353,10 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   }
 
   val refill_valid = Wire(Bool())
-  refill_valid := Mux(RegNext(s0_fire), io.refill_data.valid, RegNext(refill_valid)) //如果s1阻塞，则需要保存refill_data.valid
+  refill_valid := Mux(RegNext(s0_fire), io.refill_data.valid, RegNext(refill_valid))
   val refill_valid_reg =  (s2_req.refill || s2_req.miss) && RegNext(refill_valid)
 
-  val refill_store_data = RegEnable(io.refill_data.bits.data, io.refill_data.valid) //s1阻塞，这里的不变,data处理完一个才会处理下一个
+  val refill_store_data = RegEnable(io.refill_data.bits.data, io.refill_data.valid)
   val refill_store_mask = RegEnable(io.refill_data.bits.mask, io.refill_data.valid)
 
   for (i <- 0 until DCacheBanks) {
@@ -772,7 +772,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.store_replay_resp.bits.replay := true.B
   io.store_replay_resp.bits.id := s2_req.id
 
-  io.store_hit_resp.valid := s3_valid && (s3_store_can_go || s3_miss_can_go) //amo需要清空mask，store_can_go包括store的refill重填
+  io.store_hit_resp.valid := s3_valid && (s3_store_can_go || s3_miss_can_go)
   io.store_hit_resp.bits.data := DontCare
   io.store_hit_resp.bits.miss := false.B
   io.store_hit_resp.bits.replay := false.B

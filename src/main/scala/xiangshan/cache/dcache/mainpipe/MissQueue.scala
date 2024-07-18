@@ -377,7 +377,6 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   io.mem_acquire.bits.data := Cat(req.vaddr(13, 12), prefecthBit)
   require(nSets <= 256)
 
-  //need todo ready信号到顶层去屏蔽
   io.mem_grant.ready := !w_grantlast && s_acquire
 
   val grantack = RegEnable(edge.GrantAck(io.mem_grant.bits), io.mem_grant.fire)
@@ -388,7 +387,7 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   io.replace_pipe_req.valid := !s_replace_req && w_grantlast
   val replace = io.replace_pipe_req.bits
   replace := DontCare
-  replace.miss := false.B //利用amo miss的一些位暂定，或者用新增位，后续改mainpipe容易
+  replace.miss := false.B
   replace.miss_id := io.id
   replace.miss_param := grant_param
   replace.miss_dirty := isDirty
@@ -526,7 +525,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val accept = alloc || merge
 
   val should_block_d = WireInit(false.B)
-  val should_block_d_reg = RegNext(should_block_d)
+  val should_block_d_reg = RegNext(should_block_d, false.B)
 
   when(io.req.valid){
     assert(PopCount(secondary_ready_vec) <= 1.U)
