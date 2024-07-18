@@ -225,6 +225,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     uops(i).lastUop := needRobFlags(i)
     when(i.U === 0.U){uops(i).firstUop := true.B
     }.otherwise{uops(i).firstUop := needRobFlags(i - 1)}
+
     assert(instrSizesVec(i)>=1.U, "uop num at least is 1")
     assert(instrSizesVec(i)===1.U && uops(i).lastUop && uops(i).firstUop,
     "when compress num is 1, must be first and last uop")
@@ -247,7 +248,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     //out
     io.out(i).valid := io.in(i).valid && intFreeList.io.canAllocate && fpFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.allowIn && io.enqRob.canAccept
     io.out(i).bits  := uops(i)
-    io.enqRob.needAlloc(i) := io.in(i).valid
+    io.enqRob.needAlloc(i) := io.in(i).valid && uops(i).firstUop
     io.enqRob.req(i).valid := io.in(i).valid && intFreeList.io.canAllocate && fpFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.allowIn && io.out(i).ready
     io.enqRob.req(i).bits := io.out(i).bits
     // dirty code for fence. The lsrc is passed by imm.
