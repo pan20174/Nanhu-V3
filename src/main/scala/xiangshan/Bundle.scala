@@ -342,28 +342,29 @@ class ExceptionInfo(implicit p: Parameters) extends XSBundle {
 }
 
 class RobEntryData(implicit p: Parameters) extends XSBundle {
-  val ldest = UInt(5.W)
+  val ldest = UInt(5.W) // todo: mv to rab
   val rfWen = Bool()
   val fpWen = Bool()
   val vecWen = Bool()
   val wflags = Bool()
   val wvcsr = Bool()
   val commitType = CommitType()
-  val pdest = UInt(PhyRegIdxWidth.W)
-  val old_pdest = UInt(PhyRegIdxWidth.W)
+  val pdest = UInt(PhyRegIdxWidth.W)  // todo: mv to rab
+  val old_pdest = UInt(PhyRegIdxWidth.W)  // todo: mv to rab
   val ftqIdx = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
   val vtypeWb = Bool()
   val isVector = Bool()
   val isOrder = Bool()
   val needDest = Bool()
+  val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction writeback number per robEntry
 }
 
 class DiffCommitIO(implicit p: Parameters) extends XSBundle {
   val isCommit = Bool()
-  val commitValid = Vec(CommitWidth * MaxUopSize, Bool())
+  val commitValid = Vec(CommitWidth * RenameWidth, Bool())
 
-  val info = Vec(CommitWidth * MaxUopSize, new RabCommitInfo)
+  val info = Vec(CommitWidth * RenameWidth, new RabCommitInfo)
 }
 class RobCommitInfo(implicit p: Parameters) extends RobEntryData {
   // these should be optimized for synthesis verilog

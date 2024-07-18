@@ -818,6 +818,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.isVector := req.ctrl.isVector && !req.ctrl.isVtype
       wdata.isOrder := req.vctrl.ordered
       wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
+      wdata.compressWbNum := req.compressWbNum
   }
   /*
    * connect with rab
