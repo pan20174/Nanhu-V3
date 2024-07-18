@@ -359,6 +359,12 @@ class RobEntryData(implicit p: Parameters) extends XSBundle {
   val needDest = Bool()
 }
 
+class DiffCommitIO(implicit p: Parameters) extends XSBundle {
+  val isCommit = Bool()
+  val commitValid = Vec(CommitWidth * MaxUopSize, Bool())
+
+  val info = Vec(CommitWidth * MaxUopSize, new RabCommitInfo)
+}
 class RobCommitInfo(implicit p: Parameters) extends RobEntryData {
   // these should be optimized for synthesis verilog
   val pc = UInt(VAddrBits.W)
@@ -407,6 +413,38 @@ class RobCommitIO(implicit p: Parameters) extends XSBundle {
   }
 }
 
+class RabCommitInfo(implicit p: Parameters) extends XSBundle {
+  val ldest = UInt(5.W)
+  val pdest = UInt(PhyRegIdxWidth.W)
+  val rfWen = Bool()
+  val fpWen = Bool()
+  val vecWen = Bool()
+  val v0Wen = Bool()
+  val vlWen = Bool()
+  val isMove = Bool()
+}
+
+class RabCommitIO(implicit p: Parameters) extends XSBundle {
+  val isCommit = Bool()
+  val commitValid = Vec(RabCommitWidth, Bool())
+
+  val isWalk = Bool()
+  // valid bits optimized for walk
+  val walkValid = Vec(RabCommitWidth, Bool())
+
+  val info = Vec(RabCommitWidth, new RabCommitInfo)
+  val robIdx = Vec(RabCommitWidth, new RobPtr)
+
+  def hasWalkInstr: Bool = isWalk && walkValid.asUInt.orR
+  def hasCommitInstr: Bool = isCommit && commitValid.asUInt.orR
+}
+class SnapshotPort(implicit p: Parameters) extends XSBundle {
+  val snptEnq = Bool()
+  val snptDeq = Bool()
+  val useSnpt = Bool()
+  val snptSelect = UInt(log2Ceil(RenameSnapshotNum).W)
+  val flushVec = Vec(RenameSnapshotNum, Bool())
+}
 class FrontendToCtrlIO(implicit p: Parameters) extends XSBundle {
   // to backend end
   val cfVec = Vec(DecodeWidth, DecoupledIO(new CtrlFlow))

@@ -20,7 +20,7 @@ object RollBackListBufferPtr {
 }
 
 class RollBackListCommitInfo(implicit p: Parameters) extends XSBundle {
-  val ldest = UInt(6.W)
+  val ldest = UInt(5.W)
   val pdest = UInt(PhyRegIdxWidth.W)
   val rfWen = Bool()
   val fpWen = Bool()

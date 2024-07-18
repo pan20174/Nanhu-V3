@@ -131,6 +131,8 @@ case class XSCoreParameters
   DecodeWidth: Int = 4,
   RenameWidth: Int = 4,
   CommitWidth: Int = 6,
+  RabCommitWidth: Int = 6,
+  RenameSnapshotNum: Int = 4,
   FtqSize: Int = 64,
   EnableLoadFastWakeUp: Boolean = true, // NOTE: not supported now, make it false
   NRPhyRegs: Int = 128,
@@ -142,7 +144,7 @@ case class XSCoreParameters
   StoreQueueSize: Int = 64,
   StoreQueueNWriteBanks: Int = 8,
   RobSize: Int = 192,
-  RobCompressSize: Int = 6,
+  RabSize: Int = 256,
   RblSize: Int = 160,
   intRsDepth:Int = 32,
   fpRsDepth:Int = 32,
@@ -338,11 +340,14 @@ trait HasXSParameter {
   val DecodeWidth = coreParams.DecodeWidth
   val RenameWidth = coreParams.RenameWidth
   val CommitWidth = coreParams.CommitWidth
+  val RabCommitWidth = coreParams.RabCommitWidth
+  val RenameSnapshotNum = coreParams.RenameSnapshotNum
   val FtqSize = coreParams.FtqSize
   val EnableLoadFastWakeUp = coreParams.EnableLoadFastWakeUp
   val NRPhyRegs = coreParams.NRPhyRegs
 
   val RobSize = coreParams.RobSize
+  val RabSize = coreParams.RabSize
   val RblSize = coreParams.RblSize
   val IntRefCounterWidth = log2Ceil(RobSize + 1)
   val LoadQueueSize = coreParams.LoadQueueSize

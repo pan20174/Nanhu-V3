@@ -142,7 +142,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   val entryDataRead = entryDataModule.io.rdata.take(CommitWidth)
   val csrDataRead = csrDataModule.io.rdata
-
+  //************************rename buffer************************
+  val rab = Module(new RenameBuffer(RabSize))
   //************************data for debug************************
   // Warn: debug_* prefix should not exist in generated verilog.
   val debug_microOp = Reg(Vec(RobSize, new MicroOp))
