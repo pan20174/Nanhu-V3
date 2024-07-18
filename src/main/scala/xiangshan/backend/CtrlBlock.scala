@@ -129,10 +129,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   //Dec-Rename Pipeline
   private val pipeHolds_dup = RegInit(VecInit(Seq.fill(DecodeWidth)(false.B)))
-//  private val decPipe = Module(new PipelineRouter(new CfCtrl, DecodeWidth, 2))
   private val decQueue = Module(new RouterQueue(DecodeWidth, 2, 2 * DecodeWidth))
-//  decPipe.io.holds := pipeHolds_dup
-
+  
   //Rename
   private val rename = Module(new Rename)
   private val rat = Module(new RenameTableWrapper)
@@ -147,8 +145,6 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   private val memDispatch2Rs = Module(new MemDispatch2Rs)
 
   //DispatchQueue
-//  private val intDq = Module(new DispatchQueue(RenameWidth * 4, RenameWidth, intDispatch._2.bankNum))
-//  private val fpDq = Module(new DispatchQueue(RenameWidth * 4, RenameWidth, fpDispatch._2.bankNum))
   private val lsDq = Module(new DispatchQueue(RenameWidth * 2, RenameWidth, lsDispatch._2.bankNum))
 
   //ROB
@@ -187,8 +183,6 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   //Decode
   decode.io.in      <> io.frontend.cfVec
-//  decode.io.intRat  <> rat.io.intReadPorts
-//  decode.io.fpRat   <> rat.io.fpReadPorts
   decode.io.csrCtrl := RegNext(io.csrCtrl)
 
   // memory dependency predict
@@ -232,11 +226,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   io.debug_int_rat  := rat.io.debug_int_rat
   io.debug_fp_rat   := rat.io.debug_fp_rat
 
-//  decPipe.io.flush := redirectDelay.valid || pendingRedirect
-//  decPipe.io.in <> decode.io.out
   decQueue.io.redirect := redirectDelay
   decQueue.io.flush := pendingRedirect
-  // decQueue.io.redirect.valid := redirectDelay.valid || pendingRedirect
   decQueue.io.robempty := rob.io.enq.isEmpty
   decQueue.io.singleStep := RegNext(io.csrCtrl.singlestep)
 
