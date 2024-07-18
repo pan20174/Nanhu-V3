@@ -235,7 +235,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val allocatePtrVec = VecInit((0 until RenameWidth).map(
     i => enqPtrVec(PopCount(io.enq.req.take(i).map(req => req.valid && req.bits.firstUop)))
   ))
-  io.enq.canAccept := allowEnqueue && !hasBlockBackward
+  io.enq.canAccept := allowEnqueue && !hasBlockBackward && rab.io.canEnq
   io.enq.canAccept_dup.zip(allowEnqueuedupRegs).zip(hasBlockBackwarddupRegs).foreach({case ((c,a),b) => c:= a && !b})
   io.enq.resp := allocatePtrVec
   val canEnqueue = VecInit(io.enq.req.map( enq => enq.valid && io.enq.canAccept && enq.bits.firstUop))
@@ -651,7 +651,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
    */
   val enqPtrGenModule = Module(new RobEnqPtrWrapper)
   enqPtrGenModule.io.redirect := io.redirect
-  enqPtrGenModule.io.allowEnqueue := allowEnqueue
+  enqPtrGenModule.io.allowEnqueue := allowEnqueue && rab.io.canEnq
   enqPtrGenModule.io.hasBlockBackward := hasBlockBackward
   enqPtrGenModule.io.enq := VecInit(io.enq.req.map(req => req.valid && req.bits.firstUop))
   enqPtrVec := enqPtrGenModule.io.out
@@ -819,6 +819,15 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.isOrder := req.vctrl.ordered
       wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
   }
+  /*
+   * connect with rab
+  */
+  rab.io.req.zip(io.enq.req).map { case (dest, src) =>
+    dest.bits := src.bits
+    dest.valid := src.valid && io.enq.canAccept
+  }
+  rab.io.snpt := DontCare
+  rab.io.snpt.snptEnq := false.B
 
   vectorMarkVec.zipWithIndex.foreach {
     case (mark, i) => {

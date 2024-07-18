@@ -202,7 +202,7 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
     io.commits.walkValid(i) := state === s_walk && i.U < walkSize || state === s_special_walk && i.U < specialWalkSize
     // special walk use commitPtr
     io.commits.info(i) := Mux(state === s_idle || state === s_special_walk, commitCandidates(i).info, walkCandidates(i).info)
-    io.commits.robIdx(i) := Mux(state === s_idle || state === s_special_walk, commitCandidates(i).robIdx.get, walkCandidates(i).robIdx.get)
+    io.commits.robIdx(i) := Mux(state === s_idle || state === s_special_walk, commitCandidates(i).robIdx, walkCandidates(i).robIdx)
   }
 
   private val walkEndNext = walkSizeNxt === 0.U
