@@ -64,6 +64,8 @@ class MissReqWoStoreData(implicit p: Parameters) extends DCacheBundle {
   def isLoad = source === LOAD_SOURCE.U
   def isStore = source === STORE_SOURCE.U
   def isAMO = source === AMO_SOURCE.U
+  def isPrefetch = source >= DCACHE_PREFETCH_SOURCE.U
+  def isPrefetchRead = source === DCACHE_PREFETCH_SOURCE.U && cmd === MemoryOpConstants.M_PFR
   def hit = req_coh.isValid()
 }
 
@@ -150,6 +152,8 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
       val tag = UInt(tagBits.W) // paddr
     })
     val l2_pf_store_only = Input(Bool())
+
+    val nMaxPrefetchEntry = Input(UInt(64.W))
   })
 
   assert(!RegNext(io.primary_valid && !io.primary_ready))
@@ -296,11 +300,11 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   }
 
   def before_read_sent_can_merge(new_req: MissReqWoStoreData): Bool = {
-    acquire_not_sent && req.isLoad && (new_req.isLoad || new_req.isStore)
+    acquire_not_sent && (req.isLoad ||  req.isPrefetch) && (new_req.isLoad || new_req.isStore)
   }
 
   def before_data_refill_can_merge(new_req: MissReqWoStoreData): Bool = {
-    data_not_refilled && (req.isLoad || req.isStore) && new_req.isLoad
+    data_not_refilled && (req.isLoad || req.isStore || req.isPrefetch) && new_req.isLoad
   }
 
   def is_alias_match(vaddr0: UInt, vaddr1: UInt): Bool = {
@@ -340,8 +344,13 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
       
   }
-
-  io.primary_ready := !req_valid
+  
+  when(io.id >= ((cfg.nMissEntries).U - io.nMaxPrefetchEntry)){
+     io.primary_ready := !req_valid
+  }.otherwise{
+    io.primary_ready := !req_valid && !io.req.bits.isPrefetch
+  }
+ 
   io.secondary_ready := should_merge(io.req.bits)
   io.secondary_reject := should_reject(io.req.bits)
 
@@ -563,6 +572,9 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   }
   val hasData = edge.hasData(io.mem_grant.bits)
 
+  val nMaxPrefetchEntry = 10.U
+
+
   entries.zipWithIndex.foreach {
     case (e, i) =>
       val former_primary_ready = if(i == 0)
@@ -579,7 +591,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
         !former_primary_ready &&
         e.io.primary_ready
       e.io.req.bits := io.req.bits.toMissReqWoStoreData()
-      // e.io.req_data := req_data_buffer
+      e.io.nMaxPrefetchEntry := nMaxPrefetchEntry
 
       e.io.mem_grant.valid := false.B
       e.io.mem_grant.bits := DontCare
