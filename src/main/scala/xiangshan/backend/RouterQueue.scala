@@ -66,26 +66,10 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
 
   private val singleStepStatus = RegInit(false.B)
 
-  //robidx allocate
-  private val validCount = PopCount(io.in.map(_.valid)) // number of instructions waiting to enter rob (from decode)
-  private val hasValid = io.in.map(_.valid).reduce(_ || _)
-  private val robIdxHead = RegInit(0.U.asTypeOf(new RobPtr))
-  dontTouch(robIdxHead)
-  dontTouch(io.redirect)
-  private val lastCycleMisprediction = RegNext((io.redirect.valid) && !io.redirect.bits.flushItself())
-  dontTouch(lastCycleMisprediction)
   private val allowOut = Wire(Vec(outNum, Bool()))
   allowOut.zipWithIndex.foreach({ case (a, i) =>
     a := io.out.zipWithIndex.filterNot(_._2 == i).map(_._1.head.ready).reduce(_ & _)
   })
-  private val canOut = allowOut.reduce(_ && _)
-  private val canAccept = io.in.map(_.ready).reduce(_ || _)
-  private val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
-    Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
-      Mux(canAccept, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
-        /* default */ robIdxHead))) // no instructions passed by this cycle: stick to old value
-  dontTouch(robIdxHeadNext)
-  robIdxHead := robIdxHeadNext
 
   //enq
   for (i <- 0 until vecLen) {
@@ -100,9 +84,22 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
 
   private val enqCount    = PopCount(io.in.map(_.valid))
   private val numValidEntries = distanceBetween(enqPtr, deqPtr)
-  private val allowEnqueue = RegNext(numValidEntries + enqCount <= (size - RenameWidth).U, true.B)
+  private val numEmptyEntries = size.U - numValidEntries
+  private val emptyEntriesNext = Wire(UInt(log2Ceil(size + 1).W))
+  private val actualEnqNum = PopCount(io.in.map(_.fire))
+  private val actualDeqNum = PopCount(io.out(0).map(_.fire))
+  when(io.redirect.valid) {
+    emptyEntriesNext := size.U
+  }.otherwise {
+    emptyEntriesNext := numEmptyEntries +& actualDeqNum - actualEnqNum
+  }
+  assert(deqPtr <= enqPtr)
+  assert(actualEnqNum <= numEmptyEntries)
+  private val allowEnqueue = RegNext(numValidEntries + enqCount <= (size - vecLen).U, true.B)
   // enq ready
-  io.in.map(_.ready := allowEnqueue)
+  private val canAcceptRegs = Seq.fill(vecLen)(RegInit(true.B))
+  canAcceptRegs.zipWithIndex.foreach({case (acepReg, i) => acepReg := i.U < emptyEntriesNext})
+  io.in.zip(canAcceptRegs).foreach({case (in, acep) => in.ready := acep})
 
   // singelStepStatus
   private val inst0actualOut = io.out(0)(0).valid
@@ -153,7 +150,6 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   io.allowOut := allowOut
 
   //pointers update
-  private val actualEnqNum = Mux(io.in(0).fire, PopCount(io.in.map(_.valid)), 0.U)
   enqPtrVec.zipWithIndex.foreach({case (ptr, i) =>
     when(io.redirect.valid) {
       ptr := i.U.asTypeOf(new RouterQueuePtr)
@@ -167,7 +163,7 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
     when(io.redirect.valid) {
       ptr := i.U.asTypeOf(new RouterQueuePtr)
     }.elsewhen(io.out(0).map(_.fire).reduce(_ || _)) {
-      ptr := ptr + PopCount(io.out(0).map(_.fire))
+      ptr := ptr + actualDeqNum
     }
   })
 
