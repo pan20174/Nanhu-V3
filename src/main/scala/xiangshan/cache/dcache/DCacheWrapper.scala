@@ -100,7 +100,7 @@ trait HasDCacheParameters extends HasL1CacheParameters {
 
   def blockProbeAfterGrantCycles = 8 // give the processor some time to issue a request after a grant
 
-  def nSourceType = 4
+  def nSourceType = 5
   def sourceTypeWidth = log2Up(nSourceType)
   def LOAD_SOURCE = 0
   def STORE_SOURCE = 1

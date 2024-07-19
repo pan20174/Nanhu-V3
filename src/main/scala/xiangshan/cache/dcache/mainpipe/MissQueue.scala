@@ -608,7 +608,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
               difftest_data_raw(refill_count) := refill_row_data
             }
           }
-        }.elsewhen(e.io.req_source === LOAD_SOURCE.U) {
+        }.elsewhen(e.io.req_source === LOAD_SOURCE.U || e.io.req_source === DCACHE_PREFETCH_SOURCE.U) {
           io.mem_grant.ready := !should_block_d && e.io.mem_grant.ready
           when(io.mem_grant.fire && hasData){
             refill_data_raw(refill_count) := refill_row_data
@@ -662,7 +662,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   fastArbiter(entries.map(_.io.replace_pipe_req), io.replace_pipe_req, Some("replace_pipe_req"))
   io.replace_pipe_req.bits.store_data := refill_data_raw.asUInt
   //load MSHR should wait replace.fire
-  when(io.replace_pipe_req.fire && io.replace_pipe_req.bits.source === LOAD_SOURCE.U){
+  when(io.replace_pipe_req.fire && (io.replace_pipe_req.bits.source === LOAD_SOURCE.U || io.replace_pipe_req.bits.source === DCACHE_PREFETCH_SOURCE.U)){
     should_block_d := false.B
   }.otherwise {
     should_block_d := should_block_d_reg
