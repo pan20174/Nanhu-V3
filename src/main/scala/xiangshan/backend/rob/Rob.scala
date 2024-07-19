@@ -798,6 +798,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   entryDataModule.io.wen := canEnqueue
   entryDataModule.io.waddr := allocatePtrVec.map(_.value)
+  val enqNeedWriteRFSeq = io.enq.req.map(_.bits.ctrl.needWriteRf)
   entryDataModule.io.wdata.zip(io.enq.req.map(_.bits)).zip(canEnqueue).zip(allocatePtrVec).foreach {
     case (((wdata, req), wen), ptr) =>
       wdata.ldest := req.ctrl.ldest
@@ -815,6 +816,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.isVector := req.ctrl.isVector && !req.ctrl.isVtype
       wdata.isOrder := req.vctrl.ordered
       wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
+      wdata.realDestNum := PopCount(enqNeedWriteRFSeq.asUInt & req.compressMask)
   }
   /*
    * connect with rab
@@ -825,7 +827,13 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   }
   rab.io.snpt := DontCare
   rab.io.snpt.snptEnq := false.B
-
+  rab.io.fromRob.walkEnd := state === s_walk && walkFinished
+  val commitSizeSumSeq = VecInit(0 until CommitWidth).map(i => io.commits.info.take(i+1).reduce(_.realDestNum +& _.realDestNum))
+  val commitSizeSum = PriorityMuxDefault((io.commits.commitValid.zip(commitSizeSumSeq)).reverse, 0.U)
+  rab.io.fromRob.commitSize := commitSizeSum
+  val walkSizeSumSeq = VecInit(0 until CommitWidth).map(i => io.commits.info.take(i+1).reduce(_.realDestNum +& _.realDestNum))
+  val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)).reverse, 0.U)
+  rab.io.fromRob.walkSize := walkSizeSum
   vectorMarkVec.zipWithIndex.foreach {
     case (mark, i) => {
       val hitVec = VecInit(allocatePtrVec.zip(canEnqueue).map(req => req._1.value === i.U && req._2))

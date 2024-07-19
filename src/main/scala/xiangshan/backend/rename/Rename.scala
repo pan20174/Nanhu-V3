@@ -215,6 +215,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   
     uops(i).compressInstNum := instrSizesVec(i)
     uops(i).compressWbNum   := instrSizesVec(i) - PopCount(compressMasksVec(i) & Cat(isMove.reverse))
+    uops(i).compressMask    := compressMasksVec(i)
     val hasException = Cat(selectFrontend(uops(i).cf.exceptionVec) :+ uops(i).cf.exceptionVec(illegalInstr)).orR 
     val needFlushPipe = hasException || uops(i).cf.trigger.getFrontendCanFire
     when(isMove(i) || needFlushPipe) {

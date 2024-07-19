@@ -224,6 +224,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val debugInfo = new PerfDebugInfo
   val compressInstNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction number per robEntry
   val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W)   // instruction writeback number per robEntry
+  val compressMask = UInt(RenameWidth.W)
   val lastUop = Bool() // compress rob last uop sign
   val firstUop = Bool() // compress rob first uop sign
   //vector
@@ -357,6 +358,7 @@ class RobEntryData(implicit p: Parameters) extends XSBundle {
   val isVector = Bool()
   val isOrder = Bool()
   val needDest = Bool()
+  val realDestNum = UInt(log2Ceil(RenameWidth + 1).W) // need rfWen num per robEntry after compressed
   // val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction writeback number per robEntry
 }
 
@@ -386,6 +388,7 @@ class RobCommitInfo(implicit p: Parameters) extends RobEntryData {
     isVector := data.isVector
     isOrder := data.isOrder
     needDest := (data.rfWen && data.ldest =/= 0.U) || data.fpWen || data.vecWen
+    realDestNum := data.realDestNum
   }
 }
 
