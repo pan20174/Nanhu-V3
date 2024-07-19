@@ -127,7 +127,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
   for ((spec, i) <- intRat.io.specWritePorts.zipWithIndex) {
     spec.wen  := io.robCommits.isWalk && io.robCommits.walkValid(i) && intDestValid(i)
     spec.addr := io.robCommits.info(i).ldest
-    spec.data := io.robCommits.info(i).old_pdest
+    spec.data := io.robCommits.info(i).pdest
     XSError(spec.wen && spec.addr === 0.U && spec.data =/= 0.U, "pdest for $0 should be 0\n")
   }
   for ((spec, rename) <- intRat.io.specWritePorts.zip(io.intRenamePorts)) {
@@ -149,7 +149,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
   for ((spec, i) <- fpRat.io.specWritePorts.zipWithIndex) {
     spec.wen  := io.robCommits.isWalk && io.robCommits.walkValid(i) && io.robCommits.info(i).fpWen
     spec.addr := io.robCommits.info(i).ldest
-    spec.data := io.robCommits.info(i).old_pdest
+    spec.data := io.robCommits.info(i).pdest
   }
   for ((spec, rename) <- fpRat.io.specWritePorts.zip(io.fpRenamePorts)) {
     when (rename.wen) {
