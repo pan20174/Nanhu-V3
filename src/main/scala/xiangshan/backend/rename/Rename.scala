@@ -205,7 +205,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // no valid instruction from decode stage || all resources (dispatch1 + both free lists) ready
     io.in(i).ready := !hasValid || canOut
 
-    uops(i).robIdx  := robIdxHead + PopCount(io.in.map(_.valid).zip(needRobFlags).map{
+    uops(i).robIdx  := robIdxHead + PopCount(io.in.take(i).map(_.valid).zip(needRobFlags).map{
       case(valid, needRob) => valid && needRob})
     uops(i).psrc(0) := Mux(uops(i).ctrl.srcType(0) === SrcType.reg, io.intReadPorts(i)(0), io.fpReadPorts(i)(0))
     uops(i).psrc(1) := Mux(uops(i).ctrl.srcType(1) === SrcType.reg, io.intReadPorts(i)(1), io.fpReadPorts(i)(1))
@@ -225,7 +225,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     }
     uops(i).lastUop := needRobFlags(i)
     if(i == 0){uops(i).firstUop := true.B}else{uops(i).firstUop := needRobFlags(i - 1)}
-    
+
     when(io.out(i).valid){
       assert(instrSizesVec(i)>=1.U, "uop num at least is 1")
       when(instrSizesVec(i)===1.U){
