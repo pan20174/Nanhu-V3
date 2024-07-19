@@ -168,9 +168,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   //Redirect
   for (i <- 0 until CommitWidth) {
-    val is_commit = rob.io.rabCommits.commitValid(i) && rob.io.rabCommits.isCommit
+    val is_commit = rob.io.commits.commitValid(i) && rob.io.commits.isCommit
     io.frontend.toFtq.rob_commits(i).valid := RegNext(is_commit)
-    io.frontend.toFtq.rob_commits(i).bits := RegEnable(rob.io.rabCommits.info(i), is_commit)
+    io.frontend.toFtq.rob_commits(i).bits := RegEnable(rob.io.commits.info(i), is_commit)
   }
   private val redirectDelay = Pipe(io.redirectIn)
   io.frontend.toFtq.redirect := redirectDelay
@@ -212,19 +212,19 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   //rename(only int and fp)
   //TODO: rob deq need to select
   val commitScalar  = Wire(new RobCommitIO)
-  commitScalar.isCommit := rob.io.rabCommits.isCommit
-  commitScalar.commitValid := rob.io.rabCommits.commitValid
-  commitScalar.isWalk := rob.io.rabCommits.isWalk
-  commitScalar.isExtraWalk := false.B
-  commitScalar.walkValid := rob.io.rabCommits.walkValid
-  commitScalar.info := rob.io.rabCommits.info
-  commitScalar.robIdx := rob.io.rabCommits.robIdx
+  commitScalar := rob.io.commits
   for(((v, info), i) <- (commitScalar.commitValid zip commitScalar.info).zipWithIndex) {
+    v := (!info.vecWen) && rob.io.commits.commitValid(i)
+  }
+  val rabCommitScalar  = Wire(new RabCommitIO)
+  rabCommitScalar := rob.io.rabCommits
+  for(((v, info), i) <- (rabCommitScalar.commitValid zip rabCommitScalar.info).zipWithIndex) {
     v := (!info.vecWen) && rob.io.rabCommits.commitValid(i)
   }
   rename.io.intRat <> rat.io.intReadPorts
   rename.io.fpRat <> rat.io.fpReadPorts
   rat.io.robCommits     := commitScalar
+  rat.io.rabCommits     := rabCommitScalar
   rat.io.intRenamePorts := rename.io.intRenamePorts
   rat.io.fpRenamePorts  := rename.io.fpRenamePorts
 
@@ -320,23 +320,28 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   
   
   val commitVector = Wire(new RobCommitIO)
-  commitVector.isCommit := rob.io.rabCommits.isCommit
-  commitVector.commitValid := rob.io.rabCommits.commitValid
-  commitVector.isWalk := rob.io.rabCommits.isWalk
-  commitVector.isExtraWalk := false.B
-  commitVector.walkValid := rob.io.rabCommits.walkValid
-  commitVector.info := rob.io.rabCommits.info
-  commitVector.robIdx := rob.io.rabCommits.robIdx
+  commitVector := rob.io.commits
   (commitVector.commitValid zip commitVector.walkValid).zip(commitVector.info).zipWithIndex.foreach {
+    case (((cv, wv), info), i) => {
+      cv := info.vecWen && rob.io.commits.commitValid(i)
+      wv := info.vecWen && rob.io.commits.walkValid(i)
+      wv := DontCare
+    }
+  }
+  commitVector.isExtraWalk := false.B
+  val rabCommitVector = Wire(new RabCommitIO)
+  rabCommitVector := rob.io.rabCommits
+  (rabCommitVector.commitValid zip rabCommitVector.walkValid).zip(rabCommitVector.info).zipWithIndex.foreach {
     case (((cv, wv), info), i) => {
       cv := info.vecWen && rob.io.rabCommits.commitValid(i)
       wv := info.vecWen && rob.io.rabCommits.walkValid(i)
       wv := DontCare
     }
   }
-  commitVector.isExtraWalk := false
 
   vCtrlBlock.io.commit := commitVector.Pipe
+  vCtrlBlock.io.rabCommit := rabCommitVector.Pipe
+
   vCtrlBlock.io.exception := Pipe(rob.io.exception)
   vCtrlBlock.io.redirect := io.redirectIn
   vCtrlBlock.io.vstart := io.vstart

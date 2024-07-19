@@ -441,6 +441,16 @@ class RabCommitIO(implicit p: Parameters) extends XSBundle {
 
   def hasWalkInstr: Bool = isWalk && walkValid.asUInt.orR
   def hasCommitInstr: Bool = isCommit && commitValid.asUInt.orR
+  def Pipe:RabCommitIO = {
+    val robCmtPipe = Wire(new RabCommitIO)
+    robCmtPipe.isCommit := RegNext(this.isCommit, false.B)
+    robCmtPipe.commitValid := RegNext(this.commitValid)
+    robCmtPipe.isWalk := RegNext(this.isWalk, false.B)
+    robCmtPipe.walkValid := RegNext(this.walkValid)
+    robCmtPipe.info := RegEnable(this.info, this.isCommit | this.isWalk)
+    robCmtPipe.robIdx := RegEnable(this.robIdx, this.isCommit | this.isWalk)
+    robCmtPipe
+  }
 }
 class SnapshotPort(implicit p: Parameters) extends XSBundle {
   val snptEnq = Bool()
