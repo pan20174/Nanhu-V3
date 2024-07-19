@@ -18,12 +18,11 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
   private val wb = io.wbIn
   private val rdc = io.redirectIn
   private val maxWb = (1 << (RenameWidth + 1) - 1).asUInt
-  private val writebackNum = RegInit(VecInit(Seq.fill(RobSize)(maxWb)))
-  private val currentWbNum = writebackNum
-  private val writebacked = Wire(Vec(RobSize, Bool()))
+  private val writebackNumReg = RegInit(VecInit(Seq.fill(RobSize)(maxWb)))
+  private val currentWbNum = writebackNumReg
   private val mayBeFlushed = RegInit(VecInit(Seq.fill(RobSize)(false.B)))
 
-  for(i <- writebacked.indices) {
+  for(i <- writebackNumReg.indices) {
     val enqSel = enq.map(r => r.valid && r.bits.robIdx.value === i.U)
     val enqData = Mux1H(enqSel, enq.map(_.bits.data))
     val wbSel = wb.map(r => r.valid && r.bits.robIdx.value === i.U && (r.bits.data === 1.U))
@@ -34,18 +33,14 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
     val wbHit = Cat(wbSel).orR
     val rdcHit = Cat(rdcSel).orR
     when(enqHit) {
-      writebackNum(i) := enqData
-      mayBeFlushed(i) := false.B
+      writebackNumReg(i) := enqData
     }.elsewhen(rdcHit) {
-      writebackNum(i) := rdcData
-      mayBeFlushed(i) := true.B
+      writebackNumReg(i) := rdcData
     }.elsewhen(wbHit) {
-      writebackNum(i) := Mux(mayBeFlushed(i), maxWb, currentWbNum(i) - wbDataNum)
+      writebackNumReg(i) := Mux(mayBeFlushed(i), maxWb, currentWbNum(i) - wbDataNum)
     }
-    writebacked(i) := writebackNum(i) === 0.U
   }
-
-  io.out.zip(writebacked).foreach({case(a, b) => a := b})
+  io.out.zip(writebackNumReg).foreach({case(out, wbNum) => out := wbNum === 0.U})
 
   private var enqIdx = 0
   private var wbIdx = 0
