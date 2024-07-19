@@ -523,6 +523,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       debug_microOp(walkPtrVec(i).value).cf.pc,
       io.commits.info(i).rfWen,
       io.commits.info(i).ldest,
+      rab.io.commits.isWalk,
+      rab.io.commits.info(i).ldest,
+      rab.io.commits.info(i).pdest,
+      rab.io.commits.info(i).rfWen,
       debug_exuData(walkPtrVec(i).value)
     )
     XSInfo(state === s_extrawalk && io.commits.walkValid(i), "use extra space walked wen %d ldst %d\n",
@@ -618,7 +622,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // state === s_idle: don't change when walk_no_need
   // state === s_walk: don't change when walk_no_need && walkFinished
   // state === s_extrawalk: always continue to walk (because it's not possible for walk_no_need)
-  val zeroWalkDistance = ((enqPtr - 1.U) === io.redirect.bits.robIdx) && (!io.redirect.bits.flushItself())
+  val zeroWalkDistance = ((deqPtr + 1.U) === io.redirect.bits.robIdx) && (!io.redirect.bits.flushItself())
   val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
   // update the state depending on whether there is a redirect
   val state_next = Mux(io.redirect.valid,
@@ -662,10 +666,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // (2) walk: move backwards
   val walkPtrVec_next = Mux(io.redirect.valid && state =/= s_extrawalk,
     Mux(state === s_walk,
-      VecInit(walkPtrVec.map(_ - thisCycleWalkCount)),
-      VecInit((0 until CommitWidth).map(i => enqPtr - (i + 1).U))
+      VecInit(walkPtrVec.map(_ + thisCycleWalkCount)),
+      VecInit((0 until CommitWidth).map(i => deqPtr + (i + 1).U))
     ),
-    Mux(state === s_walk, VecInit(walkPtrVec.map(_ - canWalkNum)), walkPtrVec)
+    Mux(state === s_walk, VecInit(walkPtrVec.map(_ + canWalkNum)), walkPtrVec)
   )
   walkPtrVec := walkPtrVec_next
 
@@ -675,18 +679,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   allowEnqueue := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U
   allowEnqueuedupRegs.foreach(_ := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U)
 
-  val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, enqPtr - 1.U)
+  val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, deqPtr + 1.U)
   val redirectWalkDistance = distanceBetween(currentWalkPtr, io.redirect.bits.robIdx)
   when(io.redirect.valid) {
     walkCounter := Mux(state === s_walk,
-      // NOTE: +& is used here because:
-      // When rob is full and the head instruction causes an exception,
-      // the redirect robIdx is the deqPtr. In this case, currentWalkPtr is
-      // enqPtr - 1.U and redirectWalkDistance is RobSize - 1.
-      // Since exceptions flush the instruction itself, flushItSelf is true.B.
-      // Previously we use `+` to count the walk distance and it causes overflows
-      // when RobSize is power of 2. We change it to `+&` to allow walkCounter to be RobSize.
-      // The width of walkCounter also needs to be changed.
       redirectWalkDistance - (thisCycleWalkCount - io.redirect.bits.flushItself()),
       redirectWalkDistance + io.redirect.bits.flushItself()
     )
