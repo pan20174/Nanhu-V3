@@ -129,7 +129,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   //Dec-Rename Pipeline
   private val pipeHolds_dup = RegInit(VecInit(Seq.fill(DecodeWidth)(false.B)))
-  private val decQueue = Module(new RouterQueue(DecodeWidth, 2, 2 * DecodeWidth))
+  private val decQueue = Module(new RouterQueue(DecodeWidth, 2, 4 * DecodeWidth))
   
   //Rename
   private val rename = Module(new Rename)

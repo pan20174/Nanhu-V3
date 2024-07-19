@@ -99,6 +99,8 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents with 
 
     updatedUop(i) := io.fromRename(1)(i).bits
     updatedUop(i).debugInfo.eliminatedMove := io.fromRename(1)(i).bits.eliminatedMove
+    val timer = GTimer()
+    updatedUop(i).debugInfo.dispatchTime := timer
     // update commitType
     when(!CommitType.isFused(io.fromRename(1)(i).bits.ctrl.commitType)) {
       updatedUop(i).ctrl.commitType := updatedCommitType(i)
@@ -196,7 +198,7 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents with 
    */
   val hasValidInstr = VecInit(io.fromRename(3).map(_.valid)).asUInt.orR
   for (i <- 0 until RenameWidth) {
-    io.recv(i) := io.toIntDq.canAccept(3) && io.toFpDq.canAccept(3) && io.toLsDq.canAccept(3) && !vstartHold
+    io.recv(i) := !hasValidInstr || io.toIntDq.canAccept(3) && io.toFpDq.canAccept(3) && io.toLsDq.canAccept(3) && !vstartHold
     io.fromRename(0)(i).ready := !hasValidInstr || io.toIntDq.canAccept(3) && io.toFpDq.canAccept(3) && io.toLsDq.canAccept(3) && !vstartHold
     io.fromRename(1)(i).ready := !hasValidInstr || io.toIntDq.canAccept(3) && io.toFpDq.canAccept(3) && io.toLsDq.canAccept(3) && !vstartHold
     io.fromRename(2)(i).ready := !hasValidInstr || io.toIntDq.canAccept(3) && io.toFpDq.canAccept(3) && io.toLsDq.canAccept(3) && !vstartHold
