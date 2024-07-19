@@ -24,6 +24,7 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
 
   for(i <- writebackNumReg.indices) {
     val enqSel = enq.map(r => r.valid && r.bits.robIdx.value === i.U)
+    assert(PopCount(enqSel) <= 1.U, "only 1 entry can be selected whether compress or not")
     val enqData = Mux1H(enqSel, enq.map(_.bits.data))
     val wbSel = wb.map(r => r.valid && r.bits.robIdx.value === i.U && (r.bits.data === 1.U))
     val wbDataNum = PopCount(wbSel)
