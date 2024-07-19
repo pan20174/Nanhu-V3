@@ -189,7 +189,14 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   val allocatePtrVec = VecInit((0 until RenameWidth).map(i => enqPtrVec(PopCount(realNeedAlloc.take(i))).value))
   allocatePtrVec.zip(io.req).zip(realNeedAlloc).map{ case((allocatePtr, req), realNeedAlloc) =>
     when(realNeedAlloc){
-      renameBuffer(allocatePtr).info := req.bits
+      renameBuffer(allocatePtr).info.ldest := req.bits.pdest
+      renameBuffer(allocatePtr).info.pdest := req.bits.ctrl.ldest
+      renameBuffer(allocatePtr).info.rfWen := req.bits.ctrl.rfWen
+      renameBuffer(allocatePtr).info.fpWen := req.bits.ctrl.fpWen
+      renameBuffer(allocatePtr).info.isMove := req.bits.eliminatedMove
+      renameBuffer(allocatePtr).info.vecWen := DontCare
+      renameBuffer(allocatePtr).info.v0Wen  := DontCare
+      renameBuffer(allocatePtr).info.vlWen  := DontCare
       renameBuffer(allocatePtr).robIdx := req.bits.robIdx
     }
   }

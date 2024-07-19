@@ -66,6 +66,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val exception = ValidIO(new ExceptionInfo)
     val mmuEnable = Input(Bool())
     val commits = new RobCommitIO
+    val rabCommits = Output(new RabCommitIO)
 //    val rblCommits = Flipped(new RobToRblIO)
     val lsq = new RobLsqIO
     val csr = new RobCSRIO
@@ -834,6 +835,9 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val walkSizeSumSeq = VecInit(0 until CommitWidth).map(i => io.commits.info.take(i+1).reduce(_.realDestNum +& _.realDestNum))
   val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.walkSize := walkSizeSum
+
+  io.rabCommits := rab.io.commits
+
   vectorMarkVec.zipWithIndex.foreach {
     case (mark, i) => {
       val hitVec = VecInit(allocatePtrVec.zip(canEnqueue).map(req => req._1.value === i.U && req._2))
