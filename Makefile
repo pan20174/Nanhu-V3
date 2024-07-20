@@ -130,6 +130,7 @@ else
 	@sed -i -E -f scripts/postcompile/verilator.sed $@
 endif
 	@python3 scripts/postcompile/assertion_alter.py -o $@ $@
+	@sed -i '/\/\/ ----- 8< ----- FILE "firrtl_black_box_resource_files.f" ----- 8< -----/,$$d' $@
 
 FILELIST := $(ABS_WORK_DIR)/build/cpu_flist.f
 
