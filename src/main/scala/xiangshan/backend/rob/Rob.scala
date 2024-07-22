@@ -730,7 +730,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val enqHasException = ExceptionNO.selectFrontend(io.enq.req(i).bits.cf.exceptionVec).asUInt.orR
     val enqHasTriggerCanFire = io.enq.req(i).bits.cf.trigger.getFrontendCanFire
     val enqIsWritebacked = io.enq.req(i).bits.eliminatedMove
-    val compressWbNum = io.enq.req(i).bits.compressInstNum
+    val compressWbNum = io.enq.req(i).bits.compressWbNum
     wbStatusArray.enqueue(canEnqueue(i), allocatePtrVec(i), enqHasException || enqHasTriggerCanFire, compressWbNum)
     when(canEnqueue(i)) {
       val isScalarStu = io.enq.req(i).bits.ctrl.fuType === FuType.stu && !io.enq.req(i).bits.ctrl.isVector
