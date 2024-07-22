@@ -35,12 +35,14 @@ class RatWritePort(implicit p: Parameters) extends XSBundle {
   val data = UInt(PhyRegIdxWidth.W)
 }
 
+
 class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle {
     val readPorts = Vec({if(float) 4 else 3} * RenameWidth, new RatReadPort)
     val specWritePorts = Vec(CommitWidth, Input(new RatWritePort))
     val archWritePorts = Vec(CommitWidth, Input(new RatWritePort))
     val debug_rdata = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
+    val diffWritePorts = if (env.EnableDifftest || env.AlwaysBasicDiff) Some(Vec(RabCommitWidth * RenameWidth, Input(new RatWritePort))) else None
   })
 
   // speculative rename table
@@ -98,6 +100,24 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
   }
 
   io.debug_rdata := arch_table
+
+  if (env.EnableDifftest || env.AlwaysBasicDiff) {
+    val difftest_table = RegInit(rename_table_init)
+    val difftest_table_next = WireDefault(difftest_table)
+
+    for (w <- io.diffWritePorts.get) {
+      when(w.wen) {
+        difftest_table_next(w.addr) := w.data
+      }
+    }
+    difftest_table := difftest_table_next
+
+    io.debug_rdata := difftest_table
+  }
+  else {
+    io.debug_rdata.foreach(_ := 0.U.asTypeOf(io.debug_rdata))
+  }
+
 }
 
 class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLogging{
@@ -111,6 +131,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
     // for debug printing
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
+    val diffCommits = if (env.EnableDifftest || env.AlwaysBasicDiff) Some(Input(new DiffCommitIO)) else None
   })
 
   val intRat = Module(new RenameTable(float = false))

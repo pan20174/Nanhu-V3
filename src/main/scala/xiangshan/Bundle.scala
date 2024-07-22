@@ -359,9 +359,9 @@ class RobEntryData(implicit p: Parameters) extends XSBundle {
   val isOrder = Bool()
   val needDest = Bool()
   val realDestNum = UInt(log2Ceil(RenameWidth + 1).W) // need rfWen num per robEntry after compressed
+  val instrSize = if (env.EnableDifftest || env.AlwaysBasicDiff) Some(UInt(log2Up(RenameWidth + 1).W)) else None
   // val compressWbNum = UInt(log2Ceil(RenameWidth + 1).W) // instruction writeback number per robEntry
 }
-
 class DiffCommitIO(implicit p: Parameters) extends XSBundle {
   val isCommit = Bool()
   val commitValid = Vec(CommitWidth * RenameWidth, Bool())
@@ -389,6 +389,7 @@ class RobCommitInfo(implicit p: Parameters) extends RobEntryData {
     isOrder := data.isOrder
     needDest := (data.rfWen && data.ldest =/= 0.U) || data.fpWen || data.vecWen
     realDestNum := data.realDestNum
+    instrSize.foreach(_ := data.instrSize.getOrElse(0.U))
   }
 }
 

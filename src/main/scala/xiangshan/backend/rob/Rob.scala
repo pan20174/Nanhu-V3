@@ -67,7 +67,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val mmuEnable = Input(Bool())
     val commits = new RobCommitIO
     val rabCommits = Output(new RabCommitIO)
-//    val rblCommits = Flipped(new RobToRblIO)
+    val diffCommits = if (env.EnableDifftest || env.AlwaysBasicDiff) Some(Output(new DiffCommitIO)) else None
     val lsq = new RobLsqIO
     val csr = new RobCSRIO
     val robFull = Output(Bool())
@@ -813,6 +813,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       wdata.isOrder := req.vctrl.ordered
       wdata.needDest := (req.ctrl.rfWen && req.ctrl.ldest =/= 0.U) || req.ctrl.fpWen || req.ctrl.vdWen
       wdata.realDestNum := PopCount(VecInit(enqNeedWriteRFSeq).asUInt & req.compressMask)
+      wdata.instrSize.foreach(_ := req.compressInstNum)
   }
   /*
    * connect with rab
@@ -834,6 +835,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   rab.io.fromRob.noNeedToWalk := noNeedToWalk
 
   io.rabCommits := rab.io.commits
+  io.diffCommits.foreach(_ := rab.io.diffCommits.get)
 
   vectorMarkVec.zipWithIndex.foreach {
     case (mark, i) => {
@@ -1075,7 +1077,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       difftestInstCmt.lqIdx := ZeroExt(uop.sqIdx.value, 7)
       difftestInstCmt.isLoad := io.commits.info(i).commitType === CommitType.LOAD
       difftestInstCmt.isStore := io.commits.info(i).commitType === CommitType.STORE
-      difftestInstCmt.nFused := Mux(CommitType.isFused(io.commits.info(i).commitType), 1.U, 0.U)
+      difftestInstCmt.nFused := CommitType.isFused(io.commits.info(i).commitType).asUInt + io.commits.info(i).instrSize.getOrElse(0.U) - 1.U
       difftestInstCmt.special := 0.U | (uop.cf.pc === "h80000000".U) // first ram instruction do not squash for spike
       // when committing an eliminated move instruction,
       // we must make sure that skip is properly set to false (output from EXU is random value)
