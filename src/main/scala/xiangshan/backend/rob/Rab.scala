@@ -59,6 +59,7 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   // pointer
   private val enqPtrVec = RegInit(VecInit.tabulate(RenameWidth)(idx => RenameBufferPtr(flag = false, idx)))
   private val enqPtr = enqPtrVec.head
+  dontTouch(enqPtr)
   private val enqPtrOH = RegInit(1.U(size.W))
   private val enqPtrOHShift = CircularShift(enqPtrOH)
   // may shift [0, RenameWidth] steps
@@ -67,6 +68,7 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
 
   private val deqPtrVec = RegInit(VecInit.tabulate(RabCommitWidth)(idx => RenameBufferPtr(flag = false, idx)))
   private val deqPtr = deqPtrVec.head
+  dontTouch(deqPtr)
   private val deqPtrOH = RegInit(1.U(size.W))
   private val deqPtrOHShift = CircularShift(deqPtrOH)
   private val deqPtrOHVec = VecInit.tabulate(RabCommitWidth + 1)(deqPtrOHShift.left)
@@ -189,8 +191,8 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   val allocatePtrVec = VecInit((0 until RenameWidth).map(i => enqPtrVec(PopCount(realNeedAlloc.take(i))).value))
   allocatePtrVec.zip(io.req).zip(realNeedAlloc).map{ case((allocatePtr, req), realNeedAlloc) =>
     when(realNeedAlloc){
-      renameBuffer(allocatePtr).info.ldest := req.bits.pdest
-      renameBuffer(allocatePtr).info.pdest := req.bits.ctrl.ldest
+      renameBuffer(allocatePtr).info.ldest := req.bits.ctrl.ldest
+      renameBuffer(allocatePtr).info.pdest := req.bits.pdest
       renameBuffer(allocatePtr).info.rfWen := req.bits.ctrl.rfWen
       renameBuffer(allocatePtr).info.fpWen := req.bits.ctrl.fpWen
       renameBuffer(allocatePtr).info.isMove := req.bits.eliminatedMove
