@@ -3,6 +3,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import xiangshan.{ExuOutput, Redirect, XSBundle, XSModule}
+import freechips.rocketchip.util.SeqToAugmentedSeq
 class WbReq(implicit p: Parameters) extends XSBundle {
   val robIdx = new RobPtr
   val data = UInt(log2Ceil(RenameWidth + 1).W)
@@ -30,13 +31,18 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
     val wbDataNum = PopCount(wbSel)
     val rdcSel = rdc.map(r => r.valid && r.bits.robIdx.value === i.U)
     val rdcData = Mux1H(rdcSel, rdc.map(_.bits.data))
+    val debugRdcSel = VecInit(rdcSel).asUInt
+    dontTouch(debugRdcSel)
+    dontTouch(rdcData)
     val enqHit = Cat(enqSel).orR
     val wbHit = Cat(wbSel).orR
     val rdcHit = Cat(rdcSel).orR
     when(enqHit) {
       writebackNumReg(i) := enqData
+      mayBeFlushed(i) := false.B
     }.elsewhen(rdcHit) {
-      writebackNumReg(i) := rdcData
+      writebackNumReg(i) := Mux(rdcData===1.U, 0.U, maxWb) 
+      mayBeFlushed(i) := true.B
     }.elsewhen(wbHit) {
       writebackNumReg(i) := Mux(mayBeFlushed(i), maxWb, currentWbNum(i) - wbDataNum)
     }
@@ -64,7 +70,8 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
   def redirect(v:Bool, addr:RobPtr, data:Bool):Unit = {
     this.io.redirectIn(rdcIdx).valid := v
     this.io.redirectIn(rdcIdx).bits.robIdx := addr
-    this.io.redirectIn(rdcIdx).bits.data := Mux(data, 0.U, maxWb)
+    this.io.redirectIn(rdcIdx).bits.data := data.asUInt
+    dontTouch(this.io.redirectIn)
     rdcIdx = rdcIdx + 1
   }
 }
