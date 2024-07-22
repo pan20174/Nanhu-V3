@@ -31,6 +31,8 @@ abstract class BasicExuBlock(implicit p:Parameters) extends LazyModule{
   protected val mulNum:Int = p(XSCoreParamsKey).exuParameters.AluMulCnt
   protected val divNum:Int = p(XSCoreParamsKey).exuParameters.AluDivCnt
   protected val miscNum:Int = p(XSCoreParamsKey).exuParameters.AluMiscCnt
+  protected val aluMulDivStdNum: Int = p(XSCoreParamsKey).exuParameters.AluMulDivStdCnt
+  protected val aluBruMiscNum: Int = p(XSCoreParamsKey).exuParameters.AluBruMiscCnt
   protected val jmpNum:Int = p(XSCoreParamsKey).exuParameters.JmpCnt
   protected val fmaNum:Int = p(XSCoreParamsKey).exuParameters.FmaCnt
   protected val fmaMiscNum:Int = p(XSCoreParamsKey).exuParameters.FmaMiscCnt

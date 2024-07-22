@@ -31,6 +31,7 @@ case class ExuComplexParam
 ){
   val name: String = exuConfigs.head.complexName
   val hasJmp: Boolean = exuConfigs.map(_.exuType == ExuType.jmp).reduce(_ || _)
+  val hasBru: Boolean = exuConfigs.map(_.exuType == ExuType.bru).reduce(_ || _)
   val hasMisc: Boolean = exuConfigs.map(_.exuType == ExuType.misc).reduce(_ || _)
   val hasAlu: Boolean = exuConfigs.map(_.exuType == ExuType.alu).reduce(_ || _)
   val hasMul: Boolean = exuConfigs.map(_.exuType == ExuType.mul).reduce(_ || _)
@@ -62,6 +63,8 @@ case class ExuComplexParam
   val isSta:Boolean = hasSta
   val isStd:Boolean = hasStd
   val isLdu:Boolean = hasLoad
+  val isAluMulDivStd: Boolean = hasAlu && hasMul && hasDiv
+  val isAluBruMisc: Boolean = hasAlu && hasBru && hasMisc
 
   val needToken:Boolean = exuConfigs.map(_.needToken).reduce(_||_)
 
