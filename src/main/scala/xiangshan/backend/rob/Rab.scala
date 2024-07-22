@@ -38,6 +38,7 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
       val walkSize = Input(UInt(log2Up(size).W))
       val walkEnd = Input(Bool())
       val commitSize = Input(UInt(log2Up(size).W))
+      val noNeedToWalk = Input(Bool())
     }
 
     val snpt = Input(new SnapshotPort)
@@ -220,7 +221,9 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   // change state
   state := stateNext
   when(io.redirect.valid) {
-    when(io.snpt.useSnpt) {
+    when(io.fromRob.noNeedToWalk){
+      stateNext := s_idle
+    }.elsewhen(io.snpt.useSnpt) {
       stateNext := s_walk
     }.otherwise {
       stateNext := s_special_walk

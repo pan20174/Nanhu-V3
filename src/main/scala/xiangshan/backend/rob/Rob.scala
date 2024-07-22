@@ -626,28 +626,23 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val zeroWalkDistance = (deqPtr === io.redirect.bits.robIdx) && (!io.redirect.bits.flushItself())
   val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
   // update the state depending on whether there is a redirect
-  val state_next = Mux(io.redirect.valid,
+  val stateNext = Mux(io.redirect.valid,
       Mux(noNeedToWalk, s_idle, s_walk),
-    Mux(state === s_walk && walkFinished,
-      s_idle,
-      Mux(state === s_extrawalk,
-        // if no more walk, switch to s_idle
-        Mux(walkCounter === 0.U, s_idle, s_walk),
-        state
-      )
+    Mux(state === s_walk && walkFinished && rab.io.status.walkEnd,
+      s_idle, state
     )
   )
-  state := state_next
+  state := stateNext
 
-  XSPerfAccumulate("s_idle_to_idle", state === s_idle && state_next === s_idle)
-  XSPerfAccumulate("s_idle_to_walk", state === s_idle && state_next === s_walk)
-  XSPerfAccumulate("s_idle_to_extrawalk", state === s_idle && state_next === s_extrawalk)
-  XSPerfAccumulate("s_walk_to_idle", state === s_walk && state_next === s_idle)
-  XSPerfAccumulate("s_walk_to_walk", state === s_walk && state_next === s_walk)
-  XSPerfAccumulate("s_walk_to_extrawalk", state === s_walk && state_next === s_extrawalk)
-  XSPerfAccumulate("s_extrawalk_to_idle", state === s_extrawalk && state_next === s_idle)
-  XSPerfAccumulate("s_extrawalk_to_walk", state === s_extrawalk && state_next === s_walk)
-  XSPerfAccumulate("s_extrawalk_to_extrawalk", state === s_extrawalk && state_next === s_extrawalk)
+  XSPerfAccumulate("s_idle_to_idle", state === s_idle && stateNext === s_idle)
+  XSPerfAccumulate("s_idle_to_walk", state === s_idle && stateNext === s_walk)
+  XSPerfAccumulate("s_idle_to_extrawalk", state === s_idle && stateNext === s_extrawalk)
+  XSPerfAccumulate("s_walk_to_idle", state === s_walk && stateNext === s_idle)
+  XSPerfAccumulate("s_walk_to_walk", state === s_walk && stateNext === s_walk)
+  XSPerfAccumulate("s_walk_to_extrawalk", state === s_walk && stateNext === s_extrawalk)
+  XSPerfAccumulate("s_extrawalk_to_idle", state === s_extrawalk && stateNext === s_idle)
+  XSPerfAccumulate("s_extrawalk_to_walk", state === s_extrawalk && stateNext === s_walk)
+  XSPerfAccumulate("s_extrawalk_to_extrawalk", state === s_extrawalk && stateNext === s_extrawalk)
   XSPerfAccumulate("redirect_bypass_to_idle", io.redirect.valid && !io.enq.needAlloc.asUInt.orR && noNeedToWalk)
   XSPerfAccumulate("extra_walk_bypass_to_idle", !io.redirect.valid && state === s_extrawalk && walkCounter === 0.U)
 
@@ -788,7 +783,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       if(commit)           -->  rob.entry.read(deqPtrVec_next)
       else, state is walk, -->  rob.entry.read(walkPtrVec_next)
   */
-  private val commitReadAddr_next = Mux(state_next === s_idle,
+  private val commitReadAddr_next = Mux(stateNext === s_idle,
     VecInit(deqPtrVec_next.map(_.value)),
     VecInit(walkPtrVec_next.map(_.value))
   )
@@ -836,6 +831,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val walkSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
   val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.walkSize := walkSizeSum
+  rab.io.fromRob.noNeedToWalk := noNeedToWalk
 
   io.rabCommits := rab.io.commits
 
