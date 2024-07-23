@@ -168,8 +168,8 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_fastRepIssue.rsIdx := fastReplayIn.bits.rsIdx
   s0_fastRepIssue.vaddr := fastReplayIn.bits.vaddr
   s0_fastRepIssue.replayCause.foreach(_ := false.B)
-  s0_fastRepIssue.schedIndex := 0.U
-  s0_fastRepIssue.isReplayQReplay := false.B
+  s0_fastRepIssue.schedIndex := fastReplayIn.bits.replay.schedIndex
+  s0_fastRepIssue.isReplayQReplay := fastReplayIn.bits.replay.isReplayQReplay
   s0_fastRepIssue.debugCause := (1<<(LoadReplayCauses.C_FR-1)).U
   dontTouch(s0_fastRepIssue)
   val s0_src_selector = Seq(
@@ -596,7 +596,12 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s3_alreadyFastRep = RegNext(io.fastReplayOut.valid)
   dontTouch(s3_alreadyFastRep)
-  io.feedbackSlow.valid := s3_in.valid && !s3_in.bits.replay.isReplayQReplay && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3")) && !s3_alreadyFastRep
+  io.feedbackSlow.valid := !s3_in.bits.rsHasFeedback &&
+    s3_in.valid &&
+    !s3_in.bits.replay.isReplayQReplay &&
+    !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3")) &&
+    !s3_alreadyFastRep
+
   io.feedbackSlow.bits.rsIdx := s3_in.bits.rsIdx
   io.feedbackSlow.bits.sourceType :=  Mux(!hitLoadOutValidReg && !io.s3_enq_replayQueue.ready || RegNext(io.fastReplayOut.valid),
     RSFeedbackType.replayQFull, RSFeedbackType.success)
@@ -633,7 +638,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   dontTouch(s3_dcacheMshrID)
   //write back control info to replayQueue in S3
-  io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3"))
+  io.s3_enq_replayQueue.valid := s3_in.valid && !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3")) && RegNext(!io.fastReplayOut.valid)
   io.s3_enq_replayQueue.bits.vaddr := s3_in.bits.vaddr
   io.s3_enq_replayQueue.bits.paddr := s3_in.bits.paddr
   io.s3_enq_replayQueue.bits.isMMIO := s3_in.bits.mmio
