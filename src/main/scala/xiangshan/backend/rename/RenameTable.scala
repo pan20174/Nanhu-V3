@@ -159,6 +159,13 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
       spec.data := rename.data
     }
   }
+  if (env.EnableDifftest || env.AlwaysBasicDiff) {
+    for ((diff, i) <- intRat.io.diffWritePorts.get.zipWithIndex) {
+      diff.wen := io.diffCommits.get.isCommit && io.diffCommits.get.commitValid(i) && io.diffCommits.get.info(i).rfWen
+      diff.addr := io.diffCommits.get.info(i).ldest
+      diff.data := io.diffCommits.get.info(i).pdest
+    }
+  }
 
   // debug read ports for difftest
   fpRat.io.debug_rdata <> io.debug_fp_rat
@@ -178,6 +185,13 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
       spec.wen  := true.B
       spec.addr := rename.addr
       spec.data := rename.data
+    }
+  }
+  if (env.EnableDifftest || env.AlwaysBasicDiff) {
+    for ((diff, i) <- fpRat.io.diffWritePorts.get.zipWithIndex) {
+      diff.wen := io.diffCommits.get.isCommit && io.diffCommits.get.commitValid(i) && io.diffCommits.get.info(i).fpWen
+      diff.addr := io.diffCommits.get.info(i).ldest
+      diff.data := io.diffCommits.get.info(i).pdest
     }
   }
 
