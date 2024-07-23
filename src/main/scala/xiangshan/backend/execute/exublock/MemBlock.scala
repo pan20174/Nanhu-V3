@@ -298,6 +298,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       val cancel = Bool()
       val wakeUp = Valid(new EarlyWakeUpInfo)
     }))
+    val toMemRsInfo = new Bundle() {
+      val ldValidNum = Output(UInt())
+      val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+    }
   })
   io.lsqVecDeqCnt := DontCare
 
@@ -416,6 +420,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   // val sbuffer = Module(new FakeSbuffer)
 
   io.stIssuePtr := lsq.io.issuePtrExt
+  io.toMemRsInfo.ldValidNum := loadUnits.map(_.io.validNum).reduce(_+_)
+  io.toMemRsInfo.replayQFreeNum := lsq.io.replayQFreeNum
 
   dcache.io.hartId := io.hartId
   lsq.io.hartId := io.hartId
@@ -631,6 +637,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val lduValid = lduIssues(i).issue.valid && !lduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
 //    loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
     loadUnits(i).io.rsIdx := lduIssues(i).rsIdx
+    loadUnits(i).io.rsHasFeedback := lduIssues(i).hasFeedback
     // get input form dispatch
 //    loadUnits(i).io.rsIssueIn.valid := Mux(selSldu, slduValid, lduValid)
 //    loadUnits(i).io.rsIssueIn.bits := Mux(selSldu, slduIssues(i).issue.bits, lduIssues(i).issue.bits)

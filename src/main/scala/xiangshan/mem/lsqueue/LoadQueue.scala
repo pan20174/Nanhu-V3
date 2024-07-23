@@ -153,6 +153,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val lqFull = Output(Bool())
     val lqCancelCnt = Output(UInt(log2Up(LoadQueueSize + 1).W))
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
+    val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
     //debug info
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
@@ -211,6 +212,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
   replayQueue.io.loadDeqPtr := deqPtrExt
   replayQueue.io.robHead := io.robHead
   replayQueue.io.stAddrReadyPtr := io.stAddrReadyPtr
+  io.replayQFreeNum := replayQueue.io.freeNum
 
 
   io.mmioWb <> replayQueue.io.mmioWb

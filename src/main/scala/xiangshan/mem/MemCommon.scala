@@ -123,6 +123,9 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle with HasDCachePa
   val forwardMask = Vec(8, Bool())
   val forwardData = Vec(8, UInt(8.W))
 
+  //rs has feedback
+  val rsHasFeedback = Bool()
+
   //softprefetch
   val isSoftPrefetch = Bool()
 
@@ -174,6 +177,7 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
 
   //Rs
   val rsIdx = new RsIdx
+  val rsHasFeedback = Bool()
 
   // debug
   val debugCause = UInt(LoadReplayCauses.allCauses.W)

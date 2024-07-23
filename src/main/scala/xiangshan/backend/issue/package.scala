@@ -132,6 +132,7 @@ package object issue {
     val rsFeedback: RSFeedbackIO = Flipped(new RSFeedbackIO)
     val auxValid = Output(Bool())
     val hold = Output(Bool())
+    val hasFeedback = Output(Bool())
     val specialPsrc = Output(UInt(PhyRegIdxWidth.W))
     val specialPsrcType = Output(SrcType())
     val specialPsrcRen = Output(Bool())

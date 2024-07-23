@@ -250,6 +250,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           val auxValidReg = RegInit(false.B)
           val issueExuInReg = Reg(new ExuInput)
           val rsIdxReg = Reg(new RsIdx)
+          val hasFeedbackReg = RegInit(false.B)
           val replayStop = io.ldStop(exuComplexParam.id)
 
           val shouldBeFlushed = issueExuInReg.uop.robIdx.needFlush(io.redirect)
@@ -267,11 +268,13 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
             issueValidReg := !exuInBundle.uop.robIdx.needFlush(io.redirect) //issue driver deq.valid has no needFlush
             issueExuInReg := exuInBundle
             rsIdxReg := bi.rsIdx
+            hasFeedbackReg := bi.hasFeedback
           }
 
           bo.issue.valid := issueValidReg && !replayStop
           bo.issue.bits := issueExuInReg
           bo.rsIdx := rsIdxReg
+          bo.hasFeedback := hasFeedbackReg
           bo.auxValid := auxValidReg
           bo.issue.bits.uop.loadStoreEnable := true.B // This has been delayed
           bo.hold := false.B
@@ -311,6 +314,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           bi.rsFeedback.feedbackSlowLoad := bo.rsFeedback.feedbackSlowLoad
           bi.rsFeedback.feedbackSlowStore := bo.rsFeedback.feedbackSlowStore
           bo.hold := false.B
+          bo.hasFeedback := false.B
         }
       }
     }
