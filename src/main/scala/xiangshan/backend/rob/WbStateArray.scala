@@ -48,6 +48,7 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
     }
   }
   io.out.zip(writebackNumReg).foreach({case(out, wbNum) => out := wbNum === 0.U})
+  for(i <- writebackNumReg.indices){assert(writebackNumReg(i) <= maxWb, "writeBackReg %d num max is %d", i.U, maxWb)}
 
   private var enqIdx = 0
   private var wbIdx = 0

@@ -163,7 +163,10 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   val needFpDest  = Wire(Vec(RenameWidth, Bool()))
   val needIntDest = Wire(Vec(RenameWidth, Bool()))
   val hasValid    = Cat(io.in.map(_.valid)).orR
-
+  val hasExceptionVec = Wire(Vec(RenameWidth, Bool()))
+  val needFlushPipeVec = Wire(Vec(RenameWidth, Bool()))
+  dontTouch(hasExceptionVec)
+  dontTouch(needFlushPipeVec)
   val isMove = io.in.map(_.bits.ctrl.isMove)
 
   val intSpecWen = Wire(Vec(RenameWidth, Bool()))
@@ -214,15 +217,11 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     uops(i).eliminatedMove  := isMove(i)
   
     uops(i).compressInstNum := instrSizesVec(i)
-    uops(i).compressWbNum   := instrSizesVec(i) - PopCount(compressMasksVec(i) & Cat(isMove.reverse))
     uops(i).compressMask    := compressMasksVec(i)
-    val hasException = Cat(selectFrontend(uops(i).cf.exceptionVec) :+ uops(i).cf.exceptionVec(illegalInstr)).orR 
-    val needFlushPipe = hasException || uops(i).cf.trigger.getFrontendCanFire
-    when(isMove(i) || needFlushPipe) {
-      uops(i).compressWbNum := 0.U
-    }.otherwise{
-      uops(i).compressWbNum := instrSizesVec(i) - PopCount(compressMasksVec(i) & Cat(isMove.reverse))
-    }
+    hasExceptionVec(i) := Cat(selectFrontend(uops(i).cf.exceptionVec) :+ uops(i).cf.exceptionVec(illegalInstr)).orR 
+    needFlushPipeVec(i) := hasExceptionVec(i) || uops(i).cf.trigger.getFrontendCanFire
+    uops(i).compressWbNum := instrSizesVec(i) - PopCount(compressMasksVec(i) & (Cat(isMove.reverse) | Cat(needFlushPipeVec.reverse)))
+
     uops(i).lastUop := needRobFlags(i)
     if(i == 0){uops(i).firstUop := true.B}else{uops(i).firstUop := needRobFlags(i - 1)}
 
