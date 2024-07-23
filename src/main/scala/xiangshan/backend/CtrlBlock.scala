@@ -238,12 +238,14 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     val disableFusion = decode.io.csrCtrl.singlestep || !decode.io.csrCtrl.fusion_enable
     fusionDecoder.io.in(i).valid := decode.io.out(i).valid && !(decodeHasException || disableFusion)
     fusionDecoder.io.in(i).bits := decode.io.out(i).bits.cf.instr
-    if (i > 0) {
-      fusionDecoder.io.inReady(i - 1) := decode.io.out(i).ready
-    }
     decQueue.io.in(i).valid := decode.io.out(i).valid && !fusionDecoder.io.clear(i)
     decQueue.io.in(i).bits  := decode.io.out(i).bits
     decode.io.out(i).ready := decQueue.io.in(i).ready
+    // decqueue allow one instr enq but has fusion with next one
+    if (i > 0) {
+      fusionDecoder.io.inReady(i - 1) := decode.io.out(i).ready
+      decode.io.out(i).ready := decQueue.io.in(i).ready || (decQueue.io.in(i - 1).ready && fusionDecoder.io.clear(i))
+    }
     // Pipeline
     val renamePipe = decQueue.io.out(0)(i)
     renamePipe.ready := rename.io.in(i).ready
