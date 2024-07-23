@@ -36,12 +36,14 @@ import xiangshan.backend.execute.fu.fence.{FenceToSbuffer, SfenceBundle}
 import xiangshan.backend.issue.EarlyWakeUpInfo
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.cache._
-import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, PtwSectorResp, TLB, TlbHintIO, TlbIO, TlbReplace}
+import xiangshan.cache.mmu._
 import xiangshan.mem._
 import xiangshan.mem.prefetch._
 import xs.utils.mbist.MBISTPipeline
 import xs.utils.perf.HasPerfLogging
 import xs.utils.{DelayN, ParallelPriorityMux, RegNextN, ValidIODelay}
+import freechips.rocketchip.tilelink.TLBuffer
+import system.HasSoCParameter
 
 class Std(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle{
@@ -198,11 +200,16 @@ class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extend
     case _ => None
   }
 
+  val ptw = LazyModule(new PTWWrapper(parentName = parentName + "ptw_"))
+  val ptw_to_l2_buffer = LazyModule(new TLBuffer)
+  ptw_to_l2_buffer.node := ptw.node
+
   lazy val module = new MemBlockImp(this)
 
 }
 
 class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
+  with HasSoCParameter
   with HasXSParameter
   with HasFPUParameters
   with HasPerfEvents
@@ -259,9 +266,9 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val stIssuePtr = Output(new SqPtr())
     // misc
     val stIn = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
-    val ptw = new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt)
+    val itlb_ptw = Flipped(new TlbPtwIO)
     val tlb_hint = Flipped(new TlbHintIO)
-    val tlb_wakeUp = Flipped(ValidIO(new PtwSectorResp))
+    val dfx_reset = Input(new DFTResetSignals())
     val sfence = Input(new SfenceBundle)
     val tlbCsr = Input(new TlbCsrBundle)
     val fenceToSbuffer = Flipped(new FenceToSbuffer)
@@ -286,7 +293,6 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
     val sqFull = Output(Bool())
     val lqFull = Output(Bool())
-    val perfEventsPTW = Input(Vec(19, new PerfEvent))
     val lqCancelCnt = Output(UInt(log2Up(LoadQueueSize + 1).W))
     val sqCancelCnt = Output(UInt(log2Up(StoreQueueSize + 1).W))
     val sqDeq = Output(UInt(2.W))
@@ -303,6 +309,16 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   val dcache = outer.dcache.module
   val uncache = outer.uncache.module
+  private val ptw = outer.ptw.module
+  private val ptw_to_l2_buffer = outer.ptw_to_l2_buffer.module
+  val ptw_repeater = Wire(new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt))
+  val tlb_wakeUp = Wire(Flipped(ValidIO(new PtwSectorResp)))
+
+  ptw.io.sfence := io.sfence
+  ptw.io.csr.tlb <> io.tlbCsr
+  ptw.io.csr.distribute_csr <> io.csrCtrl.distribute_csr
+  ptw.io.csr.prefercache <> io.csrCtrl.ptw_prefercache_enable
+  ptw.io.csr.spmp_enable <> io.csrCtrl.spmp_enable
 
   val csrCtrl = DelayN(io.csrCtrl, 2)
   dcache.io.csr.distribute_csr <> csrCtrl.distribute_csr
@@ -468,6 +484,12 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     vwb.bits.redirect := DontCare
   })
 
+  // tlb repeater
+  val dtlbRepeater  = PTWFilter(ptw_repeater, ptw.io.tlb(1), io.sfence, io.tlbCsr, l2tlbParams.filterSize)
+  val itlbRepeater3 = PTWRepeater(io.itlb_ptw, ptw.io.tlb(0), io.sfence, io.tlbCsr)
+
+  tlb_wakeUp.valid := dtlbRepeater.io.ptw.resp.valid
+  tlb_wakeUp.bits := dtlbRepeater.io.ptw.resp.bits
 
   // dtlb
   val total_tlb_ports = ld_tlb_ports + exuParameters.StuCnt
@@ -505,16 +527,16 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
   private val loadTlbWakeup = Wire(Valid(new LoadTLBWakeUpBundle))
   private val contiguousVpn = WireInit(0.U((log2Up(tlbContiguous)).W))
-  when(io.tlb_wakeUp.valid){
-    contiguousVpn := OHToUInt(io.tlb_wakeUp.bits.pteidx)
-    assert(PopCount(io.tlb_wakeUp.bits.pteidx) <= 1.U)
+  when(tlb_wakeUp.valid){
+    contiguousVpn := OHToUInt(tlb_wakeUp.bits.pteidx)
+    assert(PopCount(tlb_wakeUp.bits.pteidx) <= 1.U)
   }
 
-  loadTlbWakeup.valid := io.tlb_wakeUp.valid
-  loadTlbWakeup.bits.vpn := Cat(io.tlb_wakeUp.bits.entry.tag, contiguousVpn)
-  loadTlbWakeup.bits.level := io.tlb_wakeUp.bits.entry.level.get
+  loadTlbWakeup.valid := tlb_wakeUp.valid
+  loadTlbWakeup.bits.vpn := Cat(tlb_wakeUp.bits.entry.tag, contiguousVpn)
+  loadTlbWakeup.bits.level := tlb_wakeUp.bits.entry.level.get
   lsq.io.tlbWakeup := loadTlbWakeup
-  require(contiguousVpn.getWidth + io.tlb_wakeUp.bits.entry.tag.getWidth == loadTlbWakeup.bits.vpn.getWidth)
+  require(contiguousVpn.getWidth + tlb_wakeUp.bits.entry.tag.getWidth == loadTlbWakeup.bits.vpn.getWidth)
 
   val dtlb = dtlb_ld ++ dtlb_st
   val dtlb_reqs = dtlb.flatMap(_.requestor)
@@ -526,36 +548,38 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     require(ldtlbParams.outReplace)
 
     val replace = Module(new TlbReplace(total_tlb_ports, ldtlbParams))
-    replace.io.apply_sep(dtlb_ld.map(_.replace) ++ dtlb_st.map(_.replace), io.ptw.resp.bits.data.entry.tag)
+    replace.io.apply_sep(dtlb_ld.map(_.replace) ++ dtlb_st.map(_.replace), ptw_repeater.resp.bits.data.entry.tag)
   } else {
     if(!UseOneDtlb){
       if (ldtlbParams.outReplace) {
         val replace_ld = Module(new TlbReplace(ld_tlb_ports, ldtlbParams))
-        replace_ld.io.apply_sep(dtlb_ld.map(_.replace), io.ptw.resp.bits.data.entry.tag)
+        replace_ld.io.apply_sep(dtlb_ld.map(_.replace), ptw_repeater.resp.bits.data.entry.tag)
       }
       if (sttlbParams.outReplace) {
         val replace_st = Module(new TlbReplace(exuParameters.StuCnt, sttlbParams))
-        replace_st.io.apply_sep(dtlb_st.map(_.replace), io.ptw.resp.bits.data.entry.tag)
+        replace_st.io.apply_sep(dtlb_st.map(_.replace), ptw_repeater.resp.bits.data.entry.tag)
       }
     }
   }
 
-  val ptw_resp_next = RegEnable(io.ptw.resp.bits, io.ptw.resp.valid)
+  val ptw_resp_next = RegEnable(ptw_repeater.resp.bits, ptw_repeater.resp.valid)
   val ptw_resp_v = RegNext(
-    io.ptw.resp.valid && !(RegNext(sfence_dup.last.valid && tlbcsr_dup.last.satp.changed)),
+    ptw_repeater.resp.valid && !(RegNext(sfence_dup.last.valid && tlbcsr_dup.last.satp.changed)),
     init = false.B
   )
-  io.ptw.resp.ready := true.B
+  ptw_repeater.resp.ready := true.B
 
   dtlb.flatMap(a => a.ptw.req)
     .zipWithIndex
     .foreach{ case (tlb, i) =>
-    tlb <> io.ptw.req(i)
+    // tlb <> ptw_repeater.req(i)
     val vector_hit = if (refillBothTlb) Cat(ptw_resp_next.vector).orR
       else if (i < ld_tlb_ports) Cat(ptw_resp_next.vector.take(ld_tlb_ports)).orR
       else Cat(ptw_resp_next.vector.drop(ld_tlb_ports)).orR
-    io.ptw.req(i).valid := tlb.valid && !(ptw_resp_v && vector_hit &&
+    ptw_repeater.req(i).valid := tlb.valid && !(ptw_resp_v && vector_hit &&
       ptw_resp_next.data.hit(tlb.bits.vpn, RegNext(tlbcsr_dup(i).satp.asid), allType = true, ignoreAsid = true))
+    ptw_repeater.req(i).bits := tlb.bits
+    tlb.ready := ptw_repeater.req(i).ready
   }
   dtlb.foreach(_.ptw.resp.bits := ptw_resp_next.data)
   if (refillBothTlb || UseOneDtlb) {
@@ -969,8 +993,10 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     ("stDeqCount", stDeqCount),
   )
 
+  val perfEventsPTW = ptw.getPerf
+
   val perfFromUnits = (loadUnits ++ Seq(sbuffer, lsq, dcache)).flatMap(_.getPerfEvents)
-  val perfFromIO    = io.perfEventsPTW.map(x => ("perfEventsPTW", x.value))
+  val perfFromIO    = perfEventsPTW.map(x => ("perfEventsPTW", x.value))
   val perfBlock     = Seq(("ldDeqCount", ldDeqCount),
                           ("stDeqCount", stDeqCount))
   // let index = 0 be no event
@@ -989,4 +1015,15 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val clock_debug = RegInit(false.B)
   clock_debug := ~clock_debug
   dontTouch(clock_debug)
+
+  private val resetTree = ResetGenNode(
+    Seq(
+      ModuleNode(itlbRepeater3),
+      ModuleNode(dtlbRepeater),
+      ModuleNode(ptw),
+      ModuleNode(ptw_to_l2_buffer),
+    )
+  )
+
+  ResetGen(resetTree, reset, Some(io.dfx_reset), !debugOpts.FPGAPlatform)
 }

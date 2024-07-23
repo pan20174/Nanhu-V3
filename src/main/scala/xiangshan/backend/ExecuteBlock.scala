@@ -36,7 +36,7 @@ import xiangshan.backend.issue.IntRs.IntegerReservationStation
 import xiangshan.backend.issue.MemRs.MemoryReservationStation
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.backend.writeback.WriteBackNetwork
-import xiangshan.cache.mmu.{BTlbPtwIO, PtwSectorResp, TlbHintIO}
+import xiangshan.cache.mmu.{TlbPtwIO, PtwSectorResp, TlbHintIO}
 import xiangshan.frontend.FtqPtr
 import xiangshan.mem.LsqEnqIO
 import xiangshan.vector.HasVectorParameters
@@ -45,6 +45,7 @@ import xiangshan.vector.vbackend.vissue.vrs.VectorReservationStation
 import xiangshan.vector.vbackend.vregfile.VRegfileTop
 import xs.utils.{DFTResetSignals, ModuleNode, RegNextN, ResetGen, ResetGenNode}
 import xiangshan.mem._
+import chisel3.SpecifiedDirection.Flip
 class ExecuteBlock(val parentName:String = "Unknown")(implicit p:Parameters) extends LazyModule with HasXSParameter with HasVectorParameters {
   val integerReservationStation: IntegerReservationStation = LazyModule(new IntegerReservationStation)
   val floatingReservationStation: FloatingReservationStation = LazyModule(new FloatingReservationStation)
@@ -104,9 +105,8 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
     val sqDeq = Output(UInt(2.W))
     val stIn = Vec(exuParameters.StuCnt, ValidIO(new ExuInput))
     val enqLsq = new LsqEnqIO
-    val ptw = new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt)
+    val itlb_ptw = Flipped(new TlbPtwIO)
     val tlb_hint = Flipped(new TlbHintIO)
-    val tlb_wakeUp = Flipped(ValidIO(new PtwSectorResp))
     val rob = Flipped(new RobLsqIO) // rob to lsq
     val lsqVecDeqCnt = Output(new LsqVecDeqIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
@@ -123,8 +123,6 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
     val pcMemWrite = new PcWritePort
     val safeTargetPtr = Input(new FtqPtr)
     val mmioFetchPending = Input(Bool())
-
-    val perfEventsPTW = Input(Vec(19, new PerfEvent))
 
     val vecFaultOnlyFirst = Flipped(ValidIO(new ExuOutput))
     val redirectOut = Output(Valid(new Redirect))
@@ -229,7 +227,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
 
   io.memBlk_csrUpdate := memBlk.io.csrUpdate
   memBlk.io.tlb_hint <> io.tlb_hint
-  memBlk.io.tlb_wakeUp <> io.tlb_wakeUp
+  memBlk.io.dfx_reset <> io.dfx_reset
   memBlk.io.csrCtrl <> intBlk.io.csrio.customCtrl
   memBlk.io.fenceToSbuffer <> intBlk.io.fenceio.sbuffer
   memBlk.io.sfence := intBlk.io.fenceio.sfence
@@ -239,8 +237,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
 
   io.lsqVecDeqCnt <> memBlk.io.lsqVecDeqCnt
 
-  memBlk.io.perfEventsPTW := io.perfEventsPTW
-  io.ptw <> memBlk.io.ptw
+  io.itlb_ptw <> memBlk.io.itlb_ptw
   io.l1Error := memBlk.io.error
   io.lqCancelCnt := memBlk.io.lqCancelCnt
   io.sqCancelCnt := memBlk.io.sqCancelCnt

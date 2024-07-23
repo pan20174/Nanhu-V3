@@ -139,7 +139,7 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
     misc.busPMU :=
       TLLogger(s"L2_PTW_${coreParams.HartId}", !debugOpts.FPGAPlatform && debugOpts.EnableChiselDB) :=
       buf_node :=
-      core.ptw_to_l2_buffer.node
+      core.exuBlock.memoryBlock.ptw_to_l2_buffer.node
     buffers
   } else Seq()
 

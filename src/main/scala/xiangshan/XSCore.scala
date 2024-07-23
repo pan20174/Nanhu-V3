@@ -57,8 +57,8 @@ abstract class XSCoreBase(val parentName:String = "Unknown")(implicit p: config.
   val plic_int_sink = IntSinkNode(IntSinkPortSimple(2, 1))
   // outer facing nodes
   val frontend = LazyModule(new Frontend(parentName = parentName + "frontend_"))
-  val ptw = LazyModule(new PTWWrapper(parentName = parentName + "ptw_"))
-  val ptw_to_l2_buffer = LazyModule(new TLBuffer)
+  // val ptw = LazyModule(new PTWWrapper(parentName = parentName + "ptw_"))
+  // val ptw_to_l2_buffer = LazyModule(new TLBuffer)
   val exuBlock = LazyModule(new ExecuteBlock(parentName = parentName + "execute_"))
   val ctrlBlock = LazyModule(new CtrlBlock)
   exuBlock.integerReservationStation.dispatchNode :*= ctrlBlock.dispatchNode
@@ -68,7 +68,7 @@ abstract class XSCoreBase(val parentName:String = "Unknown")(implicit p: config.
   exuBlock.vectorPermutationBlock.vprs.dispatchNode :*= ctrlBlock.dispatchNode
   ctrlBlock.rob.writebackNode :=* exuBlock.writebackNetwork.node
   ctrlBlock.wbMergeBuffer.writebackNode :=* exuBlock.writebackNetwork.node
-  ptw_to_l2_buffer.node := ptw.node
+  // ptw_to_l2_buffer.node := ptw.node
 }
 
 class XSCore(parentName:String = "Core_")(implicit p: config.Parameters) extends XSCoreBase(parentName = parentName)
@@ -96,8 +96,8 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   private val frontend = outer.frontend.module
   private val ctrlBlock = outer.ctrlBlock.module
   private val exuBlock = outer.exuBlock.module
-  private val ptw = outer.ptw.module
-  private val ptw_to_l2_buffer = outer.ptw_to_l2_buffer.module
+  // private val ptw = outer.ptw.module
+  // private val ptw_to_l2_buffer = outer.ptw_to_l2_buffer.module
   private val csrioIn = exuBlock.io.csrio
   private val fenceio = exuBlock.io.fenceio
   //TODO:
@@ -167,7 +167,6 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   exuBlock.io.debug_fp_rat := ctrlBlock.io.debug_fp_rat
   exuBlock.io.debug_vec_rat := ctrlBlock.io.debug_vec_rat
 
-  exuBlock.io.perfEventsPTW  := ptw.getPerf
 
   csrioIn.hartId := io.hartId
   csrioIn.perf := DontCare
@@ -204,21 +203,9 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   exuBlock.io.mmioFetchPending := RegNext(frontend.io.mmioFetchPending, false.B)
 
   private val itlbRepeater1 = PTWRepeater(frontend.io.ptw, fenceio.sfence, csrioIn.tlb)
-  private val itlbRepeater2 = PTWRepeater(itlbRepeater1.io.ptw, ptw.io.tlb(0), fenceio.sfence, csrioIn.tlb)
-//  private val dtlbRepeater1  = PTWNewFilter(exuBlock.io.ptw, fenceio.sfence, csrioIn.tlb)
-  private val dtlbRepeater1  = PTWFilter(exuBlock.io.ptw, fenceio.sfence, csrioIn.tlb, l2tlbParams.filterSize)
-  private val dtlbRepeater2  = PTWRepeaterNB(passReady = false, dtlbRepeater1.io.ptw, ptw.io.tlb(1), fenceio.sfence, csrioIn.tlb)
+  private val itlbRepeater2 = PTWRepeater(itlbRepeater1.io.ptw, exuBlock.io.itlb_ptw, fenceio.sfence, csrioIn.tlb)
 
-//  exuBlock.io.tlb_hint <> dtlbRepeater1.io.hint.get
   exuBlock.io.tlb_hint <> DontCare
-  exuBlock.io.tlb_wakeUp.valid := dtlbRepeater1.io.ptw.resp.valid
-  exuBlock.io.tlb_wakeUp.bits := dtlbRepeater1.io.ptw.resp.bits
-
-  ptw.io.sfence := fenceio.sfence
-  ptw.io.csr.tlb <> csrioIn.tlb
-  ptw.io.csr.distribute_csr <> csrioIn.customCtrl.distribute_csr
-  ptw.io.csr.prefercache <> csrioIn.customCtrl.ptw_prefercache_enable
-  ptw.io.csr.spmp_enable <> csrioIn.customCtrl.spmp_enable
 
   // if l2 prefetcher use stream prefetch, it should be placed in XSCore
   io.l2_pf_enable := csrioIn.customCtrl.l2_pf_enable
@@ -260,10 +247,10 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
       ResetGenNode(Seq(
         ResetGenNode(Seq(
           ModuleNode(itlbRepeater2),
-          ModuleNode(ptw),
-          ModuleNode(dtlbRepeater2),
-          ModuleNode(dtlbRepeater1),
-          ModuleNode(ptw_to_l2_buffer)
+          // ModuleNode(ptw),
+          // ModuleNode(dtlbRepeater2),
+          // ModuleNode(dtlbRepeater1),
+          // ModuleNode(ptw_to_l2_buffer)
         ))
       )),
       ResetGenNode(Seq(
