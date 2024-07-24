@@ -39,7 +39,14 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
   val headPtrOHVec = VecInit.tabulate(RenameWidth + 1)(headPtrOHShift.left)
   val tailPtr = RegInit(FreeListPtr(false, size - 1))
 
-  val doRename = io.canAllocate && io.doAllocate && !io.redirect && !io.walk
+  val archHeadPtr = RegInit(FreeListPtr(false, 0))
+  val redirectedHeadPtr = archHeadPtr + PopCount(io.walkReq)
+  val redirectedHeadPtrOH = (archHeadPtr + PopCount(io.walkReq)).toOH
+  val lastCycleRedirect = RegNext(io.redirect, false.B)
+
+  val doWalkRename = io.walk && io.doAllocate && !io.redirect
+  val doNormalRename = io.canAllocate && io.doAllocate && !io.redirect
+  val doRename = doWalkRename || doNormalRename
 
   /**
     * Allocation: from freelist (same as StdFreelist)
@@ -49,11 +56,20 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
     // enqueue instr, is move elimination
     io.allocatePhyReg(i) := phyRegCandidates(PopCount(io.allocateReq.take(i)))
   }
+  // update arch head pointer
+  val archAlloc = io.rabCommit.commitValid zip io.rabCommit.info map {
+    case (valid, info) => valid && info.rfWen && !info.isMove && info.ldest =/= 0.U
+  }
+  val numArchAllocate = PopCount(archAlloc)
+  val archHeadPtrNew  = archHeadPtr + numArchAllocate
+  val archHeadPtrNext = Mux(io.rabCommit.isCommit, archHeadPtrNew, archHeadPtr)
+  archHeadPtr := archHeadPtrNext
   // update head pointer
   val numAllocate = PopCount(io.allocateReq)
-  val headPtrNext = headPtr + numAllocate
+  val headPtrNext = Mux(lastCycleRedirect, redirectedHeadPtr, headPtr + numAllocate)
+  val headPtrOHNext = Mux(lastCycleRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
   headPtr := Mux(doRename, headPtrNext, headPtr)
-  headPtrOH := Mux(doRename, headPtrOHVec(numAllocate), headPtrOH)
+  headPtrOH := Mux(doRename, headPtrOHNext, headPtrOH)
 
 
   /**
@@ -71,8 +87,9 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
   tailPtr := tailPtrNext
 
   val freeRegCntReg = RegInit(0.U(log2Up(size + 1).W))
-  freeRegCntReg := Mux(doRename, distanceBetween(tailPtrNext, headPtrNext), distanceBetween(tailPtrNext, headPtr))
-  
+  freeRegCntReg := Mux(doWalkRename && !lastCycleRedirect, distanceBetween(tailPtrNext, headPtr) - PopCount(io.walkReq),
+                   Mux(doNormalRename,                     distanceBetween(tailPtrNext, headPtr) - PopCount(io.allocateReq),
+                                                           distanceBetween(tailPtrNext, headPtr)))
   io.canAllocate := freeRegCntReg >= RenameWidth.U
 
   val perfEvents = Seq(

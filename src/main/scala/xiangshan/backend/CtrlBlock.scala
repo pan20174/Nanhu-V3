@@ -230,6 +230,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rat.io.fpRenamePorts  := rename.io.fpRenamePorts
   rename.io.int_need_free := rat.io.int_need_free
   rename.io.int_old_pdest := rat.io.int_old_pdest
+  rename.io.fp_old_pdest := rat.io.fp_old_pdest
   rat.io.diffCommits.foreach(_ := rob.io.diffCommits.get)
   //for debug
   io.debug_int_rat  := rat.io.debug_int_rat
@@ -291,6 +292,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   rename.io.redirect    := Pipe(io.redirectIn)
   rename.io.robCommits  := commitScalar
+  rename.io.rabCommits  := rabCommitScalar
   rename.io.ssit        := ssit.io.rdata
   rename.io.vcsrio      <> io.vcsrToRename
   rename.io.vlUpdate    := Pipe(wbMergeBuffer.io.vlUpdate, 2)

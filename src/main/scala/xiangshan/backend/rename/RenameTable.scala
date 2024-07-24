@@ -153,6 +153,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
     val fpRenamePorts = Vec(RenameWidth, Input(new RatWritePort))
     val int_old_pdest = Vec(RabCommitWidth, Output(UInt(PhyRegIdxWidth.W)))
     val int_need_free = Vec(RabCommitWidth, Output(Bool()))
+    val fp_old_pdest = Vec(RabCommitWidth, Output(UInt(PhyRegIdxWidth.W)))
     // for debug printing
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
@@ -200,6 +201,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
   fpRat.io.debug_rdata <> io.debug_fp_rat
   fpRat.io.readPorts <> io.fpReadPorts.flatten
   fpRat.io.redirect := io.redirect
+  io.fp_old_pdest := fpRat.io.old_pdest
   for ((arch, i) <- fpRat.io.archWritePorts.zipWithIndex) {
     arch.wen  := io.rabCommits.isCommit && io.rabCommits.commitValid(i) && io.rabCommits.info(i).fpWen
     arch.addr := io.rabCommits.info(i).ldest

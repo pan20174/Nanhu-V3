@@ -674,7 +674,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val walkPtrVec_next = Mux(io.redirect.valid && state =/= s_extrawalk,
     Mux(state === s_walk,
       VecInit(walkPtrVec.map(_ + thisCycleWalkCount)),
-      VecInit((0 until CommitWidth).map(i => deqPtr + (i).U))
+      VecInit((0 until CommitWidth).map(i => deqPtr + (i).U + PopCount(io.commits.commitValid)))
     ),
     Mux(state === s_walk, VecInit(walkPtrVec.map(_ + canWalkNum)), walkPtrVec)
   )
@@ -686,7 +686,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   allowEnqueue := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U
   allowEnqueuedupRegs.foreach(_ := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U)
 
-  val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, deqPtr)
+  val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, deqPtr + PopCount(io.commits.commitValid))
   val redirectWalkDistance = distanceBetween(io.redirect.bits.robIdx, currentWalkPtr)
   when(io.redirect.valid) {
     walkCounter := Mux(state === s_walk,

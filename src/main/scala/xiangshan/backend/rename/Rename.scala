@@ -41,6 +41,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   val io = IO(new Bundle() {
     val redirect = Flipped(ValidIO(new Redirect))
     val robCommits = Flipped(new RobCommitIO)
+    val rabCommits = Flipped(new RabCommitIO)
     // from decode
     val in = Vec(RenameWidth, Flipped(DecoupledIO(new MicroOp)))
     val allowIn = Input(Bool())
@@ -60,6 +61,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // from rename table
     val int_old_pdest = Vec(RabCommitWidth, Input(UInt(PhyRegIdxWidth.W)))
     val int_need_free = Vec(RabCommitWidth, Input(Bool()))
+    val fp_old_pdest = Vec(RabCommitWidth, Input(UInt(PhyRegIdxWidth.W)))
     // to dispatch1
     val out = Vec(RenameWidth, DecoupledIO(new MicroOp))
     // enq Rob
@@ -87,21 +89,14 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
       if(fp) x.ctrl.fpWen
       else (x.ctrl.rfWen && (x.ctrl.ldest =/= 0.U))
   }
-  def needDestRegCommit[T <: RobCommitInfo](fp: Boolean, x: T): Bool = {
-    if(fp) x.fpWen
-    else x.rfWen
-  }
 
   // connect [redirect + walk] ports for __float point__ & __integer__ free list
-  Seq((fpFreeList, true), (intFreeList, false)).foreach {
-    case (fl, isFp) =>
+  Seq((fpFreeList), (intFreeList)).foreach {
+    case (fl) =>
       fl.io.redirect := io.redirect.valid
-      fl.io.walk := io.robCommits.isWalk
-      // when isWalk, use stepBack to restore head pointer of free list
-      // (if ME enabled, stepBack of intFreeList should be useless thus optimized out)
-      fl.io.stepBack := PopCount(io.robCommits.walkValid.zip(io.robCommits.info).map{
-        case (v, i) => v && needDestRegCommit(isFp, i)
-      })
+      fl.io.walk := io.rabCommits.isWalk
+      fl.io.rabCommit := io.rabCommits
+      fl.io.walkReq := io.rabCommits.walkValid
   }
   // walk has higher priority than allocation and thus we don't use isWalk here
   // only when both fp and int free list and dispatch1 has enough space can we do allocation
@@ -109,7 +104,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   fpFreeList.io.doAllocate := intFreeList.io.canAllocate && vtyperename.io.canAccept && io.out(0).ready && io.enqRob.canAccept
 
   // dispatch1 ready ++ float point free list ready ++ int free list ready ++ not walk ++ rob canaccept
-  val canOut = io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && !io.robCommits.isWalk && vtyperename.io.canAccept && io.enqRob.canAccept
+  val canOut = io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && !io.rabCommits.isWalk && !io.robCommits.isWalk && vtyperename.io.canAccept && io.enqRob.canAccept
 
   // compressUnit: decode instructions guidelines to the ROB allocation logic
   val compressUnit = Module(new CompressUnit())
@@ -370,14 +365,12 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     io.out(0).bits.psrc(0) := vtyperename.io.out(0).bits.psrc(0)
   }
 
-
-
   /**
     * Instructions commit: update freelist and rename table
     */
   for (i <- 0 until CommitWidth) {
-    val commitValid = io.robCommits.isCommit && io.robCommits.commitValid(i)
-    val walkValid = io.robCommits.isWalk && io.robCommits.walkValid(i)
+    val commitValid = io.rabCommits.isCommit && io.rabCommits.commitValid(i)
+    val walkValid = io.rabCommits.isWalk && io.rabCommits.walkValid(i)
 
     Seq((io.intRenamePorts, false), (io.fpRenamePorts, true)) foreach { case (rat, fp) =>
       /*
@@ -400,8 +393,8 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
       II. Free List Update
        */
       if (fp) { // Float Point free list
-        fpFreeList.io.freeReq(i)  := commitValid && needDestRegCommit(fp, io.robCommits.info(i))
-        fpFreeList.io.freePhyReg(i) := io.robCommits.info(i).old_pdest
+        fpFreeList.io.freeReq(i)  := RegNext(commitValid && io.rabCommits.info(i).fpWen)
+        fpFreeList.io.freePhyReg(i) := io.fp_old_pdest(i)
       } else { // Integer free list
         intFreeList.io.freeReq(i) := io.int_need_free(i)
         intFreeList.io.freePhyReg(i) := RegNext(io.int_old_pdest(i))

@@ -28,6 +28,7 @@ abstract class BaseFreeList(size: Int)(implicit p: Parameters) extends XSModule 
   val io = IO(new Bundle {
     val redirect = Input(Bool())
     val walk = Input(Bool())
+    val walkReq = Input(Vec(RabCommitWidth, Bool()))
 
     val allocateReq = Input(Vec(RenameWidth, Bool()))
     val allocatePhyReg = Output(Vec(RenameWidth, UInt(PhyRegIdxWidth.W)))
@@ -37,7 +38,7 @@ abstract class BaseFreeList(size: Int)(implicit p: Parameters) extends XSModule 
     val freeReq = Input(Vec(CommitWidth, Bool()))
     val freePhyReg = Input(Vec(CommitWidth, UInt(PhyRegIdxWidth.W)))
 
-    val stepBack = Input(UInt(log2Up(CommitWidth + 1).W))
+    val rabCommit = Input(new RabCommitIO)
   })
 
   class FreeListPtr extends CircularQueuePtr[FreeListPtr](size)
