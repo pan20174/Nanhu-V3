@@ -32,6 +32,8 @@ import xiangshan.frontend.FtqPtr
 import xs.utils.GTimer
 import xs.utils.perf.HasPerfLogging
 
+import xiangshan.backend.issue.perf._
+
 class IntegerReservationStation(implicit p: Parameters) extends LazyModule with HasXSParameter{
   private val entryNum = p(XSCoreParamsKey).intRsDepth
   private val wbNodeParam = WriteBackSinkParam(name = "Integer RS", sinkType = WriteBackSinkType.intRs)
@@ -127,6 +129,25 @@ class IntegerReservationStationImpl(outer:IntegerReservationStation, param:RsPar
     mod.io.safeTargetPtr := safeTargetPtrs(idx)
     mod
   })
+
+  val perf = Module(new SelectPerf(entriesNumPerBank, issue.length))
+  perf.io.selectInfo.zip(rsBankSeq.map(_.io.selectInfo)).foreach {
+    case (p, b) => {
+      p.zip(b).foreach({
+        case (pp, bb) => {
+          pp.valid := bb.valid
+          pp.bits := bb.bits.robPtr
+        }
+      })
+    }
+  }
+  perf.io.finalSelectInfo.zip(issue.map(_._1.issue)).foreach {
+    case (p, f) => {
+      p.valid := f.valid
+      p.bits := f.bits.uop.robIdx
+    }
+  }
+
   private val btWakeupWidth = (wakeupSignals ++ internalAluJmpWakeupSignals ++ internalMulWakeupSignals).length
   private val allocateNetwork = Module(new AllocateNetwork(param.bankNum, entriesNumPerBank, Some("IntAllocNetwork")))
   private val integerBusyTable = Module(new BusyTable(NRPhyRegs, param.bankNum * 2, btWakeupWidth, RenameWidth))
@@ -219,6 +240,8 @@ class IntegerReservationStationImpl(outer:IntegerReservationStation, param:RsPar
   private var miscPortIdx = 0
   private var bruPortIdx = 0
 
+  var flag = 0
+
   println("\nInteger Reservation Issue Ports Config:")
   for((iss, issuePortIdx) <- issue.zipWithIndex) {
     println(s"Issue Port $issuePortIdx ${iss._2}")
@@ -226,12 +249,12 @@ class IntegerReservationStationImpl(outer:IntegerReservationStation, param:RsPar
       val finalSelectInfo = Wire(Decoupled(new SelectResp(param.bankNum, entriesNumPerBank)))
       val issueDriver = Module(new DecoupledPipeline(param.bankNum, entriesNumPerBank))
       issueDriver.io.earlyWakeUpCancel := io.earlyWakeUpCancel
-      if(iss._2.hasJmp) {
-        finalSelectInfo <> jmpSelectNetwork.io.issueInfo(jmpPortIdx)
-        internalAluJmpWakeupSignals(aluJmpWkpPortIdx) := WakeupQueue(jmpSelectNetwork.io.issueInfo(jmpPortIdx), jmpSelectNetwork.cfg.latency, io.redirect, io.earlyWakeUpCancel, p)
-        jmpPortIdx = jmpPortIdx + 1
-        aluJmpWkpPortIdx = aluJmpWkpPortIdx + 1
-      } else {
+      // if(iss._2.hasJmp) {
+      //   finalSelectInfo <> jmpSelectNetwork.io.issueInfo(jmpPortIdx)
+      //   internalAluJmpWakeupSignals(aluJmpWkpPortIdx) := WakeupQueue(jmpSelectNetwork.io.issueInfo(jmpPortIdx), jmpSelectNetwork.cfg.latency, io.redirect, io.earlyWakeUpCancel, p)
+      //   jmpPortIdx = jmpPortIdx + 1
+      //   aluJmpWkpPortIdx = aluJmpWkpPortIdx + 1
+      // } else {
         if(iss._2.isAluMulDivStd) {
           val selectRespArbiter = Module(new SelectRespArbiter(param.bankNum, entriesNumPerBank, 3, false))
           finalSelectInfo <> selectRespArbiter.io.out
@@ -245,23 +268,34 @@ class IntegerReservationStationImpl(outer:IntegerReservationStation, param:RsPar
           mulWkpPortIdx = mulWkpPortIdx + 1
           selectRespArbiter.io.in(1) <> divSelectNetwork.io.issueInfo(divPortIdx)
           divPortIdx = divPortIdx + 1
-          XSPerfAccumulate(s"iss_${issuePortIdx}_${iss._2.name}_conflict", Cat(selectRespArbiter.io.in.map(_.valid)).andR)
-        } else if(iss._2.isAluBruMisc) {
+          XSPerfAccumulate(s"iss_${issuePortIdx}_${iss._2.name}_conflict", PopCount(selectRespArbiter.io.in.map(_.valid)) >= 2.U)
+          XSPerfAccumulate(s"iss_${issuePortIdx}_Alu", finalSelectInfo.bits.info.fuType === FuType.alu && finalSelectInfo.fire)
+          XSPerfAccumulate(s"iss_${issuePortIdx}_Mul", finalSelectInfo.bits.info.fuType === FuType.mul && finalSelectInfo.fire)
+          XSPerfAccumulate(s"iss_${issuePortIdx}_Div", finalSelectInfo.bits.info.fuType === FuType.div && finalSelectInfo.fire)
+        } else if(iss._2.isBruJmpMisc) {
           val selectRespArbiter = Module(new SelectRespArbiter(param.bankNum, entriesNumPerBank, 3, false))
           finalSelectInfo <> selectRespArbiter.io.out
-          selectRespArbiter.io.in(1) <> aluSelectNetwork.io.issueInfo(aluPortIdx)
+          selectRespArbiter.io.in(0) <> bruSelectNetwork.io.issueInfo(bruPortIdx)
+          bruPortIdx = bruPortIdx + 1
+          selectRespArbiter.io.in(1) <> jmpSelectNetwork.io.issueInfo(jmpPortIdx)
+          internalAluJmpWakeupSignals(aluJmpWkpPortIdx) := WakeupQueue(jmpSelectNetwork.io.issueInfo(jmpPortIdx), jmpSelectNetwork.cfg.latency, io.redirect, io.earlyWakeUpCancel, p)
+          jmpPortIdx = jmpPortIdx + 1
+          aluJmpWkpPortIdx = aluJmpWkpPortIdx + 1
+          selectRespArbiter.io.in(2) <> miscSelectNetwork.io.issueInfo(miscPortIdx)
+          miscPortIdx = miscPortIdx + 1
+          XSPerfAccumulate(s"iss_${issuePortIdx}_${iss._2.name}_conflict", PopCount(selectRespArbiter.io.in.map(_.valid)) >= 2.U)
+          XSPerfAccumulate(s"iss_${issuePortIdx}_Bru", finalSelectInfo.bits.info.fuType === FuType.bru && finalSelectInfo.fire)
+          XSPerfAccumulate(s"iss_${issuePortIdx}_Misc", (finalSelectInfo.bits.info.fuType === FuType.csr || finalSelectInfo.bits.info.fuType === FuType.fence || finalSelectInfo.bits.info.fuType === FuType.mou) && finalSelectInfo.fire)
+        } else if(iss._2.isAlu) {
+          finalSelectInfo <> aluSelectNetwork.io.issueInfo(aluPortIdx)
           internalAluJmpWakeupSignals(aluJmpWkpPortIdx) := WakeupQueue(aluSelectNetwork.io.issueInfo(aluPortIdx), aluSelectNetwork.cfg.latency, io.redirect, io.earlyWakeUpCancel, p)
           aluPortIdx = aluPortIdx + 1
           aluJmpWkpPortIdx = aluJmpWkpPortIdx + 1
-          selectRespArbiter.io.in(0) <> bruSelectNetwork.io.issueInfo(bruPortIdx)
-          bruPortIdx = bruPortIdx + 1
-          selectRespArbiter.io.in(2) <> miscSelectNetwork.io.issueInfo(miscPortIdx)
-          miscPortIdx = miscPortIdx + 1
-          XSPerfAccumulate(s"iss_${issuePortIdx}_${iss._2.name}_conflict", Cat(selectRespArbiter.io.in.map(_.valid)).andR)
+          XSPerfAccumulate(s"iss_${issuePortIdx}_Alu", finalSelectInfo.bits.info.fuType === FuType.alu && finalSelectInfo.fire)
         } else {
           require(false, "Unknown Exu complex!")
         }
-      }
+      //}
       XSPerfAccumulate(s"iss_${issuePortIdx}_${iss._2.name}_issue", finalSelectInfo.fire)
 
       val rsBankRen = Mux(issueDriver.io.enq.fire, finalSelectInfo.bits.bankIdxOH, 0.U)

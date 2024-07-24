@@ -54,9 +54,6 @@ case class ExuComplexParam
   val intSrcNum:Int = exuConfigs.map(_.intSrcNum).max
   val fpSrcNum:Int = exuConfigs.map(_.fpSrcNum).max
 
-  val isAluDiv:Boolean = hasAlu && hasDiv
-  val isAluMisc:Boolean = hasAlu && hasMisc
-  val isAluMul:Boolean = hasAlu && hasMul
   val isFmac:Boolean = hasFmac && !hasFdiv && !hasFmisc
   val isFmaDiv:Boolean = hasFmac && hasFdiv
   val isFmaMisc:Boolean = hasFmac && hasFmisc
@@ -64,7 +61,8 @@ case class ExuComplexParam
   val isStd:Boolean = hasStd
   val isLdu:Boolean = hasLoad
   val isAluMulDivStd: Boolean = hasAlu && hasMul && hasDiv
-  val isAluBruMisc: Boolean = hasAlu && hasBru && hasMisc
+  val isBruJmpMisc: Boolean = hasBru && hasMisc && hasJmp
+  val isAlu: Boolean = hasAlu && !hasMul && !hasDiv
 
   val needToken:Boolean = exuConfigs.map(_.needToken).reduce(_||_)
 

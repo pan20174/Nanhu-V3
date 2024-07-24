@@ -20,7 +20,7 @@
 package xiangshan.backend.execute.exublock
 
 import org.chipsalliance.cde.config.Parameters
-import xiangshan.backend.execute.exucx.{AluDivComplex, AluBruMiscComplex, AluMulComplex, JmpComplex, AluMulDivStdComplex}
+import xiangshan.backend.execute.exucx._
 import freechips.rocketchip.diplomacy.LazyModule
 import chisel3._
 import chisel3.util._
@@ -35,15 +35,12 @@ import xiangshan.Redirect
 import xiangshan.FuType
 
 class IntegerBlock(implicit p:Parameters) extends BasicExuBlock {
-  println("IntegerBlock's structure:")
-  println("jmpNum           = " + jmpNum)
-  println("aluMulDivStdNum  = " + aluMulDivStdNum)
-  println("aluBruMiscNum    = " + aluBruMiscNum)
-  val jmps          = Seq.tabulate(jmpNum)          (idx => LazyModule(new JmpComplex(idx, 0)))
-  val aluMulDivStds = Seq.tabulate(aluMulDivStdNum) (idx => LazyModule(new AluMulDivStdComplex(idx, 0)))
-  val aluBruMiscs   = Seq.tabulate(aluBruMiscNum)   (idx => LazyModule(new AluBruMiscComplex(idx, 0)))
+  //val jmps = Seq.tabulate(jmpNum)(idx => LazyModule(new JmpComplex(idx, 0)))
+  val aluMulDivStds = Seq.tabulate(aluMulDivStdNum)(idx => LazyModule(new AluMulDivStdComplex(idx, 0)))
+  val alus = Seq.tabulate(aluNum)(idx => LazyModule(new AluComplex(idx, 0)))
+  val bruJmpMiscs = Seq.tabulate(bruJmpMiscNum)(idx => LazyModule(new BruJmpMiscComplex(idx, 0)))
 
-  val intComplexes = aluMulDivStds ++ aluBruMiscs ++ jmps
+  val intComplexes = alus ++ bruJmpMiscs ++ aluMulDivStds
   intComplexes.foreach(exucx => {
     exucx.issueNode :*= issueNode
     writebackNode :=* exucx.writebackNode
@@ -67,14 +64,14 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
   fence.io.redirectIn := Pipe(redirectIn)
   csr.io.redirectIn   := Pipe(redirectIn)
 
-  (outer.aluMulDivStds ++ outer.aluBruMiscs ++ outer.jmps)
-    .foreach(cplx => cplx.module.bypassIn.zip(outer.aluMulDivStds.map(_.module.io.bypassOut))
-      .foreach({ case (a, b) => a := b }))
+  // (outer.aluMulDivStds ++ outer.bruMiscs ++ outer.jmps ++ outer.alus)
+  //   .foreach(cplx => cplx.module.bypassIn.zip(outer.aluMulDivStds.map(_.module.io.bypassOut))
+  //     .foreach({ case (a, b) => a := b }))
 
   fence.io.out.ready := true.B
   csr.io.out.ready := true.B
 
-  val miscNum = outer.aluBruMiscs.length
+  val miscNum = outer.bruJmpMiscs.length
   println("intBlock has " + miscNum + " misc")
 
   io.fenceio.sfence         := fence.sfence
@@ -84,7 +81,7 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
   fence.disableSfence       := csr.csrio.disableSfence
   fence.priviledgeMode      := csr.csrio.priviledgeMode
 
-  outer.aluBruMiscs.foreach {
+  outer.bruJmpMiscs.foreach {
     case md => {
       md.module.io.issueToCSR.ready := csr.io.in.ready
       md.module.io.issueToFence.ready := fence.io.in.ready
@@ -93,8 +90,8 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     }
   }
 
-  val fenceInHitVec = outer.aluBruMiscs.map(_.module.io.issueToFence.valid)
-  val fenceInVec    = outer.aluBruMiscs.map(_.module.io.issueToFence.bits)
+  val fenceInHitVec = outer.bruJmpMiscs.map(_.module.io.issueToFence.valid)
+  val fenceInVec    = outer.bruJmpMiscs.map(_.module.io.issueToFence.bits)
   fence.io.in.valid := fenceInHitVec.reduce(_||_)
   fence.io.in.bits  := Mux1H(fenceInHitVec, fenceInVec)
 
@@ -103,7 +100,7 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     fenceInVecReg := VecInit(fenceInHitVec)
   }
 
-  outer.aluBruMiscs.map(_.module.io.writebackFromFence).zip(outer.aluBruMiscs.map(_.module.io.redirectFromFence)).zip(fenceInVecReg).foreach {
+  outer.bruJmpMiscs.map(_.module.io.writebackFromFence).zip(outer.bruJmpMiscs.map(_.module.io.redirectFromFence)).zip(fenceInVecReg).foreach {
     case((wb, r), en) => {
       wb.valid  := en && fence.io.out.valid
       wb.bits   := fence.io.out.bits
@@ -112,12 +109,12 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     }
   }
 
-  val csrInHitVec = outer.aluBruMiscs.map(_.module.io.issueToCSR.valid)
-  val csrInVec    = outer.aluBruMiscs.map(_.module.io.issueToCSR.bits)
+  val csrInHitVec = outer.bruJmpMiscs.map(_.module.io.issueToCSR.valid)
+  val csrInVec    = outer.bruJmpMiscs.map(_.module.io.issueToCSR.bits)
   csr.io.in.valid := csrInHitVec.reduce(_||_)
   csr.io.in.bits  := Mux1H(csrInHitVec, csrInVec)
 
-  outer.aluBruMiscs.map(_.module.io.writebackFromCSR).zip(outer.aluBruMiscs.map(_.module.io.redirectFromCSR)).zip(outer.aluBruMiscs.map(_.module.io.issueToCSR.valid)).foreach {
+  outer.bruJmpMiscs.map(_.module.io.writebackFromCSR).zip(outer.bruJmpMiscs.map(_.module.io.redirectFromCSR)).zip(outer.bruJmpMiscs.map(_.module.io.issueToCSR.valid)).foreach {
     case ((wb, r), en) => {
       wb.valid  := csr.io.out.valid && en
       wb.bits   := csr.io.out.bits
@@ -126,8 +123,8 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     }
   }
 
-  val mouInHitVec = outer.aluBruMiscs.map(_.module.io.issueToMou.valid)
-  val mouInVec    = outer.aluBruMiscs.map(_.module.io.issueToMou.bits)
+  val mouInHitVec = outer.bruJmpMiscs.map(_.module.io.issueToMou.valid)
+  val mouInVec    = outer.bruJmpMiscs.map(_.module.io.issueToMou.bits)
   io.issueToMou.valid := mouInHitVec.reduce(_||_)
   io.issueToMou.bits  := Mux1H(mouInHitVec, mouInVec)
 
@@ -136,16 +133,16 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     mouInVecReg := VecInit(fenceInHitVec)
   }
 
-  val mouReadyVec = outer.aluBruMiscs.map(_.module.io.writebackFromMou.ready)
+  val mouReadyVec = outer.bruJmpMiscs.map(_.module.io.writebackFromMou.ready)
   io.writebackFromMou.ready := Mux1H(mouInHitVec, mouReadyVec)
-  outer.aluBruMiscs.map(_.module.io.writebackFromMou).zip(mouInVecReg).foreach {
+  outer.bruJmpMiscs.map(_.module.io.writebackFromMou).zip(mouInVecReg).foreach {
     case(wb, en) => {
       wb.valid  := en && io.writebackFromMou.valid
       wb.bits   := io.writebackFromMou.bits
     }
   }
 
-  outer.aluBruMiscs.foreach(misc => misc.module.io.csrIsPerfCnt := csr.csrio.isPerfCnt)
+  outer.bruJmpMiscs.foreach(misc => misc.module.io.csrIsPerfCnt := csr.csrio.isPerfCnt)
 
   csr.csrio <> io.csrio
   csr.csrio.vcsr.robWb.vxsat            := io.csrio.vcsr.robWb.vxsat
@@ -157,12 +154,16 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
   io.csrio.customCtrl                   := DelayN(csr.csrio.customCtrl, 2)
   csr.csrio.exception                   := Pipe(io.csrio.exception)
 
-  val jmp_module = outer.jmps.head.module
-  val fdiUJumpExcpVAddr = RegEnable(jmp_module.io.fdicallJumpExcpIO.target, jmp_module.io.fdicallJumpExcpIO.isJumpExcp)
+  outer.aluMulDivStds.foreach(_.module.io.csr_frm := csr.csrio.fpu.frm)
 
+  private val jmps = outer.bruJmpMiscs.map(_.module)
+  private val fdiUJumpExcpVec = WireInit(VecInit(jmps.map(_.io.fdicallJumpExcpIO.isJumpExcp)))
+  private val fdiUJumpExcpVAddrVec = WireInit(VecInit(jmps.map(_.io.fdicallJumpExcpIO.target)))
+  private val fdiUJumpExcpVAddr = RegEnable(Mux1H(fdiUJumpExcpVec, fdiUJumpExcpVAddrVec), fdiUJumpExcpVec.reduce(_||_))
   // FDICALL.JR will write FDIReturnPC CSR
-  private val fdicallValid     = RegNext(jmp_module.io.fdicallJumpExcpIO.isFDICall, false.B)
-  private val fdicallTargetReg = RegEnable(jmp_module.io.fdicallJumpExcpIO.target, jmp_module.io.fdicallJumpExcpIO.isFDICall)
+  private val fdicallValidVec  = WireInit(VecInit(jmps.map(_.io.fdicallJumpExcpIO.isFDICall)))
+  private val fdicallValid     = RegNext(fdicallValidVec.reduce(_||_), false.B)
+  private val fdicallTargetReg = RegEnable(Mux1H(fdicallValidVec, fdiUJumpExcpVAddrVec), fdicallValidVec.reduce(_||_))
   when (fdicallValid) {
     csr.io.in.valid                   := true.B
     csr.io.in.bits.src(0)             := fdicallTargetReg
@@ -171,11 +172,29 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     csr.io.in.bits.uop.ctrl.fuOpType  := CSROpType.wrt
   }
 
-  csr.csrio.customCtrl.distribute_csr <> jmp_module.io.fdicallDistributedCSR
+  jmps.map(_.io.fdicallDistributedCSR).foreach(_ := csr.csrio.customCtrl.distribute_csr)
+
   csr.csrio.memExceptionVAddr :=
     Mux(csr.csrio.exception.bits.uop.cf.exceptionVec(fdiUJumpFault),
       fdiUJumpExcpVAddr, io.csrio.memExceptionVAddr)
 
-  outer.aluMulDivStds.foreach(_.module.io.csr_frm := csr.csrio.fpu.frm)
-  io.prefetchI := outer.jmps.head.module.io.prefetchI
+  val prefetchIQ = Seq.tabulate(outer.bruJmpMiscs.length)(i => Module(new Queue(UInt(p(XSCoreParamsKey).XLEN.W), 2)))
+  prefetchIQ.zip(outer.bruJmpMiscs).foreach {
+    case (q, jmp) => {
+      q.io.enq.valid := jmp.module.io.prefetchI.valid
+      q.io.enq.bits := jmp.module.io.prefetchI.bits
+    }
+  }
+
+  val prefetchIQArb = Module(new RRArbiter(UInt(p(XSCoreParamsKey).XLEN.W), outer.bruJmpMiscs.length))
+  prefetchIQArb.io.in.zip(prefetchIQ.map(_.io.deq)).foreach {
+    case (arb, deq) => {
+      arb.bits := deq.bits
+      arb.valid := deq.valid
+      deq.ready := arb.ready
+    }
+  }
+  io.prefetchI.bits := prefetchIQArb.io.out.bits
+  io.prefetchI.valid := prefetchIQArb.io.out.valid
+  prefetchIQArb.io.out.ready := true.B
 }
