@@ -228,6 +228,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rat.io.rabCommits     := rabCommitScalar
   rat.io.intRenamePorts := rename.io.intRenamePorts
   rat.io.fpRenamePorts  := rename.io.fpRenamePorts
+  rename.io.int_need_free := rat.io.int_need_free
+  rename.io.int_old_pdest := rat.io.int_old_pdest
   rat.io.diffCommits.foreach(_ := rob.io.diffCommits.get)
   //for debug
   io.debug_int_rat  := rat.io.debug_int_rat

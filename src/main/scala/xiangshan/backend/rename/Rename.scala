@@ -57,6 +57,9 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     val fpReadPorts   = Vec(RenameWidth, Vec(4, Input(UInt(PhyRegIdxWidth.W))))
     val intRenamePorts  = Vec(RenameWidth, Output(new RatWritePort))
     val fpRenamePorts   = Vec(RenameWidth, Output(new RatWritePort))
+    // from rename table
+    val int_old_pdest = Vec(RabCommitWidth, Input(UInt(PhyRegIdxWidth.W)))
+    val int_need_free = Vec(RabCommitWidth, Input(Bool()))
     // to dispatch1
     val out = Vec(RenameWidth, DecoupledIO(new MicroOp))
     // enq Rob
@@ -71,7 +74,6 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
 
   // create free list and rat
   val intFreeList = Module(new MEFreeList(NRPhyRegs))
-  val intRefCounter = Module(new RefCounter(NRPhyRegs))
   val fpFreeList = Module(new StdFreeList(NRPhyRegs - 32))
   val vtyperename = Module(new VtypeRename)
   vtyperename.io.redirect := io.redirect
@@ -275,8 +277,6 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     intSpecWen(i) := needIntDest(i) && intFreeList.io.canAllocate && intFreeList.io.doAllocate && !io.robCommits.isWalk && !io.redirect.valid && io.allowIn && io.enqRob.canAccept
     fpSpecWen(i)  := needFpDest(i) && fpFreeList.io.canAllocate && fpFreeList.io.doAllocate && !io.robCommits.isWalk && !io.redirect.valid && io.allowIn && io.enqRob.canAccept
 
-    intRefCounter.io.allocate(i).valid  := intSpecWen(i)
-    intRefCounter.io.allocate(i).bits   := io.out(i).bits.pdest
   }
 
   /**
@@ -403,13 +403,11 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
         fpFreeList.io.freeReq(i)  := commitValid && needDestRegCommit(fp, io.robCommits.info(i))
         fpFreeList.io.freePhyReg(i) := io.robCommits.info(i).old_pdest
       } else { // Integer free list
-        intFreeList.io.freeReq(i) := intRefCounter.io.freeRegs(i).valid
-        intFreeList.io.freePhyReg(i) := intRefCounter.io.freeRegs(i).bits
+        intFreeList.io.freeReq(i) := io.int_need_free(i)
+        intFreeList.io.freePhyReg(i) := RegNext(io.int_old_pdest(i))
       }
     }
 
-    intRefCounter.io.deallocate(i).valid := (commitValid || walkValid) && needDestRegCommit(false, io.robCommits.info(i))
-    intRefCounter.io.deallocate(i).bits := Mux(io.robCommits.isWalk, io.robCommits.info(i).pdest, io.robCommits.info(i).old_pdest)
   }
 
   /*
