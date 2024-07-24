@@ -38,6 +38,7 @@ class RatWritePort(implicit p: Parameters) extends XSBundle {
 
 class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle {
+    val redirect = Input(Bool())
     val readPorts = Vec({if(float) 4 else 3} * RenameWidth, new RatReadPort)
     val specWritePorts = Vec(CommitWidth, Input(new RatWritePort))
     val archWritePorts = Vec(CommitWidth, Input(new RatWritePort))
@@ -78,7 +79,8 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
     val matchVec = t1_wSpec_addr.map(w => w(i))
     val wMatch = ParallelPriorityMux(matchVec.reverse, t1_wSpec.map(_.data).reverse)
     // When there's a flush, we use arch_table to update spec_table.
-    next := Mux(VecInit(matchVec).asUInt.orR, wMatch, spec_table(i))
+    next := Mux(io.redirect, arch_table(i), 
+    Mux(VecInit(matchVec).asUInt.orR, wMatch, spec_table(i)))
   }
   spec_table := spec_table_next
 
@@ -122,6 +124,7 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
 
 class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLogging{
   val io = IO(new Bundle() {
+    val redirect = Input(Bool())
     val robCommits = Flipped(new RobCommitIO)
     val rabCommits = Input(new RabCommitIO)
     val intReadPorts = Vec(RenameWidth, Vec(3, new RatReadPort))
@@ -139,6 +142,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
 
   intRat.io.debug_rdata <> io.debug_int_rat
   intRat.io.readPorts <> io.intReadPorts.flatten
+  intRat.io.redirect := io.redirect
   val intDestValid = io.rabCommits.info.map(_.rfWen)
   for ((arch, i) <- intRat.io.archWritePorts.zipWithIndex) {
     arch.wen  := io.rabCommits.isCommit && io.rabCommits.commitValid(i) && intDestValid(i)
@@ -170,6 +174,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
   // debug read ports for difftest
   fpRat.io.debug_rdata <> io.debug_fp_rat
   fpRat.io.readPorts <> io.fpReadPorts.flatten
+  fpRat.io.redirect := io.redirect
   for ((arch, i) <- fpRat.io.archWritePorts.zipWithIndex) {
     arch.wen  := io.rabCommits.isCommit && io.rabCommits.commitValid(i) && io.rabCommits.info(i).fpWen
     arch.addr := io.rabCommits.info(i).ldest

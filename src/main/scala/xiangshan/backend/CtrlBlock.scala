@@ -223,6 +223,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   }
   rename.io.intRat <> rat.io.intReadPorts
   rename.io.fpRat <> rat.io.fpReadPorts
+  rat.io.redirect       := redirectDelay.valid
   rat.io.robCommits     := commitScalar
   rat.io.rabCommits     := rabCommitScalar
   rat.io.intRenamePorts := rename.io.intRenamePorts

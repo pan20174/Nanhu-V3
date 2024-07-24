@@ -634,7 +634,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // state === s_walk: don't change when walk_no_need && walkFinished
   // state === s_extrawalk: always continue to walk (because it's not possible for walk_no_need)
   val zeroWalkDistance = (deqPtr === io.redirect.bits.robIdx) && (!io.redirect.bits.flushItself())
-  val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
+  // val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
+  val noNeedToWalk = false.B
   // update the state depending on whether there is a redirect
   val stateNext = Mux(io.redirect.valid,
       Mux(noNeedToWalk, s_idle, s_walk),
@@ -686,7 +687,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   allowEnqueuedupRegs.foreach(_ := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U)
 
   val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, deqPtr)
-  val redirectWalkDistance = distanceBetween(currentWalkPtr, io.redirect.bits.robIdx)
+  val redirectWalkDistance = distanceBetween(io.redirect.bits.robIdx, currentWalkPtr)
   when(io.redirect.valid) {
     walkCounter := Mux(state === s_walk,
       redirectWalkDistance - (thisCycleWalkCount - io.redirect.bits.flushItself()),
@@ -729,7 +730,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for (i <- 0 until CommitWidth) {
     val commitValid = io.commits.isCommit && io.commits.commitValid(i)
     val walkValid = io.commits.isWalk && io.commits.walkValid(i) && state =/= s_extrawalk
-    when(commitValid || walkValid || (redirectEnqConflictVec(i) && io.redirect.valid)) {
+    when(commitValid || (redirectEnqConflictVec(i) && io.redirect.valid)) {
       valid(commitReadAddr(i)) := false.B
     }
   }
