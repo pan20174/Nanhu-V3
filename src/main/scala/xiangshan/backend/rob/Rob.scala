@@ -637,7 +637,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
   val noNeedToWalk = false.B
   // update the state depending on whether there is a redirect
-  val stateNext = Mux(io.redirect.valid,
+  val stateNext = Mux(io.redirect.valid || RegNext(io.redirect.valid),
       Mux(noNeedToWalk, s_idle, s_walk),
     Mux(state === s_walk && walkFinished && rab.io.status.walkEnd,
       s_idle, state

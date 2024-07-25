@@ -85,7 +85,7 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
     val matchVec = t1_wSpec_addr.map(w => w(i))
     val wMatch = ParallelPriorityMux(matchVec.reverse, t1_wSpec.map(_.data).reverse)
     // When there's a flush, we use arch_table to update spec_table.
-    next := Mux(io.redirect, arch_table(i), 
+    next := Mux(RegNext(io.redirect), arch_table(i), 
     Mux(VecInit(matchVec).asUInt.orR, wMatch, spec_table(i)))
   }
   spec_table := spec_table_next
