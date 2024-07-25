@@ -485,7 +485,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
   dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec);dontTouch(redirectReadCommitPtr);dontTouch(realRedirectPtr)
   for (i <- 0 until CommitWidth){
-    redirectReadCommitPtr(i) := deqPtr + i.U + PopCount(io.commits.commitValid)
+    redirectReadCommitPtr(i) := deqPtr + i.U + PopCount(deqPtrGenModule.io.commitValid(i))
     redirectEnqConflictVec(i) := (redirectReadCommitPtr(i) >= realRedirectPtr) && (redirectReadCommitPtr(i) < enqPtr)
     redirectBlkCmtVec(i) := redirectEnqConflictVec.take(i+1).reduce(_ || _)
   }
@@ -731,7 +731,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for (i <- 0 until CommitWidth) {
     val commitValid = io.commits.isCommit && io.commits.commitValid(i)
     val walkValid = io.commits.isWalk && io.commits.walkValid(i) && state =/= s_extrawalk
-    when(commitValid || (redirectEnqConflictVec(i) && io.redirect.valid)) {
+    when(commitValid || (redirectBlkCmtVec(i) && io.redirect.valid)) {
       valid(commitReadAddr(i)) := false.B
     }
   }
@@ -839,10 +839,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // rab.io.snpt.snptEnq := false.B
   rab.io.fromRob.walkEnd := state === s_walk && walkFinished
   val commitSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
-  val commitSizeSum = PriorityMuxDefault((io.commits.commitValid.zip(commitSizeSumSeq)), 0.U)
+  val commitSizeSum = PriorityMuxDefault((io.commits.commitValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.commitSize := commitSizeSum
   val walkSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
-  val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)), 0.U)
+  val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.walkSize := walkSizeSum
   rab.io.fromRob.noNeedToWalk := noNeedToWalk
 
