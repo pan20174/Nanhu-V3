@@ -598,8 +598,9 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   pf_miss_req.vaddr := pf_req_s2.getVaddr()
   pf_miss_req.pf_source := pf_req_s2.pf_source.value
 
-  val miss_valid = Cat(Seq(!mainPipe.io.miss_req.valid) ++ ldu.map(!_.io.miss_req.valid))
-  val s2_idx = PriorityEncoder(Reverse(miss_valid))
+  val miss_invalid = Cat(Seq(!mainPipe.io.miss_req.valid) ++ ldu.map(!_.io.miss_req.valid))
+  val pfReqCanSend = miss_invalid.andR
+  // val s2_idx = PriorityEncoder(Reverse(miss_valid))
 
   //----------------------------------------
   // prefetch array
@@ -697,9 +698,9 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   for (w <- 0 until LoadPipelineWidth) { missReqArb.io.in(w + 1) <> ldu(w).io.miss_req }
 
   //prefetch
-  when(pf_req_s2_valid && !s2_hit){
-    missReqArb.io.in(s2_idx).valid := true.B
-    missReqArb.io.in(s2_idx).bits := pf_miss_req
+  when(pf_req_s2_valid && !s2_hit && pfReqCanSend){
+    missReqArb.io.in(0).valid := true.B
+    missReqArb.io.in(0).bits := pf_miss_req
     // assert( !miss_valid(s2_idx) && RegNext(RegNext(pipe_invalid(idx))))
   }
 

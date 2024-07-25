@@ -459,6 +459,8 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   XSPerfAccumulate("penalty_waiting_for_channel_E", io.mem_finish.valid && !io.mem_finish.ready)
   XSPerfAccumulate("penalty_from_grant_to_refill", !w_replace_resp && w_grantlast)
   XSPerfAccumulate("soft_prefetch_number", primary_fire && io.req.bits.source === SOFT_PREFETCH.U)
+  XSPerfAccumulate("hard_prefetch_number", primary_fire && io.req.bits.source === DCACHE_PREFETCH_SOURCE.U)
+  XSPerfAccumulate("load_prefetch_number", primary_fire && io.req.bits.source === LOAD_SOURCE.U)
 
   val (mshr_penalty_sample, mshr_penalty) = TransactionLatencyCounter(RegNext(primary_fire), release_entry)
   XSPerfHistogram("miss_penalty", mshr_penalty, mshr_penalty_sample, 0, 20, 1, true, true)
@@ -572,7 +574,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   }
   val hasData = edge.hasData(io.mem_grant.bits)
 
-  val nMaxPrefetchEntry = 10.U
+  val nMaxPrefetchEntry = 14.U
 
 
   entries.zipWithIndex.foreach {
@@ -692,9 +694,13 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
   XSPerfAccumulate("miss_req", io.req.fire)
   XSPerfAccumulate("miss_req_allocate", io.req.fire && alloc)
+  XSPerfAccumulate("miss_req_allocate_load", io.req.fire && alloc &&  io.req.bits.isLoad)
   XSPerfAccumulate("miss_req_merge_load", io.req.fire && merge && io.req.bits.isLoad)
   XSPerfAccumulate("miss_req_reject_load", io.req.valid && reject && io.req.bits.isLoad)
   XSPerfAccumulate("probe_blocked_by_miss", io.probe_block)
+  XSPerfAccumulate("miss_req_allocate_prefetch", io.req.fire && alloc &&  io.req.bits.isPrefetch)
+  XSPerfAccumulate("miss_req_merge_prefetch", io.req.fire && merge && io.req.bits.isPrefetch)
+  XSPerfAccumulate("miss_req_reject_prefetch", io.req.valid && reject && io.req.bits.isPrefetch)
   val max_inflight = RegInit(0.U((log2Up(cfg.nMissEntries) + 1).W))
   val num_valids = PopCount(~Cat(primary_ready_vec).asUInt)
   when (num_valids > max_inflight) {
@@ -704,7 +710,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   XSPerfAccumulate("max_inflight", max_inflight)
   QueuePerf(cfg.nMissEntries, num_valids, num_valids === cfg.nMissEntries.U)
   io.full := num_valids === cfg.nMissEntries.U
-  XSPerfHistogram("num_valids", num_valids, true.B, 0, cfg.nMissEntries, 1)
+  XSPerfHistogram("num_valids", num_valids, true.B, 0, cfg.nMissEntries + 1, 1)
 
   val perfValidCount = RegNext(PopCount(entries.map(entry => (!entry.io.primary_ready))))
   val perfEvents = Seq(
