@@ -170,7 +170,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   val deqPtrVec = Wire(Vec(CommitWidth, new RobPtr))
   val deqPtr = deqPtrVec(0)
-  dontTouch(enqPtr);dontTouch(deqPtr)
+
   val walkPtrVec = Reg(Vec(CommitWidth, new RobPtr))
   val walkPtr = walkPtrVec(0)
 
@@ -481,9 +481,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   val redirectBlkCmtVec = Wire(Vec(CommitWidth, Bool()))
   val redirectEnqConflictVec = Wire(Vec(CommitWidth, Bool()))
-  val redirectReadCommitPtr = Wire(Vec(CommitWidth, new RobPtr))
+  dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec)
   val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
-  dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec);dontTouch(redirectReadCommitPtr);dontTouch(realRedirectPtr)
   for (i <- 0 until CommitWidth){
     redirectReadCommitPtr(i) := deqPtr + i.U + PopCount(deqPtrGenModule.io.commitValid(i))
     redirectEnqConflictVec(i) := (redirectReadCommitPtr(i) >= realRedirectPtr) && (redirectReadCommitPtr(i) < enqPtr)
