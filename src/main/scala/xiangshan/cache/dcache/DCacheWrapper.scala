@@ -727,8 +727,8 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 //  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
 //  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
 
-  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.valid)
-  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.valid)
+  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.fire)
+  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.fire)
 
 
 
