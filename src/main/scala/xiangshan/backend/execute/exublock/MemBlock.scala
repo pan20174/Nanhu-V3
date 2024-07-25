@@ -358,8 +358,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 
       l1Prefetcher
   }
-
-  val l1PfReqQ  = Module(new Queue(new L1PrefetchReq(), 16, flow = true, pipe = true))
+  val pfQueueSize = 1
+  val l1PfReqQ  = Module(new Queue(new L1PrefetchReq(), pfQueueSize, flow = true, pipe = true))
   l1PrefetcherOpt match {
     // case Some(pf) => l1PfReqQ.io.enq <> Pipeline(in = pf.io.l1_req, depth = 1, pipe = false, name = Some("pf_queue_to_ldu_reg"))
     case Some(pf) => l1PfReqQ.io.enq <> pf.io.l1_req
@@ -369,7 +369,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   }
   l1_pf_req.valid := l1PfReqQ.io.deq.valid
   l1_pf_req.bits := l1PfReqQ.io.deq.bits
-  l1PfReqQ.io.deq.ready := Mux(l1PfReqQ.io.count === 16.U && l1PfReqQ.io.enq.valid, true.B, l1_pf_req.ready)
+  l1PfReqQ.io.deq.ready := Mux(l1PfReqQ.io.count === pfQueueSize.U && l1PfReqQ.io.enq.valid, true.B, l1_pf_req.ready)
 
   dcache.io.pf_req <> l1_pf_req
   
