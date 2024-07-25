@@ -481,6 +481,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   val redirectBlkCmtVec = Wire(Vec(CommitWidth, Bool()))
   val redirectEnqConflictVec = Wire(Vec(CommitWidth, Bool()))
+  val redirectReadCommitPtr = Wire(Vec(CommitWidth, new RobPtr()))
   dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec)
   val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
   for (i <- 0 until CommitWidth){
