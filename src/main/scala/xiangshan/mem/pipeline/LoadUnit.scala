@@ -596,8 +596,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s3_alreadyFastRep = RegNext(io.fastReplayOut.valid)
   dontTouch(s3_alreadyFastRep)
-  io.feedbackSlow.valid := !s3_in.bits.rsHasFeedback &&
-    s3_in.valid &&
+  io.feedbackSlow.valid := s3_in.valid &&
     !s3_in.bits.replay.isReplayQReplay &&
     !s3_in.bits.uop.robIdx.needFlush(redirectReg("loadS3")) &&
     !s3_alreadyFastRep
