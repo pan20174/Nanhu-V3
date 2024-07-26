@@ -497,8 +497,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     } else {
       intrEnable || deqHasException
     }
-    io.commits.commitValid(i) := deqPtrGenModule.io.commitValid(i) && !isBlocked && !(redirectBlkCmtVec(i) && io.redirect.valid)
-    io.commits.walkValid(i) := canWalkVec(i)
+    io.commits.commitValid(i) := deqPtrGenModule.io.commitValid(i) && !isBlocked && !(redirectBlkCmtVec(i) && io.redirect.valid) && (state === s_idle)
+    io.commits.walkValid(i) := canWalkVec(i) && (state =/= s_idle)
     io.commits.info(i).pc := debug_microOp(deqPtrVec(i).value).cf.pc
     io.commits.info(i).connectEntryData(entryDataRead(i))
     io.commits.info(i).vecWen := commits_vec(i)
@@ -694,8 +694,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val redirectWalkDistance = distanceBetween(io.redirect.bits.robIdx, currentWalkPtr)
   when(io.redirect.valid) {
     walkCounter := Mux(state === s_walk,
-      redirectWalkDistance - (thisCycleWalkCount - io.redirect.bits.flushItself()),
-      redirectWalkDistance + io.redirect.bits.flushItself()
+      redirectWalkDistance - (thisCycleWalkCount - !io.redirect.bits.flushItself()),
+      redirectWalkDistance + !io.redirect.bits.flushItself()
     )
     XSError(state === s_walk && thisCycleWalkCount < io.redirect.bits.flushItself(),
       p"walk distance error ($thisCycleWalkCount < ${io.redirect.bits.flushItself()}\n")
