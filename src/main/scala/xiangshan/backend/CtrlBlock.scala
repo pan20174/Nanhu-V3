@@ -145,6 +145,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   private val memDispatch2Rs = Module(new MemDispatch2Rs)
 
   //DispatchQueue
+  private val intDq = Module(new DispatchQueue(RenameWidth * 2, RenameWidth, intDispatch._2.bankNum))
+  private val fpDq = Module(new DispatchQueue(RenameWidth * 2, RenameWidth, fpDispatch._2.bankNum))
   private val lsDq = Module(new DispatchQueue(RenameWidth * 2, RenameWidth, lsDispatch._2.bankNum))
 
   //ROB
@@ -288,14 +290,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rename.io.vcsrio      <> io.vcsrToRename
   rename.io.vlUpdate    := Pipe(wbMergeBuffer.io.vlUpdate, 2)
   rename.io.enqRob      <> rob.io.enq
-
-  //pipeline between rename and dispatch
-  private val flushRenamePipe = Wire(Bool())
-  for (d <- 0 until RenameWidth) {
-    for (i <- 0 until RenameWidth) {
-      PipelineConnect(rename.io.out(i), dispatch.io.fromRename(d)(i), dispatch.io.recv(i), flushRenamePipe)
-    }
-  }
+  rename.io.out         <> dispatch.io.fromRename
 
   //vector instr from scalar
   require(RenameWidth == VIDecodeWidth)
@@ -341,11 +336,19 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   dispatch.io.hartId := io.hartId
   dispatch.io.redirect := redirectDelay
+  intDq.io.enq.req := dispatch.io.toIntDq.req
+  intDq.io.enq.needAlloc := dispatch.io.toIntDq.needAlloc
+  fpDq.io.enq.req := dispatch.io.toFpDq.req
+  fpDq.io.enq.needAlloc := dispatch.io.toFpDq.needAlloc
   lsDq.io.enq.req := dispatch.io.toLsDq.req
   lsDq.io.enq.needAlloc := dispatch.io.toLsDq.needAlloc
   for (i <- 1 until DecodeWidth) {
+    dispatch.io.toIntDq.canAccept(i) := intDq.io.enq.canAccept_dup(i-1)
+    dispatch.io.toFpDq.canAccept(i) := fpDq.io.enq.canAccept_dup(i-1)
     dispatch.io.toLsDq.canAccept(i) := lsDq.io.enq.canAccept_dup(i-1)
   }
+  dispatch.io.toIntDq.canAccept(0) := intDq.io.enq.canAccept
+  dispatch.io.toFpDq.canAccept(0) := fpDq.io.enq.canAccept
   dispatch.io.toLsDq.canAccept(0) := lsDq.io.enq.canAccept
   dispatch.io.allocPregs <> io.allocPregs
 //  dispatch.io.singleStep := RegNext(io.csrCtrl.singlestep)
@@ -354,23 +357,15 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   private val redirectDelay_dup_0 = Pipe(io.redirectIn)
   private val redirectDelay_dup_3 = Pipe(io.redirectIn)
   private val redirectDelay_dup_4 = Pipe(io.redirectIn)
+  intDq.io.redirect := redirectDelay_dup_0
+  intDq.io.redirect_dup := redirectDelay_dup_3
+  fpDq.io.redirect := redirectDelay_dup_0
+  fpDq.io.redirect_dup := redirectDelay_dup_3
   lsDq.io.redirect := redirectDelay_dup_0
   lsDq.io.redirect_dup := redirectDelay_dup_3
 
-  fpDeq.zip(dispatch.io.toFpDq.req).foreach {
-    case (toExu, fromdisp) => {
-      toExu.valid := fromdisp.valid
-      toExu.bits := fromdisp.bits
-    }
-  }
-  dispatch.io.toFpDq.canAccept.map(rdy => rdy := fpDeq.map(_.ready).reduce(_ && _))
-  intDeq.zip(dispatch.io.toIntDq.req).foreach {
-    case (toExu, fromdisp) => {
-      toExu.valid := fromdisp.valid
-      toExu.bits := fromdisp.bits
-    }
-  }
-  dispatch.io.toIntDq.canAccept.map(rdy => rdy := intDeq.map(_.ready).reduce(_ && _))
+  intDq.io.deq <> intDeq
+  fpDq.io.deq <> fpDeq
 
   //mem and vmem dispatch merge
   memDqArb.io.memIn <> lsDq.io.deq
@@ -508,7 +503,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   private val decodeInWithBubble = PopCount(io.frontend.cfVec.zipWithIndex.map{case (decin,i) => decin.ready && !decin.valid})
   private val renameInWithBubble = PopCount(rename.io.in.zipWithIndex.map{case (renin,i) => renin.ready && !renin.valid})
-  private val dispatchInWithBubble = PopCount(dispatch.io.fromRename(0).zipWithIndex.map{case (disin,i) => disin.ready && !disin.valid})
+  private val dispatchInWithBubble = PopCount(dispatch.io.fromRename.zipWithIndex.map{case (disin,i) => disin.ready && !disin.valid})
 
   if(printEventCoding){
     XSPerfAccumulate("decodeInWithBubbleNum", decodeInWithBubble)
