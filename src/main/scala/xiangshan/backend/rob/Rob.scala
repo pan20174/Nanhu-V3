@@ -485,7 +485,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec)
   val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
   for (i <- 0 until CommitWidth){
-    redirectReadCommitPtr(i) := deqPtr + i.U + PopCount(deqPtrGenModule.io.commitValid(i))
+    redirectReadCommitPtr(i) := deqPtrVec_next.head + i.U
     redirectEnqConflictVec(i) := (redirectReadCommitPtr(i) >= realRedirectPtr) && (redirectReadCommitPtr(i) < enqPtr)
     redirectBlkCmtVec(i) := redirectEnqConflictVec.take(i+1).reduce(_ || _)
   }
@@ -638,7 +638,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // val noNeedToWalk = zeroWalkDistance && ((state === s_idle) || (state === s_walk && walkFinished))
   val noNeedToWalk = false.B
   // update the state depending on whether there is a redirect
-  val stateNext = Mux(io.redirect.valid,
+  val stateNext = Mux(io.redirect.valid || RegNext(io.redirect.valid),
       Mux(noNeedToWalk, s_idle, s_walk),
     Mux(state === s_walk && walkFinished && rab.io.status.walkEnd,
       s_idle, state
@@ -675,7 +675,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val walkPtrVec_next = Mux(io.redirect.valid && state =/= s_extrawalk,
     Mux(state === s_walk,
       VecInit(walkPtrVec.map(_ + thisCycleWalkCount)),
-      VecInit((0 until CommitWidth).map(i => deqPtr + (i).U + PopCount(io.commits.commitValid)))
+      VecInit((0 until CommitWidth).map(i => deqPtrVec_next.head + (i).U))
     ),
     Mux(state === s_walk, VecInit(walkPtrVec.map(_ + canWalkNum)), walkPtrVec)
   )
@@ -687,7 +687,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   allowEnqueue := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U
   allowEnqueuedupRegs.foreach(_ := (numValidEntries + enqNum) <= (RobSize - RenameWidth).U)
 
-  val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, deqPtr + PopCount(io.commits.commitValid))
+  val currentWalkPtr = Mux(state === s_walk || state === s_extrawalk, walkPtr, deqPtrVec_next.head)
   val redirectWalkDistance = distanceBetween(io.redirect.bits.robIdx, currentWalkPtr)
   when(io.redirect.valid) {
     walkCounter := Mux(state === s_walk,
