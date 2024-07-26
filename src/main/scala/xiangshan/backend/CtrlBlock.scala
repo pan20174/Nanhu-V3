@@ -394,7 +394,6 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   }.elsewhen(io.preWalk.valid) {
     pipeHolds_dup.foreach(_ := true.B)
   }
-  flushRenamePipe := robRedirect.valid
   private val preWalkDbgValid = RegInit(false.B)
   private val preWalkDbgBits = RegEnable(io.preWalk.bits, io.preWalk.valid)
   when(robRedirect.valid) {
