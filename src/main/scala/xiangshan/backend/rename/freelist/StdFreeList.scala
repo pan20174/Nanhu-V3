@@ -32,7 +32,7 @@ class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) 
   val headPtrOH = RegInit(1.U(size.W))
   val headPtrOHShift = CircularShift(headPtrOH)
   // may shift [0, RenameWidth] steps
-  val headPtrOHVec = VecInit.tabulate(RenameWidth + 1)(headPtrOHShift.left)
+  val headPtrOHVec = VecInit.tabulate(CommitWidth + 1)(headPtrOHShift.left)
   XSError(headPtr.toOH =/= headPtrOH, p"wrong one-hot reg between $headPtr and $headPtrOH")
   val lastTailPtr = RegInit(FreeListPtr(true, 0)) // tailPtr in the last cycle (need to add freeReqReg)
   val tailPtr = Wire(new FreeListPtr) // this is the real tailPtr
