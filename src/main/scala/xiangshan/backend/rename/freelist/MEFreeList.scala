@@ -36,7 +36,7 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
   XSError(headPtr.toOH =/= headPtrOH, p"wrong one-hot reg between $headPtr and $headPtrOH")
   val headPtrOHShift = CircularShift(headPtrOH)
   // may shift [0, RenameWidth] steps
-  val headPtrOHVec = VecInit.tabulate(RenameWidth + 1)(headPtrOHShift.left)
+  val headPtrOHVec = VecInit.tabulate(CommitWidth + 1)(headPtrOHShift.left)
   val tailPtr = RegInit(FreeListPtr(false, size - 1))
 
   val archHeadPtr = RegInit(FreeListPtr(false, 0))
