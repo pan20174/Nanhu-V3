@@ -447,7 +447,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.commits.isWalk := (state =/= s_idle)
   io.commits.isCommit := (state === s_idle) && (!blockCommit)
   val canWalkVec = Wire(Vec(CommitWidth, Bool()))
-  val walkCounter = Reg(UInt(log2Up(RobSize + 1).W))
+  val walkCounter = RegInit(0.U(log2Up(RobSize + 1).W))
   val canWalkNum = PopCount(canWalkVec)
   val walkFinished = walkCounter === canWalkNum
   val walk_v = VecInit(walkPtrVec.map(ptr => valid(ptr.value)))
@@ -485,7 +485,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec)
   val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
   for (i <- 0 until CommitWidth){
-    redirectReadCommitPtr(i) := deqPtrVec_next.head + i.U
+    redirectReadCommitPtr(i) := deqPtr + i.U
     redirectEnqConflictVec(i) := (redirectReadCommitPtr(i) >= realRedirectPtr) && (redirectReadCommitPtr(i) < enqPtr)
     redirectBlkCmtVec(i) := redirectEnqConflictVec.take(i+1).reduce(_ || _)
   }
@@ -504,10 +504,13 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     io.commits.info(i).vecWen := commits_vec(i)
     io.commits.robIdx(i) := Mux(state === s_idle, deqPtrVec(i), walkPtrVec(i))
 
-//    io.rblCommits.commitSize := deqPtrGenModule.io.rabCommitSize
-//    io.rblCommits.walkSize := deqPtrGenModule.io.rabCommitSize
-//    io.rblCommits.walkValid := (state =/= s_idle)
-//    io.rblCommits.commitValid := (state === s_idle) && (!blockCommit)
+    when(io.commits.commitValid(i)){
+      assert(io.commits.commitValid.take(i+1).reduce(_ && _), "commit valid must True from idx = 0 to %d", i.U)
+    }
+    // io.rblCommits.commitSize := deqPtrGenModule.io.rabCommitSize
+    // io.rblCommits.walkSize := deqPtrGenModule.io.rabCommitSize
+    // io.rblCommits.walkValid := (state =/= s_idle)
+    // io.rblCommits.commitValid := (state === s_idle) && (!blockCommit)
 
     // when (io.commits.isWalk && state === s_walk && shouldWalkVec(i)) {
     //   XSError(!walk_v(i), s"why not $i???\n")
@@ -720,7 +723,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
    * ----------------------------------------
    */
   val commitReadAddr = Mux(state === s_idle, VecInit(deqPtrVec.map(_.value)), VecInit(walkPtrVec.map(_.value)))
-
+  val commitReadAddrNext = Mux(state === s_idle, VecInit(deqPtrVec.map(_ + CommitWidth.U).map(_.value)), VecInit(walkPtrVec.map(_ + CommitWidth.U).map(_.value)))
   // enqueue logic writes 6 valid
   for (i <- 0 until RenameWidth) {
     when(canEnqueue(i) && !io.redirect.valid) {
@@ -733,6 +736,9 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val walkValid = io.commits.isWalk && io.commits.walkValid(i) && state =/= s_extrawalk
     when(commitValid || (redirectBlkCmtVec(i) && io.redirect.valid)) {
       valid(commitReadAddr(i)) := false.B
+    }
+    when(redirectBlkCmtVec(CommitWidth-1) && io.redirect.valid){
+      valid(commitReadAddrNext(i)) := false.B
     }
   }
 
