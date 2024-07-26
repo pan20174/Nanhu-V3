@@ -482,12 +482,19 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val redirectBlkCmtVec = Wire(Vec(CommitWidth, Bool()))
   val redirectEnqConflictVec = Wire(Vec(CommitWidth, Bool()))
   val redirectReadCommitPtr = Wire(Vec(CommitWidth, new RobPtr()))
+  val redirectBlkCmtVecNextLine = Wire(Vec(CommitWidth, Bool()))
+  val redirectEnqConflictVecNextLine = Wire(Vec(CommitWidth, Bool()))
+  val redirectReadCommitPtrNextLine = Wire(Vec(CommitWidth, new RobPtr()))
   dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec)
+  dontTouch(redirectBlkCmtVecNextLine); dontTouch(redirectEnqConflictVecNextLine)
   val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
   for (i <- 0 until CommitWidth){
     redirectReadCommitPtr(i) := deqPtr + i.U
     redirectEnqConflictVec(i) := (redirectReadCommitPtr(i) >= realRedirectPtr) && (redirectReadCommitPtr(i) < enqPtr)
     redirectBlkCmtVec(i) := redirectEnqConflictVec.take(i+1).reduce(_ || _)
+    redirectReadCommitPtrNextLine(i) := deqPtr + CommitWidth.U + i.U
+    redirectEnqConflictVecNextLine(i) := (redirectReadCommitPtrNextLine(i) >= realRedirectPtr) && (redirectReadCommitPtrNextLine(i) <= enqPtr)
+    redirectBlkCmtVecNextLine(i) := redirectEnqConflictVecNextLine.take(i+1).reduce(_ || _)
   }
 
   for (i <- 0 until CommitWidth) {
@@ -737,7 +744,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     when(commitValid || (redirectBlkCmtVec(i) && io.redirect.valid)) {
       valid(commitReadAddr(i)) := false.B
     }
-    when(redirectBlkCmtVec(CommitWidth-1) && io.redirect.valid){
+    when((redirectBlkCmtVec(CommitWidth-1) || redirectBlkCmtVecNextLine(i)) && io.redirect.valid){
       valid(commitReadAddrNext(i)) := false.B
     }
   }
