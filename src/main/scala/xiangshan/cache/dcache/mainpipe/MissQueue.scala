@@ -538,6 +538,9 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val should_block_d = WireInit(false.B)
   val should_block_d_reg = RegNext(should_block_d, false.B)
 
+  val isAMO = RegInit(false.B)
+
+
   when(io.req.valid){
     assert(PopCount(secondary_ready_vec) <= 1.U)
   }
@@ -567,9 +570,10 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val refill_row_data = io.mem_grant.bits.data
   val (_, _, refill_done, refill_count) = edge.count(io.mem_grant)
 
-  when(io.req.bits.isAMO && io.req.valid){
+  when(io.req.bits.isAMO && io.req.fire){
     refill_data_raw(0) := Cat(io.req.bits.amo_mask, io.req.bits.word_idx)
     refill_data_raw(1) := io.req.bits.amo_data
+    isAMO := true.B
   }
   val hasData = edge.hasData(io.mem_grant.bits)
 
@@ -611,7 +615,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
           }
         }.elsewhen(e.io.req_source === LOAD_SOURCE.U || e.io.req_source === DCACHE_PREFETCH_SOURCE.U) {
           io.mem_grant.ready := !should_block_d && e.io.mem_grant.ready
-          when(io.mem_grant.fire && hasData){
+          when(io.mem_grant.fire && hasData && !isAMO){
             refill_data_raw(refill_count) := refill_row_data
             difftest_data_raw(refill_count) := refill_row_data
             refill_ldq_data_raw(refill_count) := refill_row_data
@@ -667,6 +671,11 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     should_block_d := false.B
   }.otherwise {
     should_block_d := should_block_d_reg
+  }
+
+  //amo 
+  when(io.main_pipe_req.fire){
+    isAMO := false.B
   }
 
 
