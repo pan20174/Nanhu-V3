@@ -101,7 +101,7 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   private val robWalkEndReg = RegInit(false.B)
   private val robWalkEnd = io.fromRob.walkEnd || robWalkEndReg
 
-  when(io.redirect.valid && state =/= s_walk) {
+  when(io.redirect.valid && state === s_idle) {
     robWalkEndReg := false.B
   }.elsewhen(io.fromRob.walkEnd) {
     robWalkEndReg := true.B
@@ -132,12 +132,12 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   val commitSizeNxt = commitSize + newCommitSize - commitCount
   val walkSizeNxt = walkSize + newWalkSize - walkCount
 
-  val newSpecialWalkSize = Mux(io.redirect.valid && state =/= s_walk && !io.snpt.useSnpt, commitSizeNxt, 0.U)
+  val newSpecialWalkSize = Mux(io.redirect.valid && state === s_idle && !io.snpt.useSnpt, commitSizeNxt, 0.U)
   val specialWalkSizeNext = specialWalkSize + newSpecialWalkSize - specialWalkCount
 
-  commitSize := Mux(io.redirect.valid && state =/= s_walk && !io.snpt.useSnpt, 0.U, commitSizeNxt)
+  commitSize := Mux(io.redirect.valid && state === s_idle && !io.snpt.useSnpt, 0.U, commitSizeNxt)
   specialWalkSize := specialWalkSizeNext
-  walkSize := Mux(io.redirect.valid && state =/= s_walk, 0.U, walkSizeNxt)
+  walkSize := Mux(io.redirect.valid && state === s_idle, 0.U, walkSizeNxt)
 
   walkPtrNext := MuxCase(walkPtr, Seq(
     // (state === s_idle && stateNext === s_walk) -> walkPtrSnapshots(snptSelect),
@@ -223,6 +223,8 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   when(io.redirect.valid) {
     when(io.fromRob.noNeedToWalk){
       stateNext := s_idle
+    }.elsewhen(state === s_special_walk && specialWalkEndNext) {
+      stateNext := s_walk
     }.elsewhen(state === s_walk) {
       stateNext := s_walk
     }.elsewhen(io.snpt.useSnpt) {
