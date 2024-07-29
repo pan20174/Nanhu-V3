@@ -41,9 +41,15 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
 
   val archHeadPtr = RegInit(FreeListPtr(false, 0))
   val redirectedHeadPtr = archHeadPtr + PopCount(io.walkReq)
+  dontTouch(redirectedHeadPtr)
   val redirectedHeadPtrOH = (archHeadPtr + PopCount(io.walkReq)).toOH
   val lastCycleRedirect = RegNext(io.redirect, false.B)
-
+  // consider during the walk has another redirect
+  val alreadyInWalk = RegNext(io.walk)
+  val walkHasRedirect = alreadyInWalk && lastCycleRedirect
+  // consider the successive redirect come 
+  val headPtrCanMove = io.redirect && io.walk
+  dontTouch(headPtrCanMove)
   val doWalkRename = io.walk && io.doAllocate && !io.redirect
   val doNormalRename = io.canAllocate && io.doAllocate && !io.redirect
   val doRename = doWalkRename || doNormalRename
@@ -52,6 +58,7 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
     * Allocation: from freelist (same as StdFreelist)
     */
   val phyRegCandidates = VecInit(headPtrOHVec.map(sel => Mux1H(sel, freeList)))
+  dontTouch(phyRegCandidates)
   for (i <- 0 until RenameWidth) {
     // enqueue instr, is move elimination
     io.allocatePhyReg(i) := phyRegCandidates(PopCount(io.allocateReq.take(i)))
@@ -65,11 +72,12 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
   val archHeadPtrNext = Mux(io.rabCommit.isCommit, archHeadPtrNew, archHeadPtr)
   archHeadPtr := archHeadPtrNext
   // update head pointer
-  val numAllocate = PopCount(io.allocateReq)
-  val headPtrNext = Mux(lastCycleRedirect, redirectedHeadPtr, headPtr + numAllocate)
-  val headPtrOHNext = Mux(lastCycleRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
-  headPtr := Mux(doRename, headPtrNext, headPtr)
-  headPtrOH := Mux(doRename, headPtrOHNext, headPtrOH)
+  val numAllocate = Mux(io.walk, PopCount(io.walkReq), PopCount(io.allocateReq))
+  val headPtrNext = Mux(lastCycleRedirect && !walkHasRedirect, redirectedHeadPtr, headPtr + numAllocate)
+  val headPtrOHNext = Mux(lastCycleRedirect && !walkHasRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
+  headPtr := Mux(doRename || headPtrCanMove, headPtrNext, headPtr)
+  headPtrOH := Mux(doRename || headPtrCanMove, headPtrOHNext, headPtrOH)
+  dontTouch(headPtr)
 
 
   /**
