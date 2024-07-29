@@ -123,6 +123,11 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
     }
   }
 
+  when(csr.redirectOutValid && RegNext(csr.csrio.exception.valid)) {
+    outer.bruJmpMiscs(0).module.io.redirectFromCSR.valid := true.B
+    outer.bruJmpMiscs(0).module.io.redirectFromCSR.bits := csr.redirectOut
+  }
+
   val mouInHitVec = outer.bruJmpMiscs.map(_.module.io.issueToMou.valid)
   val mouInVec    = outer.bruJmpMiscs.map(_.module.io.issueToMou.bits)
   io.issueToMou.valid := mouInHitVec.reduce(_||_)
@@ -130,7 +135,7 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
 
   val mouInVecReg = Reg(Vec(miscNum, Bool()))
   when(io.issueToMou.valid) {
-    mouInVecReg := VecInit(fenceInHitVec)
+    mouInVecReg := VecInit(mouInHitVec)
   }
 
   val mouReadyVec = outer.bruJmpMiscs.map(_.module.io.writebackFromMou.ready)
