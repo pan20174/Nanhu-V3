@@ -238,7 +238,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val mmioReq = new UncacheWordIO
     val mmioWb = DecoupledIO(new ExuOutput)
     val mmioPaddr = Output(UInt(PAddrBits.W))
-    val freeNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+    val freeNum = Output(UInt(log2Up(LoadReplayQueueSize + 1).W))
   })
 
   private val counterRegMax = 1024

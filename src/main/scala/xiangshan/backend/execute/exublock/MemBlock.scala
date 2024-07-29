@@ -300,7 +300,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     }))
     val toMemRsInfo = new Bundle() {
       val ldValidNum = Output(UInt())
-      val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+      val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize + 1).W))
     }
   })
   io.lsqVecDeqCnt := DontCare
