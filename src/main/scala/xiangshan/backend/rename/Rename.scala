@@ -96,7 +96,10 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
       fl.io.redirect := io.redirect.valid
       fl.io.walk := io.rabCommits.isWalk
       fl.io.rabCommit := io.rabCommits
-      fl.io.walkReq := io.rabCommits.walkValid
+  }
+  for (i <- 0 until RabCommitWidth) {
+    intFreeList.io.walkReq(i) := io.rabCommits.walkValid(i) && io.rabCommits.info(i).rfWen && !io.rabCommits.info(i).isMove && io.rabCommits.info(i).ldest =/= 0.U
+    fpFreeList.io.walkReq(i) := io.rabCommits.walkValid(i) && io.rabCommits.info(i).fpWen
   }
   // walk has higher priority than allocation and thus we don't use isWalk here
   // only when both fp and int free list and dispatch1 has enough space can we do allocation
