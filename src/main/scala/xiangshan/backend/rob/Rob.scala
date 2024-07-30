@@ -492,25 +492,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   deqPtrGenModule.io.deq_isVec := commits_vec
   deqPtrGenModule.io.deq_needDest := commits_needDest
   deqPtrVec := deqPtrGenModule.io.deqPtrVec
-
-  val redirectBlkCmtVec = Wire(Vec(CommitWidth, Bool()))
-  val redirectEnqConflictVec = Wire(Vec(CommitWidth, Bool()))
-  val redirectReadCommitPtr = Wire(Vec(CommitWidth, new RobPtr()))
-  val redirectBlkCmtVecNextLine = Wire(Vec(CommitWidth, Bool()))
-  val redirectEnqConflictVecNextLine = Wire(Vec(CommitWidth, Bool()))
-  val redirectReadCommitPtrNextLine = Wire(Vec(CommitWidth, new RobPtr()))
-  dontTouch(redirectBlkCmtVec); dontTouch(redirectEnqConflictVec)
-  dontTouch(redirectBlkCmtVecNextLine); dontTouch(redirectEnqConflictVecNextLine)
-  val realRedirectPtr = io.redirect.bits.robIdx + !io.redirect.bits.flushItself()
-  for (i <- 0 until CommitWidth){
-    redirectReadCommitPtr(i) := deqPtr + i.U
-    redirectEnqConflictVec(i) := (redirectReadCommitPtr(i) >= realRedirectPtr) && (redirectReadCommitPtr(i) < enqPtr)
-    redirectBlkCmtVec(i) := redirectEnqConflictVec.take(i+1).reduce(_ || _)
-    redirectReadCommitPtrNextLine(i) := deqPtr + CommitWidth.U + i.U
-    redirectEnqConflictVecNextLine(i) := (redirectReadCommitPtrNextLine(i) >= realRedirectPtr) && (redirectReadCommitPtrNextLine(i) <= enqPtr)
-    redirectBlkCmtVecNextLine(i) := redirectEnqConflictVecNextLine.take(i+1).reduce(_ || _)
-  }
-
+  
   val donotNeedWalk = RegInit(VecInit(Seq.fill(CommitWidth)(false.B)))
   dontTouch(donotNeedWalk)
   when(io.redirect.valid) {
@@ -537,7 +519,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     } else {
       intrEnable || deqHasException
     }
-    io.commits.commitValid(i) := deqPtrGenModule.io.commitValid(i) && !isBlocked && !(redirectBlkCmtVec(i) && io.redirect.valid) && (state === s_idle)
+    io.commits.commitValid(i) := deqPtrGenModule.io.commitValid(i) && !isBlocked && (state === s_idle)
     io.commits.walkValid(i) := canWalkVec(i) && (state =/= s_idle)
     io.commits.info(i).pc := debug_microOp(deqPtrVec(i).value).cf.pc
     io.commits.info(i).connectEntryData(entryDataRead(i))
@@ -776,17 +758,6 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       valid(allocatePtrVec(i).value) := true.B
     }
   }
-  // dequeue/walk logic writes 6 valid, dequeue and walk will not happen at the same time
-  for (i <- 0 until CommitWidth) {
-    val commitValid = io.commits.isCommit && io.commits.commitValid(i)
-    val walkValid = io.commits.isWalk && io.commits.walkValid(i) && state =/= s_extrawalk
-    when(commitValid || (redirectBlkCmtVec(i) && io.redirect.valid)) {
-      valid(commitReadAddr(i)) := false.B
-    }
-    when((redirectBlkCmtVec(CommitWidth-1) || redirectBlkCmtVecNextLine(i)) && io.redirect.valid) {
-      valid(commitReadAddrNext(i)) := false.B
-    }
-  }
   val redirectValidReg = RegNext(io.redirect.valid)
   val redirectBegin = Reg(UInt(log2Up(RobSize).W))
   val redirectEnd = Reg(UInt(log2Up(RobSize).W))
@@ -795,15 +766,23 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     redirectEnd := enqPtr.value
   }
   for (i <- 0 until RobSize) {
-    val needFlush = redirectValidReg && Mux(
-      redirectEnd > redirectBegin,
-      (i.U > redirectBegin) && (i.U < redirectEnd),
-      (i.U > redirectBegin) || (i.U < redirectEnd)
-    )
-    when(needFlush){
+   val needFlush = redirectValidReg && Mux(
+    redirectEnd > redirectBegin,
+    (i.U > redirectBegin) && (i.U < redirectEnd),
+    (i.U > redirectBegin) || (i.U < redirectEnd)
+   )
+   when(needFlush){
+    valid(i) := false.B
+   }
+  // dequeue/walk logic writes 6 valid, dequeue and walk will not happen at the same time
+  for (j <- 0 until CommitWidth) {
+    val commitValid = io.commits.isCommit && io.commits.commitValid(j)
+    val walkValid = io.commits.isWalk && io.commits.walkValid(j) && state =/= s_extrawalk
+    when(commitValid &&(commitReadAddr(j) === i.U)) {
       valid(i) := false.B
     }
   }
+}
 
   // status field: writebacked
   // enqueue logic set 6 writebacked to false
@@ -907,10 +886,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   rab.io.redirect.valid := io.redirect.valid
   // rab.io.snpt.snptEnq := false.B
   rab.io.fromRob.walkEnd := state === s_walk && walkFinished
-  val commitSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
+  val commitSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ +& _)))
   val commitSizeSum = PriorityMuxDefault((io.commits.commitValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.commitSize := commitSizeSum
-  val walkSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
+  val walkSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ +& _)))
   val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.walkSize := walkSizeSum
   rab.io.fromRob.noNeedToWalk := noNeedToWalk
