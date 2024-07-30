@@ -848,10 +848,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   rab.io.redirect.valid := io.redirect.valid
   // rab.io.snpt.snptEnq := false.B
   rab.io.fromRob.walkEnd := state === s_walk && walkFinished
-  val commitSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
+  val commitSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ +& _)))
   val commitSizeSum = PriorityMuxDefault((io.commits.commitValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.commitSize := commitSizeSum
-  val walkSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ + _)))
+  val walkSizeSumSeq = VecInit((0 until CommitWidth).map(i => io.commits.info.take(i+1).map(info => info.realDestNum).reduce(_ +& _)))
   val walkSizeSum = PriorityMuxDefault((io.commits.walkValid.zip(commitSizeSumSeq)).reverse, 0.U)
   rab.io.fromRob.walkSize := walkSizeSum
   rab.io.fromRob.noNeedToWalk := noNeedToWalk
