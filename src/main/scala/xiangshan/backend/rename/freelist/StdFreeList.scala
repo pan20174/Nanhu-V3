@@ -94,8 +94,8 @@ class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) 
   val isNormalAlloc = io.canAllocate && io.doAllocate
   val isAllocate = isWalkAlloc || isNormalAlloc
   val numAllocate = Mux(io.walk, PopCount(io.walkReq), PopCount(io.allocateReq))
-  val headPtrAllocate = Mux(lastCycleRedirect && !walkHasRedirect, redirectedHeadPtr, headPtr + numAllocate)
-  val headPtrOHAllocate = Mux(lastCycleRedirect && !walkHasRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
+  val headPtrAllocate = Mux(lastCycleRedirect, redirectedHeadPtr, headPtr + numAllocate)
+  val headPtrOHAllocate = Mux(lastCycleRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
   val headPtrNext = Mux(isAllocate, headPtrAllocate, headPtr)
   freeRegCnt := Mux(isWalkAlloc && !lastCycleRedirect, distanceBetween(tailPtr, headPtr) - PopCount(io.walkReq),
                 Mux(isNormalAlloc,                     distanceBetween(tailPtr, headPtr) - PopCount(io.allocateReq),
@@ -103,8 +103,8 @@ class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) 
 
   // priority: (1) exception and flushPipe; (2) walking; (3) mis-prediction; (4) normal dequeue
   val realDoAllocate = !io.redirect && isAllocate
-  headPtr := Mux(realDoAllocate || headPtrCanMove, headPtrAllocate, headPtr)
-  headPtrOH := Mux(realDoAllocate || headPtrCanMove, headPtrOHAllocate, headPtrOH)
+  headPtr := Mux(realDoAllocate, headPtrAllocate, headPtr)
+  headPtrOH := Mux(realDoAllocate, headPtrOHAllocate, headPtrOH)
 
 
   XSDebug(p"head:$headPtr tail:$tailPtr\n")

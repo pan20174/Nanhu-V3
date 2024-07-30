@@ -73,10 +73,10 @@ class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) w
   archHeadPtr := archHeadPtrNext
   // update head pointer
   val numAllocate = Mux(io.walk, PopCount(io.walkReq), PopCount(io.allocateReq))
-  val headPtrNext = Mux(lastCycleRedirect && !walkHasRedirect, redirectedHeadPtr, headPtr + numAllocate)
-  val headPtrOHNext = Mux(lastCycleRedirect && !walkHasRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
-  headPtr := Mux(doRename || headPtrCanMove, headPtrNext, headPtr)
-  headPtrOH := Mux(doRename || headPtrCanMove, headPtrOHNext, headPtrOH)
+  val headPtrNext = Mux(lastCycleRedirect, redirectedHeadPtr, headPtr + numAllocate)
+  val headPtrOHNext = Mux(lastCycleRedirect, redirectedHeadPtrOH, headPtrOHVec(numAllocate))
+  headPtr := Mux(doRename, headPtrNext, headPtr)
+  headPtrOH := Mux(doRename, headPtrOHNext, headPtrOH)
   dontTouch(headPtr)
 
 
