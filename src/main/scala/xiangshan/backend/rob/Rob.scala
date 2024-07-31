@@ -703,7 +703,9 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val redirectWalkDistance = distanceBetween(io.redirect.bits.robIdx, currentWalkPtr)
   // now when T cycle redirect coming and state is s_walk, the thisCycleWalkCount set to 0
   // the nested redirect will walk again from deq now
-  val redirectDelay1FlushItself = RegNext(io.redirect.bits.flushItself())
+  val redirectDelay1FlushItself = RegInit(false.B)
+  val redirectDelay1FlushItselfNext = Mux(io.redirect.valid, io.redirect.bits.flushItself(), false.B)
+  redirectDelay1FlushItself := redirectDelay1FlushItselfNext
   when(io.redirect.valid) {
     walkCounter := redirectWalkDistance + !io.redirect.bits.flushItself()
     XSError(state === s_walk && thisCycleWalkCount < redirectDelay1FlushItself,
