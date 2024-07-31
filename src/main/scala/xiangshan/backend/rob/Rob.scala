@@ -815,7 +815,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       // However, we cannot determine whether a load/store instruction is MMIO.
       // Thus, we don't allow load/store instructions to trigger an interrupt.
       // TODO: support non-MMIO load-store instructions to trigger interrupts
-      val allow_interrupts = !CommitType.isLoadStore(io.enq.req(i).bits.ctrl.commitType) || !(io.enq.req(i).bits.ctrl.fuOpType === CSROpType.jmp)
+      val allow_interrupts = !CommitType.isLoadStore(io.enq.req(i).bits.ctrl.commitType) && !(io.enq.req(i).bits.ctrl.fuOpType === CSROpType.jmp)
       interrupt_safe(RegNext(allocatePtrVec(i).value)) := RegNext(allow_interrupts)
     }
   }
