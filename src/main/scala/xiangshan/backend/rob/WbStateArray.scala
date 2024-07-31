@@ -4,13 +4,18 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import xiangshan.{ExuOutput, Redirect, XSBundle, XSModule}
 import freechips.rocketchip.util.SeqToAugmentedSeq
+class EnqReq(implicit p: Parameters) extends XSBundle {
+  val robIdx = new RobPtr
+  val data = UInt(log2Ceil(RenameWidth + 1).W)
+  val block = Bool()
+}
 class WbReq(implicit p: Parameters) extends XSBundle {
   val robIdx = new RobPtr
   val data = UInt(log2Ceil(RenameWidth + 1).W)
 }
 class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle {
-    val enqIn = Input(Vec(enqNum, Valid(new WbReq)))
+    val enqIn = Input(Vec(enqNum, Valid(new EnqReq)))
     val wbIn = Input(Vec(wbNum, Valid(new WbReq)))
     val redirectIn = Input(Vec(redirectNum, Valid(new WbReq)))
     val out = Output(Vec(RobSize, Bool()))
@@ -27,6 +32,7 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
     val enqSel = enq.map(r => r.valid && r.bits.robIdx.value === i.U)
     assert(PopCount(enqSel) <= 1.U, "only 1 entry can be selected whether compress or not")
     val enqData = Mux1H(enqSel, enq.map(_.bits.data))
+    val enqBlock = Mux1H(enqSel, enq.map(_.bits.block))
     val wbSel = wb.map(r => r.valid && r.bits.robIdx.value === i.U && (r.bits.data === 1.U))
     val wbDataNum = PopCount(wbSel)
     val rdcSel = rdc.map(r => r.valid && r.bits.robIdx.value === i.U)
@@ -38,10 +44,10 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
     val wbHit = Cat(wbSel).orR
     val rdcHit = Cat(rdcSel).orR
     when(enqHit) {
-      writebackNumReg(i) := enqData
+      writebackNumReg(i) := Mux(enqBlock, maxWb, enqData)
       mayBeFlushed(i) := false.B
     }.elsewhen(rdcHit) {
-      writebackNumReg(i) := Mux(rdcData===1.U, 0.U, maxWb) 
+      writebackNumReg(i) := Mux(rdcData===1.U, 0.U, maxWb)
       mayBeFlushed(i) := true.B
     }.elsewhen(wbHit) {
       writebackNumReg(i) := Mux(mayBeFlushed(i), maxWb, currentWbNum(i) - wbDataNum)
@@ -57,7 +63,8 @@ class WbStateArray(enqNum:Int, wbNum:Int, redirectNum:Int)(implicit p: Parameter
   def enqueue(v: Bool, addr: RobPtr, block: Bool, data: UInt): Unit = {
     this.io.enqIn(enqIdx).valid := v
     this.io.enqIn(enqIdx).bits.robIdx := addr
-    this.io.enqIn(enqIdx).bits.data := Mux(block, maxWb, data)
+    this.io.enqIn(enqIdx).bits.data := data
+    this.io.enqIn(enqIdx).bits.block := block
     enqIdx = enqIdx + 1
   }
 

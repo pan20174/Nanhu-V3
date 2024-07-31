@@ -701,10 +701,13 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   val currentWalkPtr = Mux(io.redirect.valid, deqPtrVec_next.head, Mux(state === s_walk, walkPtr, deqPtrVec_next.head))
   val redirectWalkDistance = distanceBetween(io.redirect.bits.robIdx, currentWalkPtr)
+  // now when T cycle redirect coming and state is s_walk, the thisCycleWalkCount set to 0
+  // the nested redirect will walk again from deq now
+  val redirectDelay1FlushItself = RegNext(io.redirect.bits.flushItself())
   when(io.redirect.valid) {
     walkCounter := redirectWalkDistance + !io.redirect.bits.flushItself()
-    XSError(state === s_walk && thisCycleWalkCount < io.redirect.bits.flushItself(),
-      p"walk distance error ($thisCycleWalkCount < ${io.redirect.bits.flushItself()}\n")
+    XSError(state === s_walk && thisCycleWalkCount < redirectDelay1FlushItself,
+      p"walk distance error ($thisCycleWalkCount < ${redirectDelay1FlushItself}\n")
   }.elsewhen(state === s_walk) {
     walkCounter := walkCounter - thisCycleWalkCount
     XSInfo(p"rolling back: $enqPtr $deqPtr walk $walkPtr walkcnt $walkCounter\n")
@@ -1051,6 +1054,13 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val executeLatency = commitDebugUop.map(uop => uop.debugInfo.writebackTime - uop.debugInfo.issueTime)
   val rsFuLatency = commitDebugUop.map(uop => uop.debugInfo.writebackTime - uop.debugInfo.enqRsTime)
   val commitLatency = commitDebugUop.map(uop => timer - uop.debugInfo.writebackTime)
+  val nestedRedirect = state === s_walk && io.redirect.valid
+  XSPerfAccumulate("nestedRedirectNum", nestedRedirect)
+  val nestedRedirectWalking = RegInit(false.B)
+  val nestedRedirectWalkingNext = Mux(state === s_walk && io.redirect.valid, true.B, 
+  Mux(state === s_walk && walkFinished && rab.io.status.walkEnd, false.B, nestedRedirectWalking))
+  nestedRedirectWalking := nestedRedirectWalkingNext
+  XSPerfAccumulate("nestedRedirectWalkCycle", nestedRedirectWalking)
 
   def latencySum(cond: Seq[Bool], latency: Seq[UInt]): UInt = {
     cond.zip(latency).map(x => Mux(x._1, x._2, 0.U)).reduce(_ +& _)
