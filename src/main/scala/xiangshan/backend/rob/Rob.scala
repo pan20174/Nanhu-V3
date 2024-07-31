@@ -30,6 +30,7 @@ import xiangshan.backend.writeback._
 import xiangshan.vector._
 import xs.utils.perf.HasPerfLogging
 import xiangshan.VstartType
+import xiangshan.backend.execute.fu.csr.CSROpType
 
 class Rob(implicit p: Parameters) extends LazyModule with HasXSParameter {
   val wbNodeParam = WriteBackSinkParam(name = "ROB", sinkType = WriteBackSinkType.rob)
@@ -441,7 +442,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   }).reduce(_ | _)
   val dirty_vs = (io.commits.isCommit && VecInit(vecWen).asUInt.orR) || io.csr.vstart.valid || io.csr.vxsat.valid
   val dirty_fs = io.commits.isCommit && VecInit(fpWen).asUInt.orR
-  val blockCommit = hasWFI || exceptionWaitingRedirect
+  val trapBlockCommit = hasWFI || exceptionWaitingRedirect
 
   val deqPtrGenModule = Module(new RobCommitHelper)
   val deqPtrVec_next = deqPtrGenModule.io.deqPtrNextVec
@@ -460,7 +461,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   // Commit
   io.commits.isWalk := (state =/= s_idle)
-  io.commits.isCommit := (state === s_idle) && (!blockCommit)
+  io.commits.isCommit := (state === s_idle) && (!trapBlockCommit)
   val walkPtrHead = Wire(new RobPtr)
   val canWalkVec = Wire(Vec(CommitWidth, Bool()))
   val walkCounter = RegInit(0.U(log2Up(RobSize + 1).W))
@@ -488,7 +489,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   deqPtrGenModule.io.intrBitSetReg := intrBitSetReg
   deqPtrGenModule.io.hasNoSpecExec := hasNoSpecExec
   deqPtrGenModule.io.interrupt_safe := interrupt_safe(deqPtr.value)
-  deqPtrGenModule.io.blockCommit := blockCommit
+  deqPtrGenModule.io.blockCommit := trapBlockCommit
   deqPtrGenModule.io.deq_isVec := commits_vec
   deqPtrGenModule.io.deq_needDest := commits_needDest
   deqPtrVec := deqPtrGenModule.io.deqPtrVec
@@ -500,7 +501,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     } else {
       intrEnable || deqHasException
     }
-    io.commits.commitValid(i) := deqPtrGenModule.io.commitValid(i) && !isBlocked && (state === s_idle)
+    io.commits.commitValid(i) := deqPtrGenModule.io.commitValid(i) && !isBlocked && (state === s_idle) && !trapBlockCommit
     io.commits.walkValid(i) := canWalkVec(i) && (state =/= s_idle)
     io.commits.info(i).pc := debug_microOp(deqPtrVec(i).value).cf.pc
     io.commits.info(i).connectEntryData(entryDataRead(i))
@@ -814,7 +815,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       // However, we cannot determine whether a load/store instruction is MMIO.
       // Thus, we don't allow load/store instructions to trigger an interrupt.
       // TODO: support non-MMIO load-store instructions to trigger interrupts
-      val allow_interrupts = !CommitType.isLoadStore(io.enq.req(i).bits.ctrl.commitType)
+      val allow_interrupts = !CommitType.isLoadStore(io.enq.req(i).bits.ctrl.commitType) || !(io.enq.req(i).bits.ctrl.fuOpType === CSROpType.jmp)
       interrupt_safe(RegNext(allocatePtrVec(i).value)) := RegNext(allow_interrupts)
     }
   }

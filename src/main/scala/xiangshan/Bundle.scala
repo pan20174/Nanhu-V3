@@ -344,9 +344,9 @@ class ExceptionInfo(implicit p: Parameters) extends XSBundle {
 
 class RobEntryData(implicit p: Parameters) extends XSBundle {
   val ldest = UInt(5.W) // todo: mv to rab
-  val rfWen = Bool()
-  val fpWen = Bool()
-  val vecWen = Bool()
+  val rfWen = Bool() // todo: mv to rab
+  val fpWen = Bool() // todo: mv to rab
+  val vecWen = Bool() // todo: mv to rab
   val wflags = Bool()
   val wvcsr = Bool()
   val commitType = CommitType()
