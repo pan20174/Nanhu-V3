@@ -167,4 +167,13 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
     }
   })
 
+  //perf counter
+  XSPerfAccumulate("decqueue_in_fire", actualEnqNum)
+  XSPerfAccumulate("decqueue_in_valid", PopCount(io.in.map(_.valid)))
+  XSPerfAccumulate("waitInstr", PopCount((0 until vecLen).map(i => io.in(i).valid && !io.in(i).ready)))
+  XSPerfAccumulate("stall_cycle_out_ready", PopCount((0 until vecLen).map(i => io.out(0)(i).valid && !io.out(0)(i).ready)))
+  XSPerfAccumulate("stall_cycle_nospecexec", PopCount((0 until vecLen).map(i => io.out(0)(i).bits.ctrl.noSpecExec)))
+  XSPerfAccumulate("stall_cycle_scala", allowOut(1))
+  XSPerfAccumulate("stall_cycle_vector", allowOut(0))
+  XSPerfAccumulate("flush_time", io.flush)
 }
