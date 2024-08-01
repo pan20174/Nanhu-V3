@@ -410,6 +410,7 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   replace.refill := true.B
   replace.error := error
   replace.id := req.id
+  replace.pf_source := req.pf_source
 
 
   io.main_pipe_req.valid := !s_mainpipe_req && w_grantlast
@@ -431,6 +432,7 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   io.main_pipe_req.bits.amo_mask := DontCare
   io.main_pipe_req.bits.error := error
   io.main_pipe_req.bits.id := req.id
+  io.main_pipe_req.bits.pf_source := req.pf_source
 
   // io.block_addr.valid := req_valid && w_grantlast && !w_refill_resp
   io.block_addr.valid := req_valid && w_grantlast && !w_replace_resp
@@ -704,7 +706,9 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   XSPerfAccumulate("miss_req_allocate", io.req.fire && alloc)
   XSPerfAccumulate("miss_req_allocate_load", io.req.fire && alloc &&  io.req.bits.isLoad)
   XSPerfAccumulate("miss_req_merge_load", io.req.fire && merge && io.req.bits.isLoad)
+  XSPerfAccumulate("load_req_no_enq", io.req.valid &&  io.req.bits.isLoad && !io.req.ready)
   XSPerfAccumulate("miss_req_reject_load", io.req.valid && reject && io.req.bits.isLoad)
+  XSPerfAccumulate("miss_full_block_load", io.req.valid && io.full && io.req.bits.isLoad)
   XSPerfAccumulate("probe_blocked_by_miss", io.probe_block)
   XSPerfAccumulate("miss_req_allocate_prefetch", io.req.fire && alloc &&  io.req.bits.isPrefetch)
   XSPerfAccumulate("miss_req_merge_prefetch", io.req.fire && merge && io.req.bits.isPrefetch)
