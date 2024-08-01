@@ -34,7 +34,7 @@ import xiangshan.vector.VectorCtrlBlock
 import xiangshan.backend.decode.{DecodeStage, FusionDecoder}
 import xiangshan.backend.dispatch.{Dispatch, DispatchQueue, MemDispatch2Rs}
 import xiangshan.backend.execute.fu.csr.PFEvent
-import xiangshan.backend.rename.{Rename, RenameTableWrapper}
+import xiangshan.backend.rename.{Rename, RenameTableWrapper, SnapshotGenerator}
 import xiangshan.backend.rob.{Rob, RobCSRIO, RobLsqIO, RobPtr, RollBackList}
 import xiangshan.backend.issue.DqDispatchNode
 import xiangshan.backend.execute.fu.csr.vcsr._
@@ -302,6 +302,52 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rename.io.vlUpdate    := Pipe(wbMergeBuffer.io.vlUpdate, 2)
   rename.io.enqRob      <> rob.io.enq
   rename.io.out         <> dispatch.io.fromRename
+
+  // snapshot check
+  class CFIRobIdx extends Bundle {
+    val robIdx = Vec(RenameWidth, new RobPtr)
+    val isCFI = Vec(RenameWidth, Bool())
+  }
+
+  val genSnapshot = Cat(rename.io.out.map(out => out.fire && out.bits.snapshot)).orR
+  val snpt = Module(new SnapshotGenerator(0.U.asTypeOf(new CFIRobIdx)))
+  snpt.io.enq := genSnapshot
+  snpt.io.enqData.robIdx := rename.io.out.map(_.bits.robIdx)
+  snpt.io.enqData.isCFI := rename.io.out.map(_.bits.snapshot)
+  snpt.io.deq := snpt.io.valids(snpt.io.deqPtr.value) && rob.io.commits.isCommit &&
+    Cat(rob.io.commits.commitValid.zip(rob.io.commits.robIdx).map(x => x._1 && x._2 === snpt.io.snapshots(snpt.io.deqPtr.value).robIdx.head)).orR
+  snpt.io.redirect := redirectDelay
+  val flushVec = VecInit(snpt.io.snapshots.map { snapshot =>
+    val notCFIMask = snapshot.isCFI.map(~_)
+    val shouldFlush = snapshot.robIdx.map(robIdx => robIdx >= redirectDelay.bits.robIdx || robIdx.value === redirectDelay.bits.robIdx.value)
+    val shouldFlushMask = (1 to RenameWidth).map(shouldFlush take _ reduce (_ || _))
+    redirectDelay.valid && Cat(shouldFlushMask.zip(notCFIMask).map(x => x._1 | x._2)).andR
+  })
+  val flushVecNext = flushVec zip snpt.io.valids map (x => RegNext(x._1 && x._2, false.B))
+  snpt.io.flushVec := flushVecNext
+
+  val useSnpt = VecInit.tabulate(RenameSnapshotNum)(idx =>
+    snpt.io.valids(idx) && (redirectDelay.bits.robIdx > snpt.io.snapshots(idx).robIdx.head ||
+      !redirectDelay.bits.flushItself() && redirectDelay.bits.robIdx === snpt.io.snapshots(idx).robIdx.head)
+  ).reduceTree(_ || _)
+  val snptSelect = MuxCase(
+    0.U(log2Ceil(RenameSnapshotNum).W),
+    (1 to RenameSnapshotNum).map(i => (snpt.io.enqPtr - i.U).value).map(idx =>
+      (snpt.io.valids(idx) && (redirectDelay.bits.robIdx > snpt.io.snapshots(idx).robIdx.head ||
+        !redirectDelay.bits.flushItself() && redirectDelay.bits.robIdx === snpt.io.snapshots(idx).robIdx.head), idx)
+    )
+  )
+
+  rob.io.snpt.snptEnq := DontCare
+  rob.io.snpt.snptDeq := snpt.io.deq
+  rob.io.snpt.useSnpt := useSnpt
+  rob.io.snpt.snptSelect := snptSelect
+  rob.io.snpt.flushVec := flushVecNext
+  rat.io.snpt.snptEnq := genSnapshot
+  rat.io.snpt.snptDeq := snpt.io.deq
+  rat.io.snpt.useSnpt := useSnpt
+  rat.io.snpt.snptSelect := snptSelect
+  rat.io.snpt.flushVec := flushVec
 
   //vector instr from scalar
   require(RenameWidth == VIDecodeWidth)

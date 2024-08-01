@@ -34,10 +34,11 @@ import xiangshan.mem.mdp._
 import xiangshan.vector.SIRenameInfo
 import xiangshan.vector.vtyperename.{VtpToVCtl, VtypeRename}
 import xs.utils.perf.HasPerfLogging
+import xs.utils.HasCircularQueuePtrHelper
 import xiangshan.ExceptionNO.selectFrontend
 import xiangshan.ExceptionNO.illegalInstr
 
-class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with HasPerfLogging{
+class Rename(implicit p: Parameters) extends XSModule  with HasCircularQueuePtrHelper with HasPerfEvents with HasPerfLogging {
   val io = IO(new Bundle() {
     val redirect = Flipped(ValidIO(new Redirect))
     val robCommits = Flipped(new RobCommitIO)
@@ -69,7 +70,10 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     // to vector
     val toVCtl = Output(Vec(RenameWidth, new VtpToVCtl))
     val vcsrio  = Flipped(new VCSRWithVtypeRenameIO)
-
+    // for snapshots
+    val snpt = Input(new SnapshotPort)
+    val snptLastEnq = Flipped(ValidIO(new RobPtr))
+    val snptIsFull= Input(Bool())
     val vlUpdate = Input(Valid(UInt(log2Ceil(VLEN + 1).W)))
     val dispatchIn = Vec(RenameWidth, Input(Valid(new RobPtr)))
   })
@@ -158,6 +162,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     uop.loadStoreEnable := DontCare
     uop.segIdx := 0.U
     uop.elmIdx := 0.U
+    uop.snapshot := DontCare
   })
 
   val needFpDest  = Wire(Vec(RenameWidth, Bool()))
@@ -360,6 +365,15 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     io.toVCtl(i).old_pdest := io.out(i).bits.old_pdest
     io.toVCtl(i).robIdx := io.out(i).bits.robIdx
   }
+  // snap generate
+  val genSnapshot = Cat(io.out.map(out => out.fire && out.bits.snapshot)).orR
+  val lastCycleCreateSnpt = RegInit(false.B)
+  lastCycleCreateSnpt := genSnapshot && !io.snptIsFull
+  val sameSnptDistance = (CommitWidth * 4).U
+  // notInSameSnpt: 1.robidxHead - snapLastEnq >= sameSnptDistance 2.no snap
+  val notInSameSnpt = RegNext(distanceBetween(robIdxHeadNext, io.snptLastEnq.bits) >= sameSnptDistance || !io.snptLastEnq.valid)
+  val allowSnpt = if (EnableRenameSnapshot) notInSameSnpt && !lastCycleCreateSnpt && io.in.head.bits.firstUop else false.B
+  io.out.zip(io.in).foreach{ case (out, in) => out.bits.snapshot := allowSnpt && (!in.bits.cf.pd.notCFI || FuType.isJumpExu(in.bits.ctrl.fuType)) && in.fire }
 
   val setVlBypass0 = io.out(0).bits.ctrl.fuType === FuType.csr &&
                     (io.out(0).bits.ctrl.fuOpType === CSROpType.vsetvl || io.out(0).bits.ctrl.fuOpType === CSROpType.vsetvli) &&
@@ -405,6 +419,10 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     }
 
   }
+  intFreeList.io.snpt := io.snpt
+  fpFreeList.io.snpt := io.snpt
+  intFreeList.io.snpt := genSnapshot
+  fpFreeList.io.snpt := genSnapshot
 
   /*
   Debug and performance counters

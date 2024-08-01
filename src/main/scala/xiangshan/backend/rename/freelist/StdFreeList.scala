@@ -25,23 +25,14 @@ import xs.utils.CircularShift
 import xs.utils.perf.HasPerfLogging
 
 
-class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) with HasPerfEvents with HasPerfLogging{
+class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) with HasPerfEvents with HasPerfLogging {
 
   val freeList = RegInit(VecInit(Seq.tabulate(size)( i => (i + 32).U(PhyRegIdxWidth.W) )))
-  val headPtr  = RegInit(FreeListPtr(false, 0))
-  val headPtrOH = RegInit(1.U(size.W))
-  val headPtrOHShift = CircularShift(headPtrOH)
-  // may shift [0, RenameWidth] steps
-  val headPtrOHVec = VecInit.tabulate(CommitWidth + 1)(headPtrOHShift.left)
-  XSError(headPtr.toOH =/= headPtrOH, p"wrong one-hot reg between $headPtr and $headPtrOH")
+
   val lastTailPtr = RegInit(FreeListPtr(true, 0)) // tailPtr in the last cycle (need to add freeReqReg)
   val tailPtr = Wire(new FreeListPtr) // this is the real tailPtr
   val tailPtrOHReg = RegInit(0.U(size.W))
 
-  val archHeadPtr = RegInit(FreeListPtr(false, 0))
-  val redirectedHeadPtr = archHeadPtr + PopCount(io.walkReq)
-  val redirectedHeadPtrOH = (archHeadPtr + PopCount(io.walkReq)).toOH
-  val lastCycleRedirect = RegNext(io.redirect, false.B)
   // consider during the walk has another redirect
   val alreadyInWalk = RegNext(io.walk)
   val walkHasRedirect = alreadyInWalk && lastCycleRedirect

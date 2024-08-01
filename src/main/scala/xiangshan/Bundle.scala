@@ -227,6 +227,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val compressMask = UInt(RenameWidth.W)
   val lastUop = Bool() // compress rob last uop sign
   val firstUop = Bool() // compress rob first uop sign
+  val snapshot = Bool() // control snapshot generate
   //vector
   val vm = UInt(PhyRegIdxWidth.W)
   val vmState = SrcState()

@@ -5,6 +5,7 @@ import chisel3._
 import chisel3.util._
 import xiangshan._
 import utils._
+import xiangshan.backend.rename.SnapshotGenerator
 import xs.utils.CircularQueuePtr
 import xs.utils.HasCircularQueuePtrHelper
 import xs.utils.CircularShift
@@ -81,7 +82,7 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   private val walkPtrOHVec = VecInit.tabulate(RabCommitWidth + 1)(CircularShift(walkPtrOH).left)
   private val walkPtrNext = Wire(new RenameBufferPtr)
 
-  // private val walkPtrSnapshots = SnapshotGenerator(enqPtr, io.snpt.snptEnq, io.snpt.snptDeq, io.redirect.valid, io.snpt.flushVec)
+   private val walkPtrSnapshots = SnapshotGenerator(enqPtr, io.snpt.snptEnq, io.snpt.snptDeq, io.redirect.valid, io.snpt.flushVec)
 
   val vcfgPtrOH = RegInit(1.U(size.W))
   val vcfgPtrOHShift = CircularShift(vcfgPtrOH)
@@ -140,9 +141,9 @@ class RenameBuffer(size: Int)(implicit p: Parameters) extends XSModule with HasC
   walkSize := Mux(io.redirect.valid, 0.U, walkSizeNxt)
 
   walkPtrNext := MuxCase(walkPtr, Seq(
-    // (state === s_idle && stateNext === s_walk) -> walkPtrSnapshots(snptSelect),
+    (state === s_idle && stateNext === s_walk) -> walkPtrSnapshots(snptSelect),
     (state === s_special_walk && stateNext === s_walk) -> deqPtrVecNext.head,
-    // (state === s_walk && io.snpt.useSnpt && io.redirect.valid) -> walkPtrSnapshots(snptSelect),
+    (state === s_walk && io.snpt.useSnpt && io.redirect.valid) -> walkPtrSnapshots(snptSelect),
     (state === s_walk) -> (walkPtr + walkCount),
   ))
 

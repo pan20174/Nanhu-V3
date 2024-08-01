@@ -25,25 +25,15 @@ import xs.utils.CircularShift
 import xs.utils.perf.HasPerfLogging
 
 
-class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) with HasPerfEvents  with HasPerfLogging{
+class MEFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) with HasPerfEvents with HasPerfLogging{
   val freeList = RegInit(VecInit(
     // originally {1, 2, ..., size - 1} are free. Register 0-31 are mapped to x0.
     Seq.tabulate(size - 1)(i => (i + 1).U(PhyRegIdxWidth.W)) :+ 0.U(PhyRegIdxWidth.W)))
 
-  // head and tail pointer
-  val headPtr = RegInit(FreeListPtr(false, 0))
-  val headPtrOH = RegInit(1.U(size.W))
-  XSError(headPtr.toOH =/= headPtrOH, p"wrong one-hot reg between $headPtr and $headPtrOH")
-  val headPtrOHShift = CircularShift(headPtrOH)
-  // may shift [0, RenameWidth] steps
-  val headPtrOHVec = VecInit.tabulate(CommitWidth + 1)(headPtrOHShift.left)
+
   val tailPtr = RegInit(FreeListPtr(false, size - 1))
 
-  val archHeadPtr = RegInit(FreeListPtr(false, 0))
-  val redirectedHeadPtr = archHeadPtr + PopCount(io.walkReq)
   dontTouch(redirectedHeadPtr)
-  val redirectedHeadPtrOH = (archHeadPtr + PopCount(io.walkReq)).toOH
-  val lastCycleRedirect = RegNext(io.redirect, false.B)
   // consider during the walk has another redirect
   val alreadyInWalk = RegNext(io.walk)
   val walkHasRedirect = alreadyInWalk && lastCycleRedirect

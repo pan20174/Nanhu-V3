@@ -66,6 +66,7 @@ case class XSCoreParameters
   EnbaleTlbDebug: Boolean = false,
   EnableJal: Boolean = false,
   EnableFauFTB: Boolean = true,
+  EnableRenameSnapshot: Boolean = true,
   UbtbGHRLength: Int = 4,
   // HistoryLength: Int = 512,
   EnableGHistDiff: Boolean = true,
@@ -284,6 +285,7 @@ trait HasXSParameter {
   val EnableLB = coreParams.EnableLB
   val EnableLoop = coreParams.EnableLoop
   val EnableSC = coreParams.EnableSC
+  val EnableRenameSnapshot = coreParams.EnableRenameSnapshot
   val EnbaleTlbDebug = coreParams.EnbaleTlbDebug
   val HistoryLength = coreParams.HistoryLength
   val EnableGHistDiff = coreParams.EnableGHistDiff

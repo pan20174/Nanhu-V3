@@ -31,6 +31,7 @@ import xiangshan.vector._
 import xs.utils.perf.HasPerfLogging
 import xiangshan.VstartType
 import xiangshan.backend.execute.fu.csr.CSROpType
+import xiangshan.backend.rename.SnapshotGenerator
 
 class Rob(implicit p: Parameters) extends LazyModule with HasXSParameter {
   val wbNodeParam = WriteBackSinkParam(name = "ROB", sinkType = WriteBackSinkType.rob)
@@ -71,6 +72,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val diffCommits = if (env.EnableDifftest || env.AlwaysBasicDiff) Some(Output(new DiffCommitIO)) else None
     val lsq = new RobLsqIO
     val csr = new RobCSRIO
+    val snpt = Input(new SnapshotPort)
     val robFull = Output(Bool())
     val cpu_halt = Output(Bool())
     val wfi_enable = Input(Bool())
@@ -273,6 +275,15 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   }
   val enqNum = Mux(io.enq.canAccept, PopCount(io.enq.req.map(req => req.valid && req.bits.firstUop)), 0.U)
   io.enq.isEmpty := RegNext(isEmpty && !VecInit(io.enq.req.map(_.valid)).asUInt.orR)
+
+  //snap enq
+  val snptEnq = io.enq.canAccept && io.enq.req.map(x => x.valid && x.bits.snapshot).reduce(_ || _)
+  val snapshotPtrVec = Wire(Vec(CommitWidth, new RobPtr))
+  snapshotPtrVec(0) := io.enq.req(0).bits.robIdx
+  for (i <- 1 until CommitWidth) {
+    snapshotPtrVec(i) := snapshotPtrVec(0) + i.U
+  }
+  val snapshots = SnapshotGenerator(snapshotPtrVec, snptEnq, io.snpt.snptDeq, io.redirect.valid, io.snpt.flushVec)
 
   /**
    * ************************Writeback (from wbNet and MergeBuffer)************************
@@ -686,9 +697,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   //   ),
   //   Mux(state === s_walk, VecInit(walkPtrVec.map(_ + CommitWidth.U)), walkPtrVec)
   // )
+  val deqPtrVecForWalk = VecInit((0 until CommitWidth).map(i => deqPtrVec_next.head + i.U))
+  val snapPtrRead = snapshots(io.snpt.snptSelect)(0)
+  val snapPtrVecForWalk = VecInit((0 until CommitWidth).map(i => snapPtrRead + i.U))
   val walkPtrVec_next = Mux(io.redirect.valid,
-  // add snap todo
-    VecInit((0 until CommitWidth).map(i => deqPtrVec_next.head + (i).U)),
+    Mux(io.snpt.useSnpt, snapPtrVecForWalk, deqPtrVecForWalk),
     Mux((state === s_walk) && !walkFinished, VecInit(walkPtrVec.map(_ + CommitWidth.U)), walkPtrVec)
   )
   walkPtrVec := walkPtrVec_next
@@ -866,7 +879,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     dest.bits := src.bits
     dest.valid := src.valid && io.enq.canAccept
   }
-  rab.io.snpt := DontCare
+  rab.io.snpt := io.snpt
+  rab.io.snpt.snptEnq := snptEnq
   rab.io.redirect.valid := io.redirect.valid
   // rab.io.snpt.snptEnq := false.B
   rab.io.fromRob.walkEnd := state === s_walk && walkFinished

@@ -44,6 +44,7 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
     val archWritePorts = Vec(CommitWidth, Input(new RatWritePort))
     val old_pdest = Vec(RabCommitWidth, Output(UInt(PhyRegIdxWidth.W)))
     val need_free = Vec(RabCommitWidth, Output(Bool()))
+    val snpt = Input(new SnapshotPort)
     val debug_rdata = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val diffWritePorts = if (env.EnableDifftest || env.AlwaysBasicDiff) Some(Vec(RabCommitWidth * RenameWidth, Input(new RatWritePort))) else None
   })
@@ -78,6 +79,8 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
     }
   })
 
+  val snapshots = SnapshotGenerator(spec_table, io.snpt.snptEnq, io.snpt.snptDeq, io.redirect, io.snpt.flushVec)
+
   // WRITE: when instruction commits or walking
   val t1_wSpec_addr = t1_wSpec.map(w => Mux(w.wen, UIntToOH(w.addr), 0.U))
   val hasSpecWrite = t1_wSpec.map(_.wen).reduce(_ || _)
@@ -85,8 +88,9 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule{
     val matchVec = t1_wSpec_addr.map(w => w(i))
     val wMatch = ParallelPriorityMux(matchVec.reverse, t1_wSpec.map(_.data).reverse)
     // When there's a flush, we use arch_table to update spec_table.
-    next := Mux(io.redirect, arch_table_next(i), 
-    Mux(VecInit(matchVec).asUInt.orR, wMatch, spec_table(i)))
+    next := Mux(io.redirect,
+      Mux(io.snpt.useSnpt, snapshots(io.snpt.snptSelect)(i), arch_table_next(i)),
+      Mux(VecInit(matchVec).asUInt.orR, wMatch, spec_table(i)))
   }
   spec_table := spec_table_next
 
@@ -154,6 +158,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
     val int_old_pdest = Vec(RabCommitWidth, Output(UInt(PhyRegIdxWidth.W)))
     val int_need_free = Vec(RabCommitWidth, Output(Bool()))
     val fp_old_pdest = Vec(RabCommitWidth, Output(UInt(PhyRegIdxWidth.W)))
+    val snpt = Input(new SnapshotPort)
     // for debug printing
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
@@ -169,6 +174,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
   intRat.io.debug_rdata <> io.debug_int_rat
   intRat.io.readPorts <> io.intReadPorts.flatten
   intRat.io.redirect := io.redirect
+  intRat.io.snpt := io.snpt
   val intDestValid = io.rabCommits.info.map(_.rfWen)
   for ((arch, i) <- intRat.io.archWritePorts.zipWithIndex) {
     arch.wen  := io.rabCommits.isCommit && io.rabCommits.commitValid(i) && intDestValid(i)
@@ -201,6 +207,7 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule with HasPerfLo
   fpRat.io.debug_rdata <> io.debug_fp_rat
   fpRat.io.readPorts <> io.fpReadPorts.flatten
   fpRat.io.redirect := io.redirect
+  fpRat.io.snpt := io.snpt
   io.fp_old_pdest := fpRat.io.old_pdest
   for ((arch, i) <- fpRat.io.archWritePorts.zipWithIndex) {
     arch.wen  := io.rabCommits.isCommit && io.rabCommits.commitValid(i) && io.rabCommits.info(i).fpWen
