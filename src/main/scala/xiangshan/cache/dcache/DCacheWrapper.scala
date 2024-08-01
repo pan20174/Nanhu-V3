@@ -442,6 +442,7 @@ class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val store = new DCacheToSbufferIO // for sbuffer
   val atomics  = Flipped(new AtomicWordIO)  // atomics reqs
   val release = ValidIO(new Release) // cacheline release hint for ld-ld violation check
+  val lduForwardMSHR = Flipped(Vec(LoadPipelineWidth ,new LduForwardFromMSHR))
 }
 
 class DCacheIO(implicit p: Parameters) extends DCacheBundle {
@@ -679,6 +680,8 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   ldu.head.io.lsu <> io.lsu.load.head
   ldu(1).io.lsu <> io.lsu.load(1)
 
+  missQueue.io.lduForward <> io.lsu.lduForwardMSHR
+
   //----------------------------------------
   // atomics
   // atomics not finished yet
@@ -717,20 +720,14 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   // refill to load queue
   io.lsu.lsq <> missQueue.io.refill_to_ldq
   io.lsu.loadReqHandledResp <> missQueue.io.loadReqHandledResp
-//  val (_, _, done, _) = edge.count(bus.d)
-//  when (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant) {
-//    io.lsu.tl_d_channel.valid := bus.d.valid && done
-//    io.lsu.tl_d_channel.mshrid := bus.d.bits.source
-//  } .otherwise {
-//    io.lsu.tl_d_channel := DontCare
-//  }
-//  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
-//  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
 
-  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.fire)
-  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.fire)
+//  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.fire)
+//  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.fire)
 
+  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
+  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
 
+  missQueue.io.forwardRegState := mainPipe.io.forwardRegState
 
   // tilelink stuff
   bus.a <> missQueue.io.mem_acquire
