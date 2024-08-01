@@ -372,7 +372,7 @@ class Rename(implicit p: Parameters) extends XSModule  with HasCircularQueuePtrH
   val sameSnptDistance = (CommitWidth * 4).U
   // notInSameSnpt: 1.robidxHead - snapLastEnq >= sameSnptDistance 2.no snap
   val notInSameSnpt = RegNext(distanceBetween(robIdxHeadNext, io.snptLastEnq.bits) >= sameSnptDistance || !io.snptLastEnq.valid)
-  val allowSnpt = if (EnableRenameSnapshot) notInSameSnpt && !lastCycleCreateSnpt && io.in.head.bits.firstUop else false.B
+  val allowSnpt = if (EnableRenameSnapshot) notInSameSnpt && !lastCycleCreateSnpt && io.out.head.bits.firstUop else false.B
   io.out.zip(io.in).foreach{ case (out, in) => out.bits.snapshot := allowSnpt && (!in.bits.cf.pd.notCFI || FuType.isJumpExu(in.bits.ctrl.fuType)) && in.fire }
 
   val setVlBypass0 = io.out(0).bits.ctrl.fuType === FuType.csr &&
@@ -421,8 +421,8 @@ class Rename(implicit p: Parameters) extends XSModule  with HasCircularQueuePtrH
   }
   intFreeList.io.snpt := io.snpt
   fpFreeList.io.snpt := io.snpt
-  intFreeList.io.snpt := genSnapshot
-  fpFreeList.io.snpt := genSnapshot
+  intFreeList.io.snpt.snptEnq := genSnapshot
+  fpFreeList.io.snpt.snptEnq := genSnapshot
 
   /*
   Debug and performance counters

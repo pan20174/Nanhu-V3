@@ -316,7 +316,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   snpt.io.enqData.isCFI := rename.io.out.map(_.bits.snapshot)
   snpt.io.deq := snpt.io.valids(snpt.io.deqPtr.value) && rob.io.commits.isCommit &&
     Cat(rob.io.commits.commitValid.zip(rob.io.commits.robIdx).map(x => x._1 && x._2 === snpt.io.snapshots(snpt.io.deqPtr.value).robIdx.head)).orR
-  snpt.io.redirect := redirectDelay
+  snpt.io.redirect := redirectDelay.valid
   val flushVec = VecInit(snpt.io.snapshots.map { snapshot =>
     val notCFIMask = snapshot.isCFI.map(~_)
     val shouldFlush = snapshot.robIdx.map(robIdx => robIdx >= redirectDelay.bits.robIdx || robIdx.value === redirectDelay.bits.robIdx.value)
@@ -337,6 +337,15 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
         !redirectDelay.bits.flushItself() && redirectDelay.bits.robIdx === snpt.io.snapshots(idx).robIdx.head), idx)
     )
   )
+
+  rename.io.snpt.snptEnq := DontCare
+  rename.io.snpt.snptDeq := snpt.io.deq
+  rename.io.snpt.useSnpt := useSnpt
+  rename.io.snpt.snptSelect := snptSelect
+  rename.io.snptIsFull := snpt.io.valids.asUInt.andR
+  rename.io.snpt.flushVec := flushVecNext
+  rename.io.snptLastEnq.valid := !isEmpty(snpt.io.enqPtr, snpt.io.deqPtr)
+  rename.io.snptLastEnq.bits := snpt.io.snapshots((snpt.io.enqPtr - 1.U).value).robIdx.head
 
   rob.io.snpt.snptEnq := DontCare
   rob.io.snpt.snptDeq := snpt.io.deq
