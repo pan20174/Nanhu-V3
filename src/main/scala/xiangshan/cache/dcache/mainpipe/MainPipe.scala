@@ -99,6 +99,12 @@ class MainPipeReq(implicit p: Parameters) extends DCacheBundle {
   }
 }
 
+class MainPipeForwardRegState (implicit p: Parameters) extends DCacheBundle{
+  val valid = Bool()
+  val paddr = UInt(PAddrBits.W)
+  val data = UInt(blockBits.W)
+}
+
 class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents with HasPerfLogging with HasL1PrefetchSourceParameter {
   val io = IO(new Bundle() {
     // probe queue
@@ -154,6 +160,9 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     val invalid_resv_set = Input(Bool())
     val update_resv_set = Output(Bool())
     val block_lr = Output(Bool())
+
+    // MissQueue forward reg
+    val forwardRegState = Output(Vec(3, new MainPipeForwardRegState))
 
     // ecc error
     val error = Output(new L1CacheErrorInfo())
@@ -236,6 +245,10 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val s1_fire = s1_valid && s1_can_go
   val s1_idx = get_idx(s1_req.vaddr)
   val s1_req_vaddr = RegEnable(s0_req.vaddr, s0_fire)
+
+  io.forwardRegState(0).valid := s1_valid && !s1_req.probe && (s1_req.source =/= STORE_SOURCE.U)
+  io.forwardRegState(0).paddr := s1_req.addr
+  io.forwardRegState(0).data  := s1_req.store_data
 
   when (s0_fire) {
     s1_valid := true.B
@@ -368,6 +381,10 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     s2_store_data_merged(i) := mergePutData(old_data, new_data, wmask)
   }
 
+  io.forwardRegState(1).valid := s2_valid && !s2_req.probe && (s2_req.source =/= STORE_SOURCE.U)
+  io.forwardRegState(1).paddr := s2_req.addr
+  io.forwardRegState(1).data := s2_store_data_merged.asUInt
+
   val s2_data_word = s2_store_data_merged(s2_req.word_idx)
 
   val s2_probe_ttob_check_resp = Wire(io.probe_ttob_check_resp.cloneType)
@@ -423,6 +440,11 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val amo_update_meta = s3_req.isAMO && !s3_req_probe && s3_hit_coh =/= s3_new_hit_coh
   val amo_wait_amoalu = s3_req.isAMO && s3_req_cmd =/= M_XLR && s3_req_cmd =/= M_XSC
   val update_meta = miss_update_meta || probe_update_meta || store_update_meta || refill_update_meta
+
+
+  io.forwardRegState(2).valid := s3_valid && !s3_req.probe && (s3_req.source =/= STORE_SOURCE.U)
+  io.forwardRegState(2).paddr := s3_req.addr
+  io.forwardRegState(2).data := s3_store_data_merged.asUInt
 
   def missCohGen(cmd: UInt, param: UInt, dirty: Bool) = {
     val c = categorize(cmd)

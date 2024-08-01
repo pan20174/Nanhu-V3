@@ -75,6 +75,11 @@ class MissReqWoStoreData(implicit p: Parameters) extends DCacheBundle {
 //   val store_data = UInt((cfg.blockBytes * 8).W)
 //   val store_mask = UInt(cfg.blockBytes.W)
 // }
+class LduForwardFromMSHR(implicit p: Parameters) extends DCacheBundle{
+//  val mshrId =
+  val req = ValidIO(UInt(PAddrBits.W))
+  val resp = Flipped(ValidIO(UInt(DataBits.W)))
+}
 
 class MissReq(implicit p: Parameters) extends MissReqWoStoreData {
   // store data and store mask will be written to miss queue entry 
@@ -511,6 +516,9 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     val l2_pf_store_only = Input(Bool())
 
     val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W))
+
+    val forwardRegState = Input(Vec(3, new MainPipeForwardRegState))
+    val lduForward = Flipped(Vec(LoadPipelineWidth, new LduForwardFromMSHR))
   })
   
   // 128KBL1: FIXME: provide vaddr for l2
@@ -518,7 +526,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val entries = Seq.fill(cfg.nMissEntries)(Module(new MissEntry(edge)))
 
   val refill_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))
-  val refill_ldq_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))
+  val refill_ldq_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))  //useless
   val difftest_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))
 
   // val req_data_gen = io.req.bits.toMissReqStoreData()
@@ -544,6 +552,32 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   when(io.req.valid){
     assert(PopCount(secondary_ready_vec) <= 1.U)
   }
+
+  io.lduForward.zipWithIndex.foreach({ case (forward, idx) => {
+    val reqVReg = RegNext(forward.req.valid, false.B)
+    val reqPaddrReg = RegEnable(forward.req.bits, forward.req.valid)
+
+    val validVec = Wire(Vec(io.forwardRegState.length, Bool()))
+    val dataVec = Wire(Vec(io.forwardRegState.length, UInt(DataBits.W)))
+
+    io.forwardRegState.zipWithIndex.foreach({case (reg,idx)=>{
+      val bankAddr = addr_to_dcache_bank(reqPaddrReg)
+      val dataSlipt = Wire(Vec(8, UInt(DataBits.W)))
+
+      for(i <- 0 until 8){
+        dataSlipt(i) := reg.data((i + 1) * DataBits - 1, i * DataBits)
+      }
+
+      validVec(idx) := reqVReg && reg.valid && (get_block(reg.paddr) === get_block(reqPaddrReg))
+      dataVec(idx) := dataSlipt(bankAddr)
+    }})
+
+    assert(PopCount(validVec) <= 1.U)
+
+    forward.resp.valid := validVec.reduce(_|_)
+    forward.resp.bits := Mux1H(validVec, dataVec)
+  }})
+
 //  assert(RegNext(PopCount(secondary_reject_vec) <= 1.U))
   // It is possible that one mshr wants to merge a req, while another mshr wants to reject it.
   // That is, a coming req has the same paddr as that of mshr_0 (merge),
@@ -559,7 +593,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     if (name.nonEmpty) { out.suggestName(s"${name.get}_select") }
     out.valid := Cat(in.map(_.valid)).orR
     out.bits := ParallelMux(in.map(_.valid) zip in.map(_.bits))
-    in.map(_.ready := out.ready) 
+    in.map(_.ready := out.ready)
     assert(!RegNext(out.valid && PopCount(Cat(in.map(_.valid))) > 1.U))
   }
 

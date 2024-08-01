@@ -113,12 +113,6 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
   beu_int_source :*= beuIntBuf.node :*= misc.beu.intNode
   l2cache.foreach(l2 => l2_int_source :*= l2IntBuf.node :*= l2.intNode)
 
-  val l1d_to_l2_bufferOpt = coreParams.dcacheParametersOpt.map { _ =>
-    val buffer = LazyModule(new TLBuffer)
-    misc.l1d_logger := buffer.node := core.exuBlock.memoryBlock.dcache.clientNode
-    buffer
-  }
-
   def chainBuffer(depth: Int, n: String): (Seq[LazyModule], TLNode) = {
     val buffers = Seq.fill(depth){ LazyModule(new TLBuffer()) }
     buffers.zipWithIndex.foreach{ case (b, i) => {
@@ -126,6 +120,12 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
     }}
     val node = buffers.map(_.node.asInstanceOf[TLNode]).reduce(_ :*=* _)
     (buffers, node)
+  }
+
+  val l1d_to_l2_bufferOpt = coreParams.dcacheParametersOpt.map { _ =>
+    val (buffers, buf_node) = chainBuffer(2, "l1d_to_l2_buffer")
+    misc.l1d_logger := buf_node := core.exuBlock.memoryBlock.dcache.clientNode
+    buffers
   }
 
   val (l1i_to_l2_buffers, l1i_to_l2_buf_node) = chainBuffer(3, "l1i_to_l2_buffer")
@@ -143,10 +143,10 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
     buffers
   } else Seq()
 
-  val l2InputBuffers = if(l2cache.isDefined) Some(Seq.fill(2)(LazyModule(new TLBuffer()))) else None
+  val l2InputBuffers = if(l2cache.isDefined) Some(Seq.fill(1)(LazyModule(new TLBuffer()))) else None
   l2cache match {
     case Some(l2) =>
-      misc.l2_binder.get :*= l2.node :*= l2InputBuffers.get(1).node :*= l2InputBuffers.get(0).node :*= misc.l1_xbar
+      misc.l2_binder.get :*= l2.node :*= l2InputBuffers.get(0).node :*= misc.l1_xbar
       l2.pf_recv_node.map {l2_node =>
           println("Connecting L1 prefetcher to L2!")
           core.exuBlock.memoryBlock.pf_sender_opt.map(sender => l2_node := sender)
@@ -252,7 +252,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
     outer.l1i_to_l2_buffers.map(_.module.asInstanceOf[Module]) ++
       outer.ptw_to_l2_buffers.map(_.module.asInstanceOf[Module]) ++
       l2bufs.map(_.module.asInstanceOf[Module]) ++
-      outer.l1d_to_l2_bufferOpt.map(_.module)
+      outer.l1d_to_l2_bufferOpt.getOrElse(Seq()).map(_.module.asInstanceOf[Module])
   )
   val gatedReset = Wire(Reset())
   gatedReset := (reset.asBool | io.XStileResetGate).asAsyncReset
