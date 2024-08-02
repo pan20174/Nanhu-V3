@@ -731,6 +731,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   XSPerfAccumulate("NHV5_load_issueFromRs", io.rsIssueIn.fire)
   XSPerfAccumulate("NHV5_load_issueFromReplay", io.replayQIssueIn.fire)
+  XSPerfAccumulate("NHV5_MSHR_forward_valid", io.lduForwardMSHR.resp.valid)
 
   XSPerfAccumulate("NHV5_load_s0_fromRs_requireTLB", io.tlb.req.fire && !s0_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s0_fromRs_requireDcache", io.dcache.req.fire && !s0_out.bits.replay.isReplayQReplay)
