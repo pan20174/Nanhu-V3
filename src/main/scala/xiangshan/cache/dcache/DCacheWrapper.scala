@@ -432,7 +432,7 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
 
 class DCacheTLDBypassLduIO(implicit p: Parameters) extends DCacheBundle {
   val valid = Bool()
-  val mshrid = UInt(log2Up(cfg.nMissEntries).W)
+  val mshrid = UInt(log2Up(cfg.nMissEntries + 1).W)
 }
 
 class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
@@ -455,6 +455,7 @@ class DCacheIO(implicit p: Parameters) extends DCacheBundle {
   val error = new L1CacheErrorInfo
   val mshrFull = Output(Bool())
   val pf_req = Flipped(DecoupledIO(new L1PrefetchReq()))
+  val l2_hint = Input(new DCacheTLDBypassLduIO)
 }
 
 
@@ -737,6 +738,9 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
   io.lsu.tl_d_channel.mshrid := bus.d.bits.source
+
+  io.lsu.tl_d_channel.valid := io.l2_hint.valid
+  io.lsu.tl_d_channel.mshrid := io.l2_hint.mshrid
 
   missQueue.io.forwardRegState := mainPipe.io.forwardRegState
 

@@ -3,7 +3,7 @@ package xiangshan
 import chisel3._
 import org.chipsalliance.cde.config.{Config, Parameters}
 import chisel3.experimental.hierarchy.{Definition, Instance, instantiable, public}
-import chisel3.util.{Valid, ValidIO}
+import chisel3.util.{DecoupledIO, Valid, ValidIO, log2Up}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.interrupts._
 import freechips.rocketchip.tile.{BusErrorUnit, BusErrorUnitParams, BusErrors}
@@ -16,6 +16,7 @@ import xs.utils.{DFTResetSignals, ResetGen}
 import system.HasSoCParameter
 import top.BusPerfMonitor
 import utils.{IntBuffer, TLClientsMerger, TLEdgeBuffer}
+import xiangshan.cache.DCacheTLDBypassLduIO
 import xs.utils.perf.DebugOptionsKey
 import xs.utils.sram.BroadCastBundle
 
@@ -175,9 +176,31 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
 
   val core_soft_rst = outer.core_reset_sink.in.head._1
 
+  private val l1d2L2Buf = outer.l1d_to_l2_bufferOpt.get.head.module
+  private val inBundle = l1d2L2Buf.auto.elements("in")
+  private val inFire = inBundle match {
+    case d: TLBundle => Seq(d.d.fire)
+    case _ => Seq()
+  }
+  private val inFireID = inBundle match {
+    case d: TLBundle => Seq(d.d.bits.source)
+    case _ => Seq()
+  }
+  require(inFire.length == 1)
+
+  private val l2_hint = Wire(new DCacheTLDBypassLduIO)
+  l2_hint.valid := inFire.head
+  l2_hint.mshrid := inFireID.head
+
+
+  l1d2L2Buf.auto.elements.foreach({ case a => println("lid2l2buf : = ", a)})
+  println("infire length = ",inFire.length)
+  inFire.foreach({case a => println("inFire = ", a) })
+
   outer.core.module.io.hartId := io.hartId
   outer.core.module.io.reset_vector := io.reset_vector
   outer.core.module.io.dfx_reset := io.dfx_reset
+  outer.core.module.io.l2_hint := l2_hint
 
   outer.l2cache.foreach(_.module.io.dfx_reset := io.dfx_reset)
   io.cpu_halt := outer.core.module.io.cpu_halt
