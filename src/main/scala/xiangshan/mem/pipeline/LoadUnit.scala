@@ -424,6 +424,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s2_cache_miss = s2_dcacheResp.bits.miss && s2_dcacheResp.valid
   val s2_bank_conflict = RegNext(s1_bank_conflict)
   val s2_cache_replay = s2_dcacheResp.bits.replay
+  val s2_cache_replay_with_mshrFull = s2_dcacheResp.bits.replay && s2_dcacheResp.bits.mshr_full
+  val s2_cache_replay_with_conflict = s2_dcacheResp.bits.replay && s2_dcacheResp.bits.miss_req_enq_confilct
+  val s2_cache_replay_with_reject = s2_dcacheResp.bits.replay && (!s2_dcacheResp.bits.mshr_full && !s2_dcacheResp.bits.miss_req_enq_confilct) 
 
 //  val s2_ldld_violation = s2_loadViolationQueryResp.valid && s2_loadViolationQueryResp.bits.have_violation &&
 //    RegNext(io.csrCtrl.ldld_vio_check_enable)
@@ -546,12 +549,14 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s2_causeReg.fwd_data_sqIdx := Mux(s2_data_invalid, io.lsq.forwardFromSQ.dataInvalidSqIdx, 0.U.asTypeOf(new SqPtr))
   s2_causeReg.dcache_miss := s2_cache_miss || debugS2CauseReg.dcache_miss
   s2_causeReg.fwd_fail    := s2_data_invalid || debugS2CauseReg.fwd_fail
-  s2_causeReg.dcache_rep  := (s2_cache_replay && !s2_tlb_miss) || debugS2CauseReg.dcache_rep
+  // s2_causeReg.dcache_rep  := (s2_cache_replay && !s2_tlb_miss) || debugS2CauseReg.dcache_rep
+  s2_causeReg.dcache_rep  := (s2_cache_replay_with_mshrFull && !s2_tlb_miss) || debugS2CauseReg.dcache_rep
   s2_causeReg.raw_violation := s2_hasStLdViolation || debugS2CauseReg.raw_violation
   s2_causeReg.raw_nack := s2_enqRAWFail
   dontTouch(s2_causeReg)
 
-  val needFastRep = (s2_bank_conflict || s2_cancel_inner) && !s2_fullForward
+  //missq full do not go to Fastreplay
+  val needFastRep = (s2_bank_conflict || s2_cancel_inner || s2_cache_replay_with_conflict || s2_cache_replay_with_reject) && !s2_fullForward
   val hasNoOtherCause = !(s2_causeReg.replayCause.reduce(_ || _))
   io.fastReplayOut.valid := s2_in.valid && s2_enableMem && hasNoOtherCause && needFastRep && !exceptionWb && !s2_mmio && !s2_in.bits.uop.robIdx.needFlush(redirectReg("fastRep"))
   io.fastReplayOut.bits  := s2_in.bits
@@ -736,6 +741,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s2_fromRs_FwdFail", s2_data_invalid && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
+
+  XSPerfAccumulate("dcache_mshrFull", s2_cache_replay && s2_cache_replay_with_mshrFull && s2_valid)
+  XSPerfAccumulate("dcache_enq_conflict", s2_cache_replay && s2_cache_replay_with_conflict && s2_valid)
+  XSPerfAccumulate("dcache_enq_reject", s2_cache_replay && s2_cache_replay_with_reject && s2_valid)
+  XSPerfAccumulate("dcache_replay_go_to_fastReplay", io.fastReplayOut.valid &&  (s2_cache_replay_with_conflict || s2_cache_replay_with_reject))
 
   XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && !s2_bank_conflict && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRq_FwdFail", s2_data_invalid && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)

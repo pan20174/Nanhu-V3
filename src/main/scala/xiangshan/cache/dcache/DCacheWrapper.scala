@@ -318,6 +318,8 @@ class BaseDCacheWordResp(implicit p: Parameters) extends DCacheBundle
   val miss   = Bool()
   // cache miss, and failed to enter the missqueue, replay from RS is needed
   val replay = Bool()
+  val mshr_full = Bool()
+  val miss_req_enq_confilct = Bool()
   // data has been corrupted
   val tag_error = Bool() // tag error
 }
@@ -679,6 +681,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   ldu.head.io.lsu <> io.lsu.load.head
   ldu(1).io.lsu <> io.lsu.load(1)
 
+
   //----------------------------------------
   // atomics
   // atomics not finished yet
@@ -714,6 +717,15 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
     missQueue.io.req.bits.cancel := true.B
     missReqArb.io.out.ready := false.B
   }
+
+  
+  for (w <- 0 until LoadPipelineWidth) {
+    //when not full and not conflict, only missqueue reject will replay
+    io.lsu.load(w).resp.bits.mshr_full := missQueue.io.full
+    //missqueue can accept but req can not enq :arb conflict
+    io.lsu.load(w).resp.bits.miss_req_enq_confilct := !missReqArb.io.in(w + 1).ready && missReqArb.io.in(w + 1).valid && missReqArb.io.out.ready
+  }
+
 
   // refill to load queue
   io.lsu.lsq <> missQueue.io.refill_to_ldq
