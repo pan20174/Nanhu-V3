@@ -453,7 +453,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   }).reduce(_ | _)
   val dirty_vs = (io.commits.isCommit && VecInit(vecWen).asUInt.orR) || io.csr.vstart.valid || io.csr.vxsat.valid
   val dirty_fs = io.commits.isCommit && VecInit(fpWen).asUInt.orR
-  val trapBlockCommit = hasWFI || exceptionWaitingRedirect
+  val trapBlockCommit = hasWFI || exceptionWaitingRedirect || io.redirect.valid
 
   val deqPtrGenModule = Module(new RobCommitHelper)
   val deqPtrVec_next = deqPtrGenModule.io.deqPtrNextVec
@@ -719,10 +719,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // the nested redirect will walk again from deq now
   val redirectDelay1FlushItself = RegInit(false.B)
   val redirectDelay1FlushItselfNext = Mux(io.redirect.valid, io.redirect.bits.flushItself(), false.B)
+  val successRedirect = io.redirect.valid && RegNext(io.redirect.valid)
   redirectDelay1FlushItself := redirectDelay1FlushItselfNext
   when(io.redirect.valid) {
     walkCounter := redirectWalkDistance + !io.redirect.bits.flushItself()
-    XSError(state === s_walk && thisCycleWalkCount < redirectDelay1FlushItself,
+    XSError(state === s_walk && !successRedirect && thisCycleWalkCount < redirectDelay1FlushItself,
       p"walk distance error ($thisCycleWalkCount < ${redirectDelay1FlushItself}\n")
   }.elsewhen(state === s_walk) {
     walkCounter := walkCounter - thisCycleWalkCount

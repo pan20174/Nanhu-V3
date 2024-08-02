@@ -319,7 +319,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   snpt.io.redirect := redirectDelay.valid
   val flushVec = VecInit(snpt.io.snapshots.map { snapshot =>
     val notCFIMask = snapshot.isCFI.map(~_)
-    val shouldFlush = snapshot.robIdx.map(robIdx => robIdx >= redirectDelay.bits.robIdx || robIdx.value === redirectDelay.bits.robIdx.value)
+    val redirectTrueRobptr = redirectDelay.bits.robIdx - redirectDelay.bits.flushItself()
+    val shouldFlush = snapshot.robIdx.map(robIdx => robIdx > redirectTrueRobptr)
     val shouldFlushMask = (1 to RenameWidth).map(shouldFlush take _ reduce (_ || _))
     redirectDelay.valid && Cat(shouldFlushMask.zip(notCFIMask).map(x => x._1 | x._2)).andR
   })

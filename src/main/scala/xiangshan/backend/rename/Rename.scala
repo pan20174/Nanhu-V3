@@ -461,7 +461,7 @@ class Rename(implicit p: Parameters) extends XSModule  with HasCircularQueuePtrH
   XSPerfAccumulate("stall_cycle_robfull", hasValid && io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && !io.robCommits.isWalk && !io.enqRob.canAccept)
   XSPerfAccumulate("stall_cycle_walk", hasValid && io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && io.robCommits.isWalk && io.enqRob.canAccept)
   XSPerfAccumulate("recovery_bubbles", PopCount(io.in.map(_.valid && io.out(0).ready && fpFreeList.io.canAllocate && intFreeList.io.canAllocate && io.robCommits.isWalk && io.enqRob.canAccept)))
-
+  XSPerfAccumulate("compress_instr", PopCount(io.out.map(o => o.fire && o.bits.compressInstNum > 1.U)))
   XSPerfAccumulate("move_instr_count", PopCount(io.out.map(out => out.fire && out.bits.ctrl.isMove)))
   val is_fused_lui_load = io.out.map(o => o.fire && o.bits.ctrl.fuType === FuType.ldu && o.bits.ctrl.srcType(0) === SrcType.imm)
   XSPerfAccumulate("fused_lui_load_instr_count", PopCount(is_fused_lui_load))

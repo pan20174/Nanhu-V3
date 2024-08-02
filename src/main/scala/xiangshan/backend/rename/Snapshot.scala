@@ -56,7 +56,7 @@ class SnapshotGenerator[T <: Data](dataType: T)(implicit p: Parameters) extends 
     snptValids(snptEnqPtr.value) := true.B
     snptEnqPtr := snptEnqPtr + 1.U
   }
-  when(io.deq) {
+  when(io.deq && !io.redirect) {
     snptValids(snptDeqPtr.value) := false.B
     snptDeqPtr := snptDeqPtr + 1.U
     XSError(isEmpty(snptEnqPtr, snptDeqPtr), "snapshots should not be empty when dequeue!\n")
