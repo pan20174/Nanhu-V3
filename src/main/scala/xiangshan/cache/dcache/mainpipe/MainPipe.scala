@@ -162,7 +162,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     val block_lr = Output(Bool())
 
     // MissQueue forward reg
-    val forwardRegState = Output(Vec(3, new MainPipeForwardRegState))
+    val forwardRegState = Output(Vec(4, new MainPipeForwardRegState))
 
     // ecc error
     val error = Output(new L1CacheErrorInfo())
@@ -246,9 +246,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val s1_idx = get_idx(s1_req.vaddr)
   val s1_req_vaddr = RegEnable(s0_req.vaddr, s0_fire)
 
-  io.forwardRegState(0).valid := s1_valid && !s1_req.probe && (s1_req.source =/= STORE_SOURCE.U)
-  io.forwardRegState(0).paddr := s1_req.addr
-  io.forwardRegState(0).data  := s1_req.store_data
+
 
   when (s0_fire) {
     s1_valid := true.B
@@ -381,9 +379,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     s2_store_data_merged(i) := mergePutData(old_data, new_data, wmask)
   }
 
-  io.forwardRegState(1).valid := s2_valid && !s2_req.probe && (s2_req.source =/= STORE_SOURCE.U)
-  io.forwardRegState(1).paddr := s2_req.addr
-  io.forwardRegState(1).data := s2_store_data_merged.asUInt
+
 
   val s2_data_word = s2_store_data_merged(s2_req.word_idx)
 
@@ -442,9 +438,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   val update_meta = miss_update_meta || probe_update_meta || store_update_meta || refill_update_meta
 
 
-  io.forwardRegState(2).valid := s3_valid && !s3_req.probe && (s3_req.source =/= STORE_SOURCE.U)
-  io.forwardRegState(2).paddr := s3_req.addr
-  io.forwardRegState(2).data := s3_store_data_merged.asUInt
+
 
   def missCohGen(cmd: UInt, param: UInt, dirty: Bool) = {
     val c = categorize(cmd)
@@ -927,6 +921,22 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   // io.error.opType.release := RegEnable(s2_req.replace, s2_fire)
   io.error.opType.release := DontCare
   io.error.opType.atom := RegEnable(s2_req.isAMO && !s2_req.probe, s2_fire)
+
+  io.forwardRegState(0).valid := io.replace_req.fire && (io.replace_req.bits.source =/= STORE_SOURCE.U)
+  io.forwardRegState(0).paddr := io.replace_req.bits.addr
+  io.forwardRegState(0).data := io.replace_req.bits.store_data
+
+  io.forwardRegState(1).valid := s1_valid && !s1_req.probe && (s1_req.source =/= STORE_SOURCE.U)
+  io.forwardRegState(1).paddr := s1_req.addr
+  io.forwardRegState(1).data := s1_req.store_data
+
+  io.forwardRegState(2).valid := s2_valid && !s2_req.probe && (s2_req.source =/= STORE_SOURCE.U)
+  io.forwardRegState(2).paddr := s2_req.addr
+  io.forwardRegState(2).data := s2_store_data_merged.asUInt
+
+  io.forwardRegState(3).valid := s3_valid && !s3_req.probe && (s3_req.source =/= STORE_SOURCE.U)
+  io.forwardRegState(3).paddr := s3_req.addr
+  io.forwardRegState(3).data := s3_store_data_merged.asUInt
 
   val perfEvents = Seq(
     ("dcache_mp_req          ", s0_fire                                                      ),
