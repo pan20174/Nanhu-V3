@@ -518,7 +518,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
     val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W))
 
-    val forwardRegState = Input(Vec(3, new MainPipeForwardRegState))
+    val forwardRegState = Input(Vec(4, new MainPipeForwardRegState))
     val lduForward = Flipped(Vec(LoadPipelineWidth, new LduForwardFromMSHR))
   })
   
