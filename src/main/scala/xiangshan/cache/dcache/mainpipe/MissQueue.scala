@@ -75,6 +75,11 @@ class MissReqWoStoreData(implicit p: Parameters) extends DCacheBundle {
 //   val store_data = UInt((cfg.blockBytes * 8).W)
 //   val store_mask = UInt(cfg.blockBytes.W)
 // }
+class LduForwardFromMSHR(implicit p: Parameters) extends DCacheBundle{
+//  val mshrId =
+  val req = ValidIO(UInt(PAddrBits.W))
+  val resp = Flipped(ValidIO(UInt(DataBits.W)))
+}
 
 class MissReq(implicit p: Parameters) extends MissReqWoStoreData {
   // store data and store mask will be written to miss queue entry 
@@ -513,6 +518,9 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     val l2_pf_store_only = Input(Bool())
 
     val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W))
+
+    val forwardRegState = Input(Vec(3, new MainPipeForwardRegState))
+    val lduForward = Flipped(Vec(LoadPipelineWidth, new LduForwardFromMSHR))
   })
   
   // 128KBL1: FIXME: provide vaddr for l2
@@ -520,7 +528,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val entries = Seq.fill(cfg.nMissEntries)(Module(new MissEntry(edge)))
 
   val refill_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))
-  val refill_ldq_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))
+  val refill_ldq_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))  //useless
   val difftest_data_raw = Reg(Vec(blockBytes/beatBytes, UInt(beatBits.W)))
 
   // val req_data_gen = io.req.bits.toMissReqStoreData()
@@ -540,9 +548,38 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val should_block_d = WireInit(false.B)
   val should_block_d_reg = RegNext(should_block_d, false.B)
 
+  val isAMO = RegInit(false.B)
+
+
   when(io.req.valid){
     assert(PopCount(secondary_ready_vec) <= 1.U)
   }
+
+  io.lduForward.zipWithIndex.foreach({ case (forward, idx) => {
+    val reqVReg = RegNext(forward.req.valid, false.B)
+    val reqPaddrReg = RegEnable(forward.req.bits, forward.req.valid)
+
+    val validVec = Wire(Vec(io.forwardRegState.length, Bool()))
+    val dataVec = Wire(Vec(io.forwardRegState.length, UInt(DataBits.W)))
+
+    io.forwardRegState.zipWithIndex.foreach({case (reg,idx)=>{
+      val bankAddr = addr_to_dcache_bank(reqPaddrReg)
+      val dataSlipt = Wire(Vec(8, UInt(DataBits.W)))
+
+      for(i <- 0 until 8){
+        dataSlipt(i) := reg.data((i + 1) * DataBits - 1, i * DataBits)
+      }
+
+      validVec(idx) := reqVReg && reg.valid && (get_block(reg.paddr) === get_block(reqPaddrReg))
+      dataVec(idx) := dataSlipt(bankAddr)
+    }})
+
+    assert(PopCount(validVec) <= 1.U)
+
+    forward.resp.valid := validVec.reduce(_|_)
+    forward.resp.bits := Mux1H(validVec, dataVec)
+  }})
+
 //  assert(RegNext(PopCount(secondary_reject_vec) <= 1.U))
   // It is possible that one mshr wants to merge a req, while another mshr wants to reject it.
   // That is, a coming req has the same paddr as that of mshr_0 (merge),
@@ -558,7 +595,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     if (name.nonEmpty) { out.suggestName(s"${name.get}_select") }
     out.valid := Cat(in.map(_.valid)).orR
     out.bits := ParallelMux(in.map(_.valid) zip in.map(_.bits))
-    in.map(_.ready := out.ready) 
+    in.map(_.ready := out.ready)
     assert(!RegNext(out.valid && PopCount(Cat(in.map(_.valid))) > 1.U))
   }
 
@@ -569,9 +606,10 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val refill_row_data = io.mem_grant.bits.data
   val (_, _, refill_done, refill_count) = edge.count(io.mem_grant)
 
-  when(io.req.bits.isAMO && io.req.valid){
+  when(io.req.bits.isAMO && io.req.fire){
     refill_data_raw(0) := Cat(io.req.bits.amo_mask, io.req.bits.word_idx)
     refill_data_raw(1) := io.req.bits.amo_data
+    isAMO := true.B
   }
   val hasData = edge.hasData(io.mem_grant.bits)
 
@@ -613,7 +651,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
           }
         }.elsewhen(e.io.req_source === LOAD_SOURCE.U || e.io.req_source === DCACHE_PREFETCH_SOURCE.U) {
           io.mem_grant.ready := !should_block_d && e.io.mem_grant.ready
-          when(io.mem_grant.fire && hasData){
+          when(io.mem_grant.fire && hasData && !isAMO){
             refill_data_raw(refill_count) := refill_row_data
             difftest_data_raw(refill_count) := refill_row_data
             refill_ldq_data_raw(refill_count) := refill_row_data
@@ -669,6 +707,11 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     should_block_d := false.B
   }.otherwise {
     should_block_d := should_block_d_reg
+  }
+
+  //amo 
+  when(io.main_pipe_req.fire){
+    isAMO := false.B
   }
 
 

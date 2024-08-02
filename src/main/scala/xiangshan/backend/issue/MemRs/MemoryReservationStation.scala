@@ -119,7 +119,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     val lduEarlyWakeUpIn = Input(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
     val fromMemBlkInfo = new Bundle() {
       val ldValidNum = Input(UInt())
-      val replayQFreeNum = Input(UInt(log2Up(LoadReplayQueueSize).W))
+      val replayQFreeNum = Input(UInt(log2Up(LoadReplayQueueSize + 1).W))
     }
   })
   require(outer.dispatchNode.in.length == 1)

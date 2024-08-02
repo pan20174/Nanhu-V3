@@ -106,7 +106,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
     val mshrFull = Input(Bool())
     val lduqueryAndUpdate = Vec(LoadPipelineWidth, Flipped(ValidIO(new LoadQueueDataUpdateBundle))) //from loadUnit S2
-    val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+    val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize + 1).W))
   })
 
   dontTouch(io.tlb_hint)

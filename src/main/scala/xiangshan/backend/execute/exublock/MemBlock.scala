@@ -300,7 +300,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     }))
     val toMemRsInfo = new Bundle() {
       val ldValidNum = Output(UInt())
-      val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize).W))
+      val replayQFreeNum = Output(UInt(log2Up(LoadReplayQueueSize + 1).W))
     }
   })
   io.lsqVecDeqCnt := DontCare
@@ -650,6 +650,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
 //    when(selSldu){assert(lduIssues(i).issue.valid === false.B)}
     // dcache access
     loadUnits(i).io.dcache <> dcache.io.lsu.load(i)
+    loadUnits(i).io.lduForwardMSHR <> dcache.io.lsu.lduForwardMSHR(i)
     loadUnits(i).io.loadReqHandledResp <> dcache.io.lsu.loadReqHandledResp
 
     dcache.io.lsu.load(i).req.valid := loadUnits(i).io.dcache.req.valid && !loadUnits(i).io.dcache.req.bits.robIdx.needFlush(Pipe(redirectIn))
