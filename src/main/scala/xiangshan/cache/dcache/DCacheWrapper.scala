@@ -433,12 +433,18 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
 class DCacheTLDBypassLduIO(implicit p: Parameters) extends DCacheBundle {
   val valid = Bool()
   val mshrid = UInt(log2Up(cfg.nMissEntries + 1).W)
+
+  def hit (v: Bool, id: UInt) = {
+    val hit = this.valid && v && (this.mshrid === id)
+    hit
+  }
+
 }
 
 class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val load  = Vec(LoadPipelineWidth, Flipped(new DCacheLoadIO)) // for speculative load
   val loadReqHandledResp = ValidIO(UInt(log2Up(cfg.nMissEntries).W)) // mshrID which handled load miss req
-  val tl_d_channel = Output(new DCacheTLDBypassLduIO)
+  val tl_d_channel = Output(Vec(2, new DCacheTLDBypassLduIO))
   //todo: remove lsq
   val lsq = ValidIO(new Refill)  // refill to load queue, wake up load misses
   val store = new DCacheToSbufferIO // for sbuffer
@@ -735,11 +741,14 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 //  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.fire)
 //  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.fire)
 
-  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
-  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
+//  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
+//  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
 
-  io.lsu.tl_d_channel.valid := io.l2_hint.valid
-  io.lsu.tl_d_channel.mshrid := io.l2_hint.mshrid
+  io.lsu.tl_d_channel(0).valid := io.l2_hint.valid
+  io.lsu.tl_d_channel(0).mshrid := io.l2_hint.mshrid
+
+  io.lsu.tl_d_channel(1).valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
+  io.lsu.tl_d_channel(1).mshrid := bus.d.bits.source
 
   missQueue.io.forwardRegState := mainPipe.io.forwardRegState
 

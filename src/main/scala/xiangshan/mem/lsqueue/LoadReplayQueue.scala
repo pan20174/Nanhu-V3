@@ -223,7 +223,7 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     val replayQFull = Output(Bool())
     val fastReplayStop = Input(Vec(LoadPipelineWidth, Bool()))
     val replayQLdStop = Output(Vec(LoadPipelineWidth, Bool()))
-    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
+    val tlDchannelWakeup = Input(Vec(2, new DCacheTLDBypassLduIO))
     val stDataReadyVec = Input(Vec(StoreQueueSize, Bool()))
     val stDataReadySqPtr = Input(new SqPtr)
     val stAddrReadyPtr = Input(new SqPtr)
@@ -474,7 +474,8 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
         }
         // case Dcache MISS
         when(io.enq(j).bits.replay.dcache_miss){
-          blockingReg(i) := (!io.enq(j).bits.replay.full_fwd) && !(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === io.enq(j).bits.mshrMissIDResp)
+//          blockingReg(i) := (!io.enq(j).bits.replay.full_fwd) && !(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === io.enq(j).bits.mshrMissIDResp)
+          blockingReg(i) := (!io.enq(j).bits.replay.full_fwd) && !(io.tlDchannelWakeup.map(_.hit(true.B, io.enq(j).bits.mshrMissIDResp)).reduce(_|_))
           mshrIDreg(i) := io.enq(j).bits.mshrMissIDResp
         }
         // case Bank Conflict
@@ -519,13 +520,13 @@ class LoadReplayQueue(enablePerf: Boolean)(implicit p: Parameters) extends XSMod
     }
     // case Dcache no mshr
     when(causeReg(i)(LoadReplayCauses.C_DR)) {
-      when((io.tlDchannelWakeup.valid && (io.tlDchannelWakeup.mshrid <= 15.U)) || !io.mshrFull){
+      when((io.tlDchannelWakeup.map(_.valid).reduce(_|_) || !io.mshrFull)){
         blockingReg(i) := false.B
       }
     }
     // case Dcache MISS
     when(causeReg(i)(LoadReplayCauses.C_DM)) {
-      when(io.tlDchannelWakeup.valid && io.tlDchannelWakeup.mshrid === mshrIDreg(i)){
+      when(io.tlDchannelWakeup.map(_.hit(true.B, mshrIDreg(i))).reduce(_|_)) {
         blockingReg(i) := false.B
       }
     }
