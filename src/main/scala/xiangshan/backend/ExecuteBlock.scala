@@ -36,6 +36,7 @@ import xiangshan.backend.issue.IntRs.IntegerReservationStation
 import xiangshan.backend.issue.MemRs.MemoryReservationStation
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.backend.writeback.WriteBackNetwork
+import xiangshan.cache.DCacheTLDBypassLduIO
 import xiangshan.cache.mmu.{BTlbPtwIO, PtwSectorResp, TlbHintIO}
 import xiangshan.frontend.FtqPtr
 import xiangshan.mem.LsqEnqIO
@@ -110,6 +111,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
     val rob = Flipped(new RobLsqIO) // rob to lsq
     val lsqVecDeqCnt = Output(new LsqVecDeqIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
+    val l2_hint = Input(new DCacheTLDBypassLduIO)
 
     //Rename
     val integerAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
@@ -237,6 +239,7 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
   memBlk.io.sfence := intBlk.io.fenceio.sfence
   memBlk.io.tlbCsr <> intBlk.io.csrio.tlb
   memBlk.io.hartId := io.hartId
+  memBlk.io.l2_hint := io.l2_hint
   io.lqDeq := RegNext(memBlk.io.lqDeq)
 
   io.lsqVecDeqCnt <> memBlk.io.lsqVecDeqCnt
