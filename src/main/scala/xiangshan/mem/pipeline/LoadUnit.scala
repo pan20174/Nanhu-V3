@@ -759,9 +759,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("NHV5_load_s2_fromRs_DcacheMshrFull", s2_cache_replay && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
   XSPerfAccumulate("NHV5_load_s2_fromRs_HasRawVio", s2_hasStLdViolation && s2_perfValidCounting && !s2_out.bits.replay.isReplayQReplay)
 
-  XSPerfAccumulate("dcache_mshrFull", s2_cache_replay && s2_cache_replay_with_mshrFull && s2_valid)
-  XSPerfAccumulate("dcache_enq_conflict", s2_cache_replay && s2_cache_replay_with_conflict && s2_valid)
-  XSPerfAccumulate("dcache_enq_reject", s2_cache_replay && s2_cache_replay_with_reject && s2_valid)
+  XSPerfAccumulate("dcache_mshrFull", s2_cache_replay && s2_cache_replay_with_mshrFull && s2_out.valid)
+  XSPerfAccumulate("dcache_enq_conflict", s2_cache_replay && s2_cache_replay_with_conflict &&  s2_out.valid)
+  XSPerfAccumulate("dcache_enq_reject", s2_cache_replay && s2_cache_replay_with_reject &&  s2_out.valid)
   XSPerfAccumulate("dcache_replay_go_to_fastReplay", io.fastReplayOut.valid &&  (s2_cache_replay_with_conflict || s2_cache_replay_with_reject))
 
   XSPerfAccumulate("NHV5_load_s2_fromRq_DcacheMiss", s2_cache_miss && !s2_bank_conflict && s2_perfValidCounting && s2_out.bits.replay.isReplayQReplay)
