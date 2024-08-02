@@ -298,6 +298,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       val cancel = Bool()
       val wakeUp = Valid(new EarlyWakeUpInfo)
     }))
+    val l2_hint = Input(new DCacheTLDBypassLduIO)
   })
   io.lsqVecDeqCnt := DontCare
 
@@ -305,6 +306,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val uncache = outer.uncache.module
 
   val csrCtrl = DelayN(io.csrCtrl, 2)
+  dcache.io.l2_hint := io.l2_hint
   dcache.io.csr.distribute_csr <> csrCtrl.distribute_csr
   dcache.io.l2_pf_store_only := RegNext(io.csrCtrl.l2_pf_store_only, false.B)
   io.csrUpdate := RegNext(dcache.io.csr.update)
