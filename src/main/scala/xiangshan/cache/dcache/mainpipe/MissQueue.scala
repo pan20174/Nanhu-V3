@@ -401,7 +401,7 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   io.replace_pipe_req.valid := !s_replace_req && w_grantlast
   val replace = io.replace_pipe_req.bits
   replace := DontCare
-  replace.miss := false.B //利用amo miss的一些位暂定，或者用新增位，后续改mainpipe容易
+  replace.miss := false.B
   replace.miss_id := io.id
   replace.miss_param := grant_param
   replace.miss_dirty := isDirty
@@ -438,7 +438,6 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   io.main_pipe_req.bits.error := error
   io.main_pipe_req.bits.id := req.id
   io.main_pipe_req.bits.pf_source := req.pf_source
-
   // io.block_addr.valid := req_valid && w_grantlast && !w_refill_resp
   io.block_addr.valid := req_valid && w_grantlast && !w_replace_resp
   io.block_addr.bits := req.addr

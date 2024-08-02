@@ -100,7 +100,7 @@ trait HasDCacheParameters extends HasL1CacheParameters {
 
   def blockProbeAfterGrantCycles = 8 // give the processor some time to issue a request after a grant
 
-  def nSourceType = 4
+  def nSourceType = 5
   def sourceTypeWidth = log2Up(nSourceType)
   def LOAD_SOURCE = 0
   def STORE_SOURCE = 1
@@ -318,6 +318,8 @@ class BaseDCacheWordResp(implicit p: Parameters) extends DCacheBundle
   val miss   = Bool()
   // cache miss, and failed to enter the missqueue, replay from RS is needed
   val replay = Bool()
+  val mshr_full = Bool()
+  val miss_req_enq_confilct = Bool()
   // data has been corrupted
   val tag_error = Bool() // tag error
 }
@@ -442,7 +444,6 @@ class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val store = new DCacheToSbufferIO // for sbuffer
   val atomics  = Flipped(new AtomicWordIO)  // atomics reqs
   val release = ValidIO(new Release) // cacheline release hint for ld-ld violation check
-  val lduForwardMSHR = Flipped(Vec(LoadPipelineWidth ,new LduForwardFromMSHR))
 }
 
 class DCacheIO(implicit p: Parameters) extends DCacheBundle {
@@ -680,7 +681,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   ldu.head.io.lsu <> io.lsu.load.head
   ldu(1).io.lsu <> io.lsu.load(1)
 
-  missQueue.io.lduForward <> io.lsu.lduForwardMSHR
 
   //----------------------------------------
   // atomics
@@ -695,6 +695,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val MainPipeMissReqPort = 0
 
   // Request
+//  val missReqArb = Module(new Arbiter(new MissReq, MissReqPortCount))
   val missReqArb = Module(new ArbiterFilterByCacheLineAddr(new MissReq, MissReqPortCount, blockOffBits, PAddrBits))
 
   missReqArb.io.in(MainPipeMissReqPort) <> mainPipe.io.miss_req
@@ -716,6 +717,15 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
     missQueue.io.req.bits.cancel := true.B
     missReqArb.io.out.ready := false.B
   }
+
+
+  for (w <- 0 until LoadPipelineWidth) {
+    //when not full and not conflict, only missqueue reject will replay
+    io.lsu.load(w).resp.bits.mshr_full := missQueue.io.full
+    //missqueue can accept but req can not enq :arb conflict
+    io.lsu.load(w).resp.bits.miss_req_enq_confilct := !missReqArb.io.in(w + 1).ready && missReqArb.io.in(w + 1).valid && missReqArb.io.out.ready
+  }
+
 
   // refill to load queue
   io.lsu.lsq <> missQueue.io.refill_to_ldq
@@ -1002,7 +1012,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   XSPerfAccumulate("load_have_two_enq_valid", missReqArb.io.in(1).fire && missReqArb.io.in(2).valid && !missReqArb.io.in(0).valid)
   XSPerfAccumulate("load_confilct_with_mainpipe", (missReqArb.io.in(1).valid || missReqArb.io.in(2).valid) && missReqArb.io.in(0).fire)
-  
+
   XSPerfAccumulate("miss_queue_fire", PopCount(VecInit(missReqArb.io.in.map(_.fire))) >= 1.U)
   XSPerfAccumulate("miss_queue_muti_fire", PopCount(VecInit(missReqArb.io.in.map(_.fire))) > 1.U)
   XSPerfAccumulate("miss_queue_has_enq_req", PopCount(VecInit(missReqArb.io.in.map(_.valid))) >= 1.U)
