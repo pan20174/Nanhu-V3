@@ -176,7 +176,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
 
   val core_soft_rst = outer.core_reset_sink.in.head._1
 
-  private val l1d2L2Buf = outer.l1d_to_l2_bufferOpt.get.last.module
+  private val l1d2L2Buf = outer.l1d_to_l2_bufferOpt.get.head.module
   private val inBundle = l1d2L2Buf.auto.elements("in")
   private val inFire = inBundle match {
     case d: TLBundle => Seq(d.d.fire)
