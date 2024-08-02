@@ -78,6 +78,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     val fastReplayOut = DecoupledIO(new LsPipelineBundle)
     // S1/S2: cache query and response in next cycle
     val dcache = new DCacheLoadIO
+    val lduForwardMSHR = new LduForwardFromMSHR
     // S1/S2: forward query to sbuffer and response in next cycle
     val forwardFromSBuffer = new LoadForwardQueryIO
     // S1/S2: FDI req and response in next cycle
@@ -295,7 +296,11 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s1_sbufferForwardReq = io.forwardFromSBuffer
   val s1_lsqForwardReq = io.lsq.forwardFromSQ
+  val s1_MSHRForwardReq = io.lduForwardMSHR.req
   val s1_fdiReq = io.fdiReq
+
+  s1_MSHRForwardReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
+  s1_MSHRForwardReq.bits := s1_paddr_dup_lsu
 
   s1_sbufferForwardReq.valid := s1_in.valid && !(s1_hasException || s1_tlb_miss) && s1_enableMem
   s1_sbufferForwardReq.vaddr := s1_in.bits.vaddr
@@ -401,11 +406,20 @@ class LoadUnit(implicit p: Parameters) extends XSModule
 
   val s2_LSQ_LoadForwardQueryIO = Wire(new LoadForwardQueryIO)
   val s2_SB_LoadForwardQueryIO = Wire(new LoadForwardQueryIO)
+  val s2_MSHR_LoadForwardData = Wire(new LoadForwardQueryIO)
 //  val s2_loadViolationQueryResp = Wire(ValidIO(new LoadViolationQueryResp))
 
   s2_LSQ_LoadForwardQueryIO := DontCare
   s2_SB_LoadForwardQueryIO := DontCare
+  s2_MSHR_LoadForwardData := DontCare
   s2_dcacheResp.ready := true.B
+
+  private val dataMSHRSplit = Wire(Vec(8, UInt(8.W)))
+  for(i <- 0 until 8){
+    dataMSHRSplit(i) := io.lduForwardMSHR.resp.bits(8 * (i + 1) - 1, 8 * i)
+  }
+  s2_MSHR_LoadForwardData.forwardData := dataMSHRSplit
+  s2_MSHR_LoadForwardData.forwardMask := Fill(8, io.lduForwardMSHR.resp.valid).asBools
 
   s2_LSQ_LoadForwardQueryIO.forwardData := io.lsq.forwardFromSQ.forwardData
   s2_LSQ_LoadForwardQueryIO.forwardMask := io.lsq.forwardFromSQ.forwardMask
@@ -444,11 +458,14 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s2_forwardMask = Wire(Vec(8, Bool()))
   val s2_forwardData = Wire(Vec(8, UInt(8.W)))
   for (i <- 0 until XLEN / 8) {
-    s2_forwardMask(i) := s2_LSQ_LoadForwardQueryIO.forwardMask(i) || s2_SB_LoadForwardQueryIO.forwardMask(i)
-    s2_forwardData(i) := Mux(s2_LSQ_LoadForwardQueryIO.forwardMask(i), s2_LSQ_LoadForwardQueryIO.forwardData(i), s2_SB_LoadForwardQueryIO.forwardData(i))
+    s2_forwardMask(i) := s2_LSQ_LoadForwardQueryIO.forwardMask(i) || s2_SB_LoadForwardQueryIO.forwardMask(i) || s2_MSHR_LoadForwardData.forwardMask(i)
+    s2_forwardData(i) := Mux(s2_LSQ_LoadForwardQueryIO.forwardMask(i), s2_LSQ_LoadForwardQueryIO.forwardData(i),
+                                                                      Mux(s2_SB_LoadForwardQueryIO.forwardMask(i), s2_SB_LoadForwardQueryIO.forwardData(i),
+                                                                                                                  s2_MSHR_LoadForwardData.forwardData(i)))
   }
   val s2_fullForward = s2_out.valid && !s2_tlb_miss && ((~s2_forwardMask.asUInt).asUInt & s2_in.bits.mask) === 0.U && !s2_LSQ_LoadForwardQueryIO.dataInvalid
 
+  dontTouch(s2_fullForward)
   val s2_dataFromDCache = s2_out.valid && !s2_fullForward && !s2_cache_miss
 
   // dcache load data

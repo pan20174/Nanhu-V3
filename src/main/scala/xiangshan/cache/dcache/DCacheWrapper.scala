@@ -444,6 +444,7 @@ class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val store = new DCacheToSbufferIO // for sbuffer
   val atomics  = Flipped(new AtomicWordIO)  // atomics reqs
   val release = ValidIO(new Release) // cacheline release hint for ld-ld violation check
+  val lduForwardMSHR = Flipped(Vec(LoadPipelineWidth ,new LduForwardFromMSHR))
 }
 
 class DCacheIO(implicit p: Parameters) extends DCacheBundle {
@@ -681,6 +682,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   ldu.head.io.lsu <> io.lsu.load.head
   ldu(1).io.lsu <> io.lsu.load(1)
 
+  missQueue.io.lduForward <> io.lsu.lduForwardMSHR
 
   //----------------------------------------
   // atomics
@@ -695,7 +697,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val MainPipeMissReqPort = 0
 
   // Request
-//  val missReqArb = Module(new Arbiter(new MissReq, MissReqPortCount))
   val missReqArb = Module(new ArbiterFilterByCacheLineAddr(new MissReq, MissReqPortCount, blockOffBits, PAddrBits))
 
   missReqArb.io.in(MainPipeMissReqPort) <> mainPipe.io.miss_req
@@ -730,20 +731,14 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   // refill to load queue
   io.lsu.lsq <> missQueue.io.refill_to_ldq
   io.lsu.loadReqHandledResp <> missQueue.io.loadReqHandledResp
-//  val (_, _, done, _) = edge.count(bus.d)
-//  when (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant) {
-//    io.lsu.tl_d_channel.valid := bus.d.valid && done
-//    io.lsu.tl_d_channel.mshrid := bus.d.bits.source
-//  } .otherwise {
-//    io.lsu.tl_d_channel := DontCare
-//  }
-//  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
-//  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
 
-  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.fire)
-  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.fire)
+//  io.lsu.tl_d_channel.valid := RegNext(mainPipe.io.replace_req.fire)
+//  io.lsu.tl_d_channel.mshrid := RegEnable(mainPipe.io.replace_req.bits.miss_id, mainPipe.io.replace_req.fire)
 
+  io.lsu.tl_d_channel.valid := bus.d.valid && (bus.d.bits.opcode === TLMessages.GrantData || bus.d.bits.opcode === TLMessages.Grant)
+  io.lsu.tl_d_channel.mshrid := bus.d.bits.source
 
+  missQueue.io.forwardRegState := mainPipe.io.forwardRegState
 
   // tilelink stuff
   bus.a <> missQueue.io.mem_acquire
@@ -1015,6 +1010,15 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
       })
   }
   XSPerfAccumulate("access_early_replace", PopCount(Cat(access_early_replace)))
+
+  XSPerfAccumulate("load_have_two_enq_valid", missReqArb.io.in(1).fire && missReqArb.io.in(2).valid && !missReqArb.io.in(0).valid)
+  XSPerfAccumulate("load_confilct_with_mainpipe", (missReqArb.io.in(1).valid || missReqArb.io.in(2).valid) && missReqArb.io.in(0).fire)
+  
+  XSPerfAccumulate("miss_queue_fire", PopCount(VecInit(missReqArb.io.in.map(_.fire))) >= 1.U)
+  XSPerfAccumulate("miss_queue_muti_fire", PopCount(VecInit(missReqArb.io.in.map(_.fire))) > 1.U)
+  XSPerfAccumulate("miss_queue_has_enq_req", PopCount(VecInit(missReqArb.io.in.map(_.valid))) >= 1.U)
+  XSPerfAccumulate("miss_queue_has_muti_enq_req", PopCount(VecInit(missReqArb.io.in.map(_.valid))) > 1.U)
+  XSPerfAccumulate("miss_queue_has_muti_enq_but_not_fire", PopCount(VecInit(missReqArb.io.in.map(_.valid))) > 1.U && PopCount(VecInit(missReqArb.io.in.map(_.fire))) === 0.U)
 
   val perfEvents = (Seq(wb, mainPipe, missQueue, probeQueue) ++ ldu).flatMap(_.getPerfEvents)
   generatePerfEvent()
