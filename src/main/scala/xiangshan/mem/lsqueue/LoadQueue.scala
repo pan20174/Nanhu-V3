@@ -127,7 +127,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val uncache = new UncacheWordIO
     //wakeup info
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
-    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
+    val tlDchannelWakeup = Input(Vec(2, new DCacheTLDBypassLduIO))
     val mshrFull = Input(Bool())
     //store load violation
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //LoadUnit S2 enq
