@@ -1000,7 +1000,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   val instrCntReg = RegInit(0.U(64.W))
   val fuseCommitCnt = PopCount(io.commits.commitValid.zip(io.commits.info).map { case (v, i) => RegNext(v && CommitType.isFused(i.commitType)) })
-  val trueCommitCnt = RegNext(commitCnt) +& fuseCommitCnt
+  //val trueCommitCnt = RegNext(commitCnt) +& fuseCommitCnt
+  val trueCommitCnt = RegNext(io.commits.commitValid.zip(io.commits.info).map { case (v, i) => Mux(v, i.instrSize.getOrElse(0.U), 0.U) }.reduce(_ +& _)) +& fuseCommitCnt
   val retireCounter = Mux(RegNext(io.commits.isCommit), trueCommitCnt, 0.U)
   val instrCnt = instrCntReg + retireCounter
   instrCntReg := instrCnt
