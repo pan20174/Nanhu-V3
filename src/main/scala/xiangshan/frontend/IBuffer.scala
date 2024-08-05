@@ -92,7 +92,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
   }
 }
 
-class Ibuffer(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper with HasPerfEvents with HasPerfLogging {
+class IBuffer(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper with HasPerfEvents with HasPerfLogging {
   val io = IO(new IBufferIO)
 
   val ibuf = Module(new SyncDataModuleTemplate(new IBufEntry, IBufSize, 2 * DecodeWidth, PredictWidth, "IBuffer"))
@@ -231,3 +231,4 @@ class Ibuffer(implicit p: Parameters) extends XSModule with HasCircularQueuePtrH
   )
   generatePerfEvent()
 }
+
