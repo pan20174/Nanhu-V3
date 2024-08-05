@@ -343,7 +343,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       loadIssueDriver.io.enq.valid := lduSelectNetwork.io.issueInfo(ldIssuePortIdx).valid
       loadIssueDriver.io.enq.bits.uop := ldIssuePayloads(ldIssuePortIdx)
       loadIssueDriver.io.enq.bits.selectResp := lduSelectNetwork.io.issueInfo(ldIssuePortIdx).bits
-      loadIssueDriver.io.enq.bits.canFeedback := (io.fromMemBlkInfo.replayQFreeNum - io.fromMemBlkInfo.ldValidNum) >= 4.U
+      loadIssueDriver.io.enq.bits.canFeedback := false.B
 
       iss._1.issue.valid := loadIssueDriver.io.deq.valid
       iss._1.issue.bits.uop := loadIssueDriver.io.deq.bits.uop
