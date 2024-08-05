@@ -74,11 +74,11 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
   //enq
   for (i <- 0 until vecLen) {
     when(io.in(i).fire && !(io.redirect.valid || io.flush)) {
-      val currentAddr = enqPtr.value + PopCount(io.in.take(i).map(_.valid))
-      dataModule(currentAddr).uop.ctrl := io.in(i).bits.ctrl
-      dataModule(currentAddr).uop.cf := io.in(i).bits.cf
-      dataModule(currentAddr).uop.vctrl := io.in(i).bits.vctrl
-      dataModule(currentAddr).uop.vCsrInfo := io.in(i).bits.vCsrInfo
+      val currentAddr = enqPtr + PopCount(io.in.take(i).map(_.valid))
+      dataModule(currentAddr.value).uop.ctrl := io.in(i).bits.ctrl
+      dataModule(currentAddr.value).uop.cf := io.in(i).bits.cf
+      dataModule(currentAddr.value).uop.vctrl := io.in(i).bits.vctrl
+      dataModule(currentAddr.value).uop.vCsrInfo := io.in(i).bits.vCsrInfo
     }
   }
 
