@@ -425,7 +425,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   allowToIfu := !ifuFlush && !backendRedirect.valid && !backendRedirectReg.valid
 
   def copyNum = 5
-  val bpuPtr, pfPtr, ifuPtr, ifuWbPtr, commPtr = RegInit(FtqPtr(false.B, 0.U))
+  val bpuPtr, pfPtr, ifuPtr, ifuWbPtr, robCommPtr, commPtr = RegInit(FtqPtr(false.B, 0.U))
   val ifuPtrPlus1 = RegInit(FtqPtr(false.B, 1.U))
   val ifuPtrPlus2 = RegInit(FtqPtr(false.B, 2.U))
   val pfPtrPlus1  = RegInit(FtqPtr(false.B, 1.U))
@@ -441,6 +441,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val ifuWbPtr_write     = WireInit(ifuWbPtr)
   val commPtr_write      = WireInit(commPtr)
   val commPtrPlus1_write = WireInit(commPtrPlus1)
+  val robCommPtr_write   = WireInit(robCommPtr)
+
   ifuPtr       := ifuPtr_write
   ifuPtrPlus1  := ifuPtrPlus1_write
   ifuPtrPlus2  := ifuPtrPlus2_write
@@ -453,6 +455,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     ptr := ifuPtr_write
     dontTouch(ptr)
   }
+  robCommPtr   := robCommPtr_write
   val validEntries = distanceBetween(bpuPtr, commPtr)
 
   /** BPU TO FTQ
@@ -1030,14 +1033,24 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
 
   io.toBpu.redirect := Mux(fromBackendRedirect.valid, fromBackendRedirect, ifuRedirectToBpu)
 
-  val mayHaveStallFromBpu = Wire(Bool())
-  val BpuFtbUpdateStall = RegInit(0.U(2.W)) // 2-cycle stall, so we need 3 states
-  mayHaveStallFromBpu := BpuFtbUpdateStall =/= 0.U
+  val may_have_stall_from_bpu = Wire(Bool())
+  val bpu_ftb_update_stall = RegInit(0.U(2.W)) // 2-cycle stall, so we need 3 states
+  may_have_stall_from_bpu := bpu_ftb_update_stall =/= 0.U
+  // val canCommit = commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
+  //   Cat(commitStateQueue(commPtr.value).map(s => {
+  //     s === c_invalid || s === c_commited
+  //   })).andR
+  val noToCommit = commitStateQueue(commPtr.value).map(s => s =/= c_valid).reduce(_ && _)
+  val allEmpty = commitStateQueue(commPtr.value).map(s => s === c_invalid).reduce(_ && _)
+  canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && (isAfter(robCommPtr, commPtr) || noToCommit && !allEmpty)
 
-  canCommit := commPtr =/= ifuWbPtr && !mayHaveStallFromBpu &&
-    Cat(commitStateQueue(commPtr.value).map(s => {
-      s === c_invalid || s === c_commited
-    })).andR
+  when(io.fromBackend.rob_commits.map(_.valid).reduce(_ | _)) {
+    robCommPtr_write := ParallelPriorityMux(io.fromBackend.rob_commits.map(_.valid).reverse, io.fromBackend.rob_commits.map(_.bits.ftqIdx).reverse)
+  }.elsewhen(commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && noToCommit && !allEmpty) {
+    robCommPtr_write := commPtr
+  }.otherwise {
+    robCommPtr_write := robCommPtr
+  }
 
   val mmioReadPtr = io.mmioCommitRead.mmioFtqPtr
   val mmioLastCommit = isBefore(commPtr, mmioReadPtr) && (isAfter(ifuPtr,mmioReadPtr)  ||  mmioReadPtr ===   ifuPtr) &&
@@ -1084,20 +1097,20 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val commitValid = commitHit === h_hit || commitCfi.valid // hit or taken
 
   val toBpuHit = canCommitHit === h_hit || canCommitHit === h_false_hit
-  switch (BpuFtbUpdateStall) {
+  switch (bpu_ftb_update_stall) {
     is (0.U) {
       when (canCommitCfi.valid && !toBpuHit && canCommit) {
-        BpuFtbUpdateStall := 2.U // 2-cycle stall
+        bpu_ftb_update_stall := 2.U // 2-cycle stall
       }
     }
     is (2.U) {
-      BpuFtbUpdateStall := 1.U
+      bpu_ftb_update_stall := 1.U
     }
     is (1.U) {
-      BpuFtbUpdateStall := 0.U
+      bpu_ftb_update_stall := 0.U
     }
     is (3.U) {
-      XSError(true.B, "BpuFtbUpdateStall should be 0, 1 or 2")
+      XSError(true.B, "bpu_ftb_update_stall should be 0, 1 or 2")
     }
   }
 
