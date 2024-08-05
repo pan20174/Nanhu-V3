@@ -1038,6 +1038,18 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   QueuePerf(RobSize, PopCount((0 until RobSize).map(valid(_))), !allowEnqueue)
   XSPerfAccumulate("commitUop", ifCommit(commitCnt))
   XSPerfAccumulate("commitInstr", ifCommitReg(trueCommitCnt))
+  for(i <- (0 until (CommitWidth+1))){
+    XSPerfAccumulate(s"commitInstr_${i}_per_cycle", ifCommitReg(trueCommitCnt) === i.U)
+  }
+  val hasBlkCommit = io.commits.commitValid.contains(true.B) && io.commits.commitValid.contains(false.B)
+  when(hasBlkCommit){
+    for (fuType <- FuType.functionNameMap.keys) {
+    val fuName = FuType.functionNameMap(fuType)
+    val firstInvalidCommitUop = PriorityMux(io.commits.commitValid.map(v => !v), commitDebugUop)
+    val commitIsFuType = firstInvalidCommitUop.ctrl.fuType === fuType.U
+    XSPerfAccumulate(s"commitInstrBlockBy_${fuName}_instr_cnt", commitIsFuType)
+    }
+  }
   val commitIsMove = commitDebugUop.map(_.ctrl.isMove)
   XSPerfAccumulate("commitInstrMove", ifCommit(PopCount(io.commits.commitValid.zip(commitIsMove).map { case (v, m) => v && m })))
   val commitMoveElim = commitDebugUop.map(_.debugInfo.eliminatedMove)
