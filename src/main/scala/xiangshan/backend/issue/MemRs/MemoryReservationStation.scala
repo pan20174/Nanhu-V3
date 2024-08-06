@@ -299,8 +299,13 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
 
   private val loadIssResps = Wire(Vec(lduIssuePortNum, Decoupled(new SelectResp(param.bankNum, entriesNumPerBank))))
   private val ldIssuePayloads = Wire(Vec(ldIssue.length, new MicroOp))
-//  private val ldFastReleaseRsEntry = Wire(Vec(ldIssue.length, ValidIO(new RSFeedback)))
+  private val ldFastReleaseRsEntry = Wire(Vec(ldIssue.length, ValidIO(new RSFeedback)))
   private var uopReadPortIdx = 0
+
+  ldFastReleaseRsEntry.foreach({case r => {
+    r.valid := false.B
+    r.bits := DontCare
+  }})
 
   for ((iss, ldIssuePortIdx) <- ldIssue.zipWithIndex) {
     prefix(iss._2.name + "_" + iss._2.id) {
