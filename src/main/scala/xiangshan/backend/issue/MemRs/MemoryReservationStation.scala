@@ -304,7 +304,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
 
   for ((iss, ldIssuePortIdx) <- ldIssue.zipWithIndex) {
     prefix(iss._2.name + "_" + iss._2.id) {
-      val loadIssueDriver = Module(new MemoryIssuePipelineBlock(1, param.bankNum, entriesNumPerBank, true))
+      val loadIssueDriver = Module(new MemoryIssuePipelineBlock(1, param.bankNum, entriesNumPerBank, false))
       loadIssueDriver.io.redirect := io.redirect
       loadIssueDriver.io.earlyWakeUpCancel := io.earlyWakeUpCancel
 
