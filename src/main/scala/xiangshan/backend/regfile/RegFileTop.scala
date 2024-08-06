@@ -284,13 +284,13 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
             issueValidReg := !exuInBundle.uop.robIdx.needFlush(io.redirect) //issue driver deq.valid has no needFlush
             issueExuInReg := exuInBundle
             rsIdxReg := bi.rsIdx
-            hasFeedbackReg := bi.hasFeedback
+            hasFeedbackReg := false.B
           }
 
           bo.issue.valid := issueValidReg && !replayStop
           bo.issue.bits := issueExuInReg
           bo.rsIdx := rsIdxReg
-          bo.hasFeedback := hasFeedbackReg
+          bo.hasFeedback := false.B
           bo.auxValid := auxValidReg
           bo.issue.bits.uop.loadStoreEnable := true.B // This has been delayed
           bo.hold := false.B

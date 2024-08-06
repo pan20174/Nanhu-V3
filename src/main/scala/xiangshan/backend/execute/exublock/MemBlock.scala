@@ -641,7 +641,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val lduValid = lduIssues(i).issue.valid && !lduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
 //    loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
     loadUnits(i).io.rsIdx := lduIssues(i).rsIdx
-    loadUnits(i).io.rsHasFeedback := lduIssues(i).hasFeedback
+    loadUnits(i).io.rsHasFeedback := false.B
     // get input form dispatch
 //    loadUnits(i).io.rsIssueIn.valid := Mux(selSldu, slduValid, lduValid)
 //    loadUnits(i).io.rsIssueIn.bits := Mux(selSldu, slduIssues(i).issue.bits, lduIssues(i).issue.bits)
