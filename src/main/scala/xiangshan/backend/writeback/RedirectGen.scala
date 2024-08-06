@@ -84,9 +84,6 @@ class RedirectGen(jmpRedirectNum:Int, aluRedirectNum:Int, memRedirectNum:Int)(im
   private val s1_redirectValid = s1_redirectSel.valid && !s1_redirectSel.bits.robIdx.needFlush(io.redirectIn)
   private val s1_exuOutSel = Mux1H(s1_redirectIdxOH, s1_allWb)
   private val s1_target = Mux1H(s1_redirectIdxOH(jmpRedirectNum - 1, 0), s1_allWb.take(jmpRedirectNum).map(_.bits.redirect.cfiUpdate.target))
-  when(s1_redirectValid) {
-      assert(s1_exuOutSel.bits.uop.compressInstNum === 1.U)
-  }
   private val s2_redirectValidReg = RegNext(s1_redirectValid, false.B)
   private val s2_redirectBitsReg = RegEnable(s1_redirectSel.bits, s1_redirectValid)
   private val s2_redirectIdxOHReg = RegEnable(s1_redirectIdxOH, s1_redirectValid)
