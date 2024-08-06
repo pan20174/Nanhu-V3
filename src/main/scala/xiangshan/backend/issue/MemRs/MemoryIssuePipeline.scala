@@ -11,21 +11,20 @@ sealed class MemPipelineEnqBundle(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth
   val selectResp = new SelectResp(bankIdxWidth, entryIdxWidth)
   val uop = new MicroOp
   val chosen = UInt(chosenNum.W)
-  val canFeedback = Bool()
+//  val canFeedback = Bool()
 }
 
 sealed class MemPipelineDeqBundle(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth:Int)(implicit p: Parameters) extends Bundle{
   val uop = new MicroOp
   val bankIdxOH: UInt = UInt(bankIdxWidth.W)
   val entryIdxOH: UInt = UInt(entryIdxWidth.W)
-  val hasFeedback: Bool = Bool()
+//  val hasFeedback: Bool = Bool()
   val chosen: UInt = UInt(chosenNum.W)
 }
 
 class MemoryIssuePipelineBlock(chosenNum:Int,
                                bankIdxWidth:Int,
-                               entryIdxWidth:Int,
-                               earlyReleaseEntry: Boolean = false)(implicit p: Parameters) extends XSModule{
+                               entryIdxWidth:Int)(implicit p: Parameters) extends XSModule{
   val io = IO(new Bundle{
     val redirect = Input(Valid(new Redirect))
     val enq = Flipped(DecoupledIO(new MemPipelineEnqBundle(chosenNum, bankIdxWidth, entryIdxWidth)))
@@ -35,7 +34,7 @@ class MemoryIssuePipelineBlock(chosenNum:Int,
     val hold = Output(Bool())
     val isLoad = Output(Bool())
     val ldStop = Input(Bool())
-    val earlyFeedback = ValidIO(new RSFeedback)
+//    val earlyFeedback = ValidIO(new RSFeedback)
   })
   private val enqInfo = io.enq.bits.selectResp.info
   io.hold := false.B
@@ -73,7 +72,7 @@ class MemoryIssuePipelineBlock(chosenNum:Int,
   private val timer = GTimer()
   io.deq.valid := deqValidDriverReg && !shouldBeCanceled
   io.deq.bits.uop := io.enq.bits.uop
-  io.deq.bits.hasFeedback := io.enq.bits.canFeedback
+//  io.deq.bits.hasFeedback := io.enq.bits.canFeedback
   io.deq.bits.uop.debugInfo.selectTime := timer
   io.deq.bits.uop.debugInfo.issueTime := timer + 1.U
   io.deq.bits.uop.robIdx := deqDataDriverReg.info.robPtr
@@ -97,15 +96,15 @@ class MemoryIssuePipelineBlock(chosenNum:Int,
     io.deq.bits.uop.psrc(0) := deqDataDriverReg.info.psrc(1)
   }
 
-  if(!earlyReleaseEntry){
-    io.earlyFeedback.valid := false.B
-    io.earlyFeedback.bits := DontCare
-  } else {
-    io.earlyFeedback.valid := io.deq.fire && io.deq.bits.hasFeedback && !io.deq.bits.uop.lpv.map(_.orR).reduce(_|_)
-    io.earlyFeedback.bits.sourceType := RSFeedbackType.success
-    io.earlyFeedback.bits.rsIdx.bankIdxOH := io.deq.bits.bankIdxOH
-    io.earlyFeedback.bits.rsIdx.entryIdxOH := io.deq.bits.entryIdxOH
-  }
+//  if(!earlyReleaseEntry){
+//    io.earlyFeedback.valid := false.B
+//    io.earlyFeedback.bits := DontCare
+//  } else {
+//    io.earlyFeedback.valid := io.deq.fire && io.deq.bits.hasFeedback && !io.deq.bits.uop.lpv.map(_.orR).reduce(_|_)
+//    io.earlyFeedback.bits.sourceType := RSFeedbackType.success
+//    io.earlyFeedback.bits.rsIdx.bankIdxOH := io.deq.bits.bankIdxOH
+//    io.earlyFeedback.bits.rsIdx.entryIdxOH := io.deq.bits.entryIdxOH
+//  }
 
 
 }
