@@ -188,6 +188,9 @@ class PredictorIO(implicit p: Parameters) extends XSBundle {
   val ftq_to_bpu = Flipped(new FtqToBpuIO())
   val ctrl = Input(new BPUCtrl)
   val reset_vector = Input(UInt(PAddrBits.W))
+
+  val topdownOverride = Output(Vec(2, Bool()))
+  val topdownUpdateStall = Output(Vec(3, Bool()))
 }
 
 
@@ -701,6 +704,13 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
       ghv(i) := ghv_write_datas(i)
     }
   }
+
+  // topdown
+  io.topdownOverride(0) := s2_redirect_dup(0)
+  io.topdownOverride(1) := s3_redirect_dup(0)
+  io.topdownUpdateStall(0) := !s1_components_ready_dup(0)
+  io.topdownUpdateStall(1) := !s2_components_ready_dup(0)
+  io.topdownUpdateStall(2) := !s3_components_ready_dup(0)
 
   XSError(isBefore(redirect_dup(0).cfiUpdate.histPtr, s3_ghist_ptr_dup(0)) && do_redirect_dup(0).valid,
     p"s3_ghist_ptr ${s3_ghist_ptr_dup(0)} exceeds redirect histPtr ${redirect_dup(0).cfiUpdate.histPtr}\n")

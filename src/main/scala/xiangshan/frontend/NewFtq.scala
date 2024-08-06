@@ -407,6 +407,10 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     }
 
     val mmioCommitRead = Flipped(new mmioCommitRead)
+
+    // topdown info
+    val ifuRedirect = Output(Bool())
+    val backendRedirect = ValidIO(new Redirect)
   })
   io.bpuInfo := DontCare
 
@@ -893,6 +897,11 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     backendRedirectCfi.addIntoHist := backendRedirectCfi.pd.isBr.asUInt
   }
 
+  // topdown info
+  backendRedirectCfi.br_hit := r_ftb_entry.brIsRecorded(r_ftqOffset)
+  backendRedirectCfi.jr_hit := r_ftb_entry.jmpValid && r_ftb_entry.offset === r_ftqOffset
+  backendRedirectCfi.sc_hit := backendRedirectCfi.br_hit && stage3CfiInfo.sc_disagree
+
   /** Redirect from ifu
    */
   val fromIfuRedirect = WireInit(0.U.asTypeOf(Valid(new Redirect)))
@@ -923,6 +932,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     toBpuCfi.target := toBpuCfi.rasEntry.retAddr
   }
 
+  io.ifuRedirect := ifuRedirectReg.valid
+  io.backendRedirect := fromBackendRedirect
   /** Writeback from exu
    * a part of logic from backend redirect.
    */

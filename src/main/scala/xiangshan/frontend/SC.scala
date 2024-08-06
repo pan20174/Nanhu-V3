@@ -286,6 +286,9 @@ trait HasSC extends HasSCParameter with HasPerfEvents { this: Tage =>
         s2_tageTakens_dup(dupForTageSC)
       )
 
+    val s3_disagree = RegEnable(s2_disagree, io.s2_fire(3))
+    io.out.lastStageSpecInfo.sc_disagree := s3_disagree
+
     //scMeta.tageTakens := RegEnable(s2_tageTakens_dup(dupForTageSC), io.s2_fire(dupForTageSC))
     //scMeta.scUsed     := RegEnable(s2_provideds, io.s2_fire(dupForTageSC))
     scMeta.scPreds    := RegEnable(s2_scPreds(s2_chooseBit), io.s2_fire(dupForTageSC))

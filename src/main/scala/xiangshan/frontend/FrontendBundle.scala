@@ -469,6 +469,7 @@ class SpeculativeInfo(implicit p: Parameters) extends XSBundle with HasBPUConst 
   val histPtr = new CGHPtr
   val rasSp = UInt(log2Ceil(RasSize).W)
   val rasTop = new RASEntry
+  val sc_disagree = Bool()
 }
 
 
@@ -550,4 +551,17 @@ class BranchPredictionUpdate(implicit p: Parameters) extends XSBundle with HasBP
 
 }
 
-class BranchPredictionRedirect(implicit p: Parameters) extends Redirect with HasBPUConst {}
+class BranchPredictionRedirect(implicit p: Parameters) extends Redirect with HasBPUConst {
+  require(isInstanceOf[Redirect])
+//  val BTBMissBubble = Bool()
+  def ControlRedirectBubble = debugIsCtrl
+  // if mispred br not in ftb, count as BTB miss
+  def ControlBTBMissBubble = ControlRedirectBubble && !cfiUpdate.br_hit && !cfiUpdate.jr_hit
+  def TAGEMissBubble = ControlRedirectBubble && cfiUpdate.br_hit && !cfiUpdate.sc_hit
+  def SCMissBubble = ControlRedirectBubble && cfiUpdate.br_hit && cfiUpdate.sc_hit
+  def ITTAGEMissBubble = ControlRedirectBubble && cfiUpdate.jr_hit && !cfiUpdate.pd.isRet
+  def RASMissBubble = ControlRedirectBubble && cfiUpdate.jr_hit && cfiUpdate.pd.isRet
+  def MemVioRedirectBubble = debugIsMemVio
+  def OtherRedirectBubble = !debugIsCtrl && !debugIsMemVio
+
+}

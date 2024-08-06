@@ -77,6 +77,8 @@ class CfiUpdateInfo(implicit p: Parameters) extends XSBundle with HasBPUParamete
   val specCnt = Vec(numBr, UInt(10.W))
   // need pipeline update
   val br_hit = Bool()
+  val jr_hit = Bool()
+  val sc_hit = Bool()
   val predTaken = Bool()
   val target = UInt(VAddrBits.W)
   val taken = Bool()
@@ -282,6 +284,10 @@ class Redirect(implicit p: Parameters) extends XSBundle {
   // def isUnconditional() = RedirectLevel.isUnconditional(level)
   def flushItself() = RedirectLevel.flushItself(level)
   // def isException() = RedirectLevel.isException(level)
+
+  // redirect type info for topdown
+  val debugIsCtrl = Bool()
+  val debugIsMemVio = Bool()
 }
 
 class ResetPregStateReq(implicit p: Parameters) extends XSBundle {

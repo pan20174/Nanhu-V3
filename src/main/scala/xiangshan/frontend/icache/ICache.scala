@@ -444,6 +444,10 @@ class ICacheIO(implicit p: Parameters) extends ICacheBundle
   val csr_parity_enable = Input(Bool())
 
   val flush       = Input(Bool())
+
+  // topdown
+  val icacheMissBubble = Output(Bool())
+  val itlbMissBubble = Output(Bool())
 }
 
 class ICache(val parentName:String = "Unknown")(implicit p: Parameters) extends LazyModule with HasICacheParameters {
@@ -544,6 +548,9 @@ class ICacheImp(outer: ICache) extends LazyModuleImp(outer) with HasICacheParame
   io.perfInfo := mainPipe.io.perfInfo
 
   io.fetch.resp     <>    mainPipe.io.fetch.resp
+
+  io.icacheMissBubble := mainPipe.io.topdownIcacheMiss
+  io.itlbMissBubble := mainPipe.io.topdownItlbMiss
 
   bus.b.ready := false.B
   bus.c.valid := false.B

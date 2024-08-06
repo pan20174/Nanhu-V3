@@ -164,6 +164,162 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   icache.io.hartId := io.hartId
   icache.io.fencei <> io.fencei
 
+  /**
+   * Topdown
+   */
+  object TopDownCounters extends Enumeration {
+    val NoStall = Value("NoStall") // Base
+
+    // frontend
+    val OverrideBubble = Value("OverrideBubble")
+    val FtqUpdateBubble = Value("FtqUpdateBubble")
+    // val ControlRedirectBubble = Value("ControlRedirectBubble")
+
+    val ICacheMissBubble = Value("ICacheMissBubble")
+    val ITLBMissBubble = Value("ITLBMissBubble")
+
+    val TAGEMissBubble = Value("TAGEMissBubble")
+    val SCMissBubble = Value("SCMissBubble")
+    val ITTAGEMissBubble = Value("ITTAGEMissBubble")
+    val RASMissBubble = Value("RASMissBubble")
+    val MemVioRedirectBubble = Value("MemVioRedirectBubble")
+    val OtherRedirectBubble = Value("OtherRedirectBubble")
+    val FtqFullStall = Value("FtqFullStall")
+
+
+    val BTBMissBubble = Value("BTBMissBubble")
+    val FetchFragBubble = Value("FetchFragBubble")
+
+    val BackendStall = Value("BackendStall")
+
+    val NumStallReasons = Value("NumStallReasons")
+  }
+
+  object TopdownStage extends Enumeration {
+    val BP1 = Value("BP1")
+    val BP2 = Value("BP2")
+    val BP3 = Value("BP3")
+    val FTQ = Value("FTQ")
+    val IF1 = Value("IF1")
+    val IF2 = Value("IF2")
+    val IF3 = Value("IF3")
+    val IBF = Value("IBF")
+
+    val NumStage = Value("NumStage")
+  }
+
+  class FrontendTopDownBundle(implicit p: Parameters) extends XSBundle {
+    val reasons = Vec(TopDownCounters.NumStallReasons.id, Bool())
+    val stallWidth = UInt(log2Ceil(PredictWidth).W)
+  }
+
+  val topdown_stages = RegInit(VecInit(Seq.fill(TopdownStage.NumStage.id)(0.U.asTypeOf(new FrontendTopDownBundle))))
+  topdown_stages(0) := 0.U.asTypeOf(new FrontendTopDownBundle)
+  for (i <- 0 until TopdownStage.NumStage.id - 1) {
+    topdown_stages(i + 1) := topdown_stages(i)
+  }
+  val bubbleSlots = WireInit(VecInit(Seq.fill(DecodeWidth)(0.U(log2Ceil(TopDownCounters.NumStallReasons.id).W))))
+
+  val backendRedirectValid = ftq.io.backendRedirect.valid
+  val backendRedirect = WireInit(0.U.asTypeOf(new BranchPredictionRedirect))
+  backendRedirect := ftq.io.backendRedirect.bits
+
+  val ctrlRedirect = backendRedirect.debugIsCtrl
+  val memRedirect  = backendRedirect.debugIsMemVio
+  val ControlBTBMissBubble = backendRedirect.ControlBTBMissBubble
+  val TAGEMissBubble       = backendRedirect.TAGEMissBubble
+  val SCMissBubble         = backendRedirect.SCMissBubble
+  val ITTAGEMissBubble     = backendRedirect.ITTAGEMissBubble
+  val RASMissBubble        = backendRedirect.RASMissBubble
+  val ifuRedirect          = ftq.io.ifuRedirect
+  val ftqFullStall         = !ftq.io.fromBpu.resp.ready
+  val overrideBubble       = bpu.io.topdownOverride
+  val ftqUpdateBubble      = bpu.io.topdownUpdateStall
+  val icacheMissBubble     = icache.io.icacheMissBubble
+  val itlbMissBubble       = icache.io.itlbMissBubble
+  val FetchFragBubble      = ibuffer.io.out.map(_.valid)
+  val wasteCount           = DecodeWidth.U - PopCount(FetchFragBubble)
+  val BackendStall         = io.backend.cfVec.map(_.ready)
+
+  when(icacheMissBubble) {
+    topdown_stages(5).reasons(TopDownCounters.ICacheMissBubble.id) := true.B
+  }
+  when(itlbMissBubble) {
+    topdown_stages(5).reasons(TopDownCounters.ITLBMissBubble.id) := true.B
+  }
+
+  when(backendRedirectValid){
+    when (ctrlRedirect) {
+      when(ControlBTBMissBubble) {
+        topdown_stages.foreach{ _.reasons(TopDownCounters.BTBMissBubble.id) := true.B }
+      }.elsewhen (TAGEMissBubble) {
+        topdown_stages.foreach{ _.reasons(TopDownCounters.TAGEMissBubble.id) := true.B }
+      }.elsewhen (SCMissBubble) {
+        topdown_stages.foreach{ _.reasons(TopDownCounters.SCMissBubble.id) := true.B }
+      }.elsewhen (ITTAGEMissBubble) {
+        topdown_stages.foreach{ _.reasons(TopDownCounters.ITTAGEMissBubble.id) := true.B }
+      }.elsewhen (RASMissBubble) {
+        topdown_stages.foreach{ _.reasons(TopDownCounters.RASMissBubble.id) := true.B }
+      }
+    }.elsewhen (memRedirect) {
+      topdown_stages.foreach{ _.reasons(TopDownCounters.MemVioRedirectBubble.id) := true.B }
+    }.otherwise {
+      topdown_stages.foreach{ _.reasons(TopDownCounters.OtherRedirectBubble.id) := true.B }
+    }
+  }.elsewhen(ifuRedirect){
+    topdown_stages.init.foreach{ _.reasons(TopDownCounters.BTBMissBubble.id) := true.B }
+  }
+  when(overrideBubble(0)) {
+    topdown_stages.head.reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(4).reasons(TopDownCounters.OverrideBubble.id) := true.B
+  }
+  when(overrideBubble(1)) {
+    topdown_stages(0).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(1).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(4).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(5).reasons(TopDownCounters.OverrideBubble.id) := true.B
+
+  }
+  when(ftqUpdateBubble(0)){
+    topdown_stages(0).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
+  }
+  when(ftqUpdateBubble(1)){
+    topdown_stages(1).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
+  }
+  when(ftqUpdateBubble(2)){
+    topdown_stages(2).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
+  }
+  when(ftqFullStall) {
+    topdown_stages.head.reasons(TopDownCounters.FtqFullStall.id) := true.B
+  }
+
+
+  val matchBubble = Wire(UInt(log2Up(TopDownCounters.NumStallReasons.id).W))
+  matchBubble := (TopDownCounters.NumStallReasons.id - 1).U - PriorityEncoder(topdown_stages.last.reasons.reverse)
+
+  bubbleSlots.foreach( _ := 0.U)
+  for (i <- 0 until DecodeWidth) {
+    when(i.U < wasteCount) {
+      bubbleSlots(DecodeWidth - i - 1) := matchBubble
+    }
+  }
+  when(!(wasteCount === DecodeWidth.U || topdown_stages.last.asUInt.orR)) {
+    for (i <- 0 until DecodeWidth) {
+      when(i.U < wasteCount) {
+        bubbleSlots(DecodeWidth - i - 1) := TopDownCounters.FetchFragBubble.id.U
+      }
+    }
+  }
+  when(!BackendStall.reduce(_&&_)) {
+    for (i <- 0 until DecodeWidth) {
+      when(!BackendStall(i)) {
+        bubbleSlots(i) := TopDownCounters.BackendStall.id.U
+      }
+    }
+  }
+
+  TopDownCounters.values.foreach(ctr => XSPerfAccumulate(ctr.toString(), PopCount(bubbleSlots.map(_ === ctr.id.U))))
+
   val frontendBubble = PopCount((0 until DecodeWidth).map(i => io.backend.cfVec(i).ready && !ibuffer.io.out(i).valid))
   XSPerfAccumulate("FrontendBubble", frontendBubble)
   io.frontendInfo.ibufFull := RegNext(ibuffer.io.full)
