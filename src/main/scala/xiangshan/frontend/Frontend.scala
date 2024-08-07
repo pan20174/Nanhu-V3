@@ -164,50 +164,6 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   icache.io.hartId := io.hartId
   icache.io.fencei <> io.fencei
 
-  /**
-   * Topdown
-   */
-  object TopDownCounters extends Enumeration {
-    val NoStall = Value("NoStall") // Base
-
-    // frontend
-    val OverrideBubble = Value("OverrideBubble")
-    val FtqUpdateBubble = Value("FtqUpdateBubble")
-    // val ControlRedirectBubble = Value("ControlRedirectBubble")
-
-    val ICacheMissBubble = Value("ICacheMissBubble")
-    val ITLBMissBubble = Value("ITLBMissBubble")
-
-    val TAGEMissBubble = Value("TAGEMissBubble")
-    val SCMissBubble = Value("SCMissBubble")
-    val ITTAGEMissBubble = Value("ITTAGEMissBubble")
-    val RASMissBubble = Value("RASMissBubble")
-    val MemVioRedirectBubble = Value("MemVioRedirectBubble")
-    val OtherRedirectBubble = Value("OtherRedirectBubble")
-    val FtqFullStall = Value("FtqFullStall")
-
-
-    val BTBMissBubble = Value("BTBMissBubble")
-    val FetchFragBubble = Value("FetchFragBubble")
-
-    val BackendStall = Value("BackendStall")
-
-    val NumStallReasons = Value("NumStallReasons")
-  }
-
-  object TopdownStage extends Enumeration {
-    val BP1 = Value("BP1")
-    val BP2 = Value("BP2")
-    val BP3 = Value("BP3")
-    val FTQ = Value("FTQ")
-    val IF1 = Value("IF1")
-    val IF2 = Value("IF2")
-    val IF3 = Value("IF3")
-    val IBF = Value("IBF")
-
-    val NumStage = Value("NumStage")
-  }
-
   class FrontendTopDownBundle(implicit p: Parameters) extends XSBundle {
     val reasons = Vec(TopDownCounters.NumStallReasons.id, Bool())
     val stallWidth = UInt(log2Ceil(PredictWidth).W)

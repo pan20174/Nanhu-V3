@@ -752,4 +752,8 @@ class MatchTriggerIO(implicit p: Parameters) extends XSBundle {
   val load = Output(Bool())
   val tdata2 = Output(UInt(64.W))
 }
+class StallReasonIO(width: Int) extends Bundle {
+  val reason = Output(Vec(width, UInt(log2Ceil(TopDownCounters.NumStallReasons.id).W)))
+  val backReason = Flipped(Valid(UInt(log2Ceil(TopDownCounters.NumStallReasons.id).W)))
+}
 

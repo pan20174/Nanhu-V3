@@ -499,6 +499,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   io.robio.lsq <> rob.io.lsq
 
   // performance counter
+  rename.io.stallReason := DontCare
+
   if (env.EnableTopDown) {
     val stage2Redirect_valid_when_pending = pendingRedirect && redirectDelay.valid
 
