@@ -923,7 +923,7 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
     ("sbuffer_idle      ", sbuffer_state === x_idle                                                                                    ),
     ("sbuffer_flush     ", sbuffer_state === x_drain_sbuffer                                                                           ),
     ("sbuffer_replace   ", sbuffer_state === x_replace                                                                                 ),
-    ("mpipe_resp_valid  ", io.dcache.main_pipe_hit_resp.fire                                                                         ),                                                                         ),
+    ("mpipe_resp_valid  ", io.dcache.main_pipe_hit_resp.fire                                                                         ),
     ("replay_resp_valid ", io.dcache.replay_resp.fire                                                                                ),
     ("coh_timeout       ", cohHasTimeOut                                                                                               ),
     ("sbuffer_1_4_valid ", (perf_valid_entry_count < (StoreBufferSize.U/4.U))                                                          ),
