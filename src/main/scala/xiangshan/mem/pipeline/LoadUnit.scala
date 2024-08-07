@@ -63,7 +63,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     // S0: reservationStation issueIn
     val rsIssueIn = Flipped(DecoupledIO(new ExuInput))
     val rsIdx = Input(new RsIdx)
-    val rsHasFeedback = Input(Bool())
     // S0: replayQueue issueIn
     val replayQIssueIn = Flipped(DecoupledIO(new ReplayQueueIssueBundle))
     // S0: fastReplay from LoadS1
@@ -149,7 +148,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_rsIssue.uop := rsIssueIn.bits.uop
   s0_rsIssue.vm := rsIssueIn.bits.vm
   s0_rsIssue.rsIdx := io.rsIdx
-  s0_rsIssue.rsHasFeedback := io.rsHasFeedback
   s0_rsIssue.vaddr := rsIssueIn.bits.src(0) + SignExt(rsIssueIn.bits.uop.ctrl.imm(11,0), VAddrBits)
   s0_rsIssue.replayCause.foreach(_ := false.B)
   s0_rsIssue.schedIndex := 0.U
@@ -160,7 +158,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_replayQIssue.uop := replayIssueIn.bits.uop
   s0_replayQIssue.vm := 0.U
   s0_replayQIssue.rsIdx := DontCare
-  s0_replayQIssue.rsHasFeedback := false.B
   s0_replayQIssue.vaddr := replayIssueIn.bits.vaddr
   s0_replayQIssue.replayCause.foreach(_ := false.B)
   s0_replayQIssue.schedIndex := replayIssueIn.bits.schedIndex
@@ -171,7 +168,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_fastRepIssue.uop := fastReplayIn.bits.uop
   s0_fastRepIssue.vm := 0.U
   s0_fastRepIssue.rsIdx := fastReplayIn.bits.rsIdx
-  s0_fastRepIssue.rsHasFeedback := fastReplayIn.bits.rsHasFeedback
   s0_fastRepIssue.vaddr := fastReplayIn.bits.vaddr
   s0_fastRepIssue.replayCause.foreach(_ := false.B)
   s0_fastRepIssue.schedIndex := fastReplayIn.bits.replay.schedIndex
@@ -197,7 +193,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   val s0_auxValid = s0_src_selector.reduce(_ || _)
   val s0_valid = s0_src_selector.reduce(_ || _)
   val s0_EnableMem = s0_sel_src.uop.loadStoreEnable
-  val s0_hasFeedback = s0_sel_src.rsHasFeedback
 
   val s0_req_tlb = io.tlb.req
   s0_req_tlb := DontCare
@@ -244,7 +239,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_out.bits.vaddr := s0_vaddr
   s0_out.bits.mask := s0_mask
   s0_out.bits.uop := s0_uop
-  s0_out.bits.rsHasFeedback := s0_hasFeedback
 
   private val s0_vaddr2 = SignExt(s0_sel_src.vaddr, XLEN)
   dontTouch(s0_vaddr)

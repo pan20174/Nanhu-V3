@@ -177,7 +177,6 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
 
   //Rs
   val rsIdx = new RsIdx
-  val rsHasFeedback = Bool()
 
   // debug
   val debugCause = UInt(LoadReplayCauses.allCauses.W)

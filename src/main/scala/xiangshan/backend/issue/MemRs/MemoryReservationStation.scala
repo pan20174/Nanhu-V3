@@ -117,10 +117,6 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
     val vectorAllocPregs = Vec(coreParams.vectorParameters.vRenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
     val ldStopMemRS = Input(Vec(LoadPipelineWidth, Bool()))
     val lduEarlyWakeUpIn = Input(Vec(loadUnitNum, Valid(new EarlyWakeUpInfo)))
-    val fromMemBlkInfo = new Bundle() {
-      val ldValidNum = Input(UInt())
-      val replayQFreeNum = Input(UInt(log2Up(LoadReplayQueueSize + 1).W))
-    }
   })
   require(outer.dispatchNode.in.length == 1)
   private val replayPortNum = 6
