@@ -757,17 +757,18 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     }
   }
   val redirectValidReg = RegNext(io.redirect.valid)
-  val redirectBegin = Reg(new RobPtr)
-  val redirectEnd = Reg(new RobPtr)
+  val redirectBegin = Reg(UInt(log2Up(RobSize).W))
+  val redirectEnd = Reg(UInt(log2Up(RobSize).W))
   when(io.redirect.valid){
-    redirectBegin := Mux(io.redirect.bits.flushItself(), io.redirect.bits.robIdx - 1.U, io.redirect.bits.robIdx)
-    redirectEnd := enqPtr
+    val specialRedirectPoint = enqPtr.value === deqPtr.value && io.redirect.bits.robIdx.value === deqPtr.value
+    redirectBegin := Mux(io.redirect.bits.flushItself() && !specialRedirectPoint, io.redirect.bits.robIdx.value - 1.U, io.redirect.bits.robIdx.value)
+    redirectEnd := enqPtr.value
   }
   for (i <- 0 until RobSize) {
    val needFlush = redirectValidReg && Mux(
-    redirectEnd > redirectBegin,
-    (i.U > redirectBegin.value) && (i.U < redirectEnd.value),
-    (i.U > redirectBegin.value) || (i.U < redirectEnd.value)
+    (redirectEnd > redirectBegin),
+    (i.U > redirectBegin) && (i.U < redirectEnd),
+    (i.U > redirectBegin) || (i.U < redirectEnd)
    )
    when(needFlush){
     valid(i) := false.B
