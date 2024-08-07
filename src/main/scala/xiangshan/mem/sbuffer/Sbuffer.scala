@@ -776,7 +776,7 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
       writeReq(EnsbufferWidth + i).bits.wline := false.B
     }
   }
-
+  io.dcache.amo_refill_to_mp_resp := DontCare
   when(io.dcache.amo_refill_to_mp_req) {
     io.dcache.amo_refill_to_mp_resp.word_idx := data(save_amo_row_data_id)(0).asUInt
     io.dcache.amo_refill_to_mp_resp.amo_mask := data(save_amo_row_data_id)(1).asUInt
@@ -906,7 +906,6 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
   XSPerfAccumulate("evenCanInsert", evenCanInsert)
   XSPerfAccumulate("oddCanInsert", oddCanInsert)
   XSPerfAccumulate("mainpipe_resp_valid", io.dcache.main_pipe_hit_resp.fire)
-  XSPerfAccumulate("refill_resp_valid", io.dcache.refill_hit_resp.fire)
   XSPerfAccumulate("replay_resp_valid", io.dcache.replay_resp.fire)
   XSPerfAccumulate("coh_timeout", cohHasTimeOut)
 
@@ -924,8 +923,7 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
     ("sbuffer_idle      ", sbuffer_state === x_idle                                                                                    ),
     ("sbuffer_flush     ", sbuffer_state === x_drain_sbuffer                                                                           ),
     ("sbuffer_replace   ", sbuffer_state === x_replace                                                                                 ),
-    ("mpipe_resp_valid  ", io.dcache.main_pipe_hit_resp.fire                                                                         ),
-    ("refill_resp_valid ", io.dcache.refill_hit_resp.fire                                                                            ),
+    ("mpipe_resp_valid  ", io.dcache.main_pipe_hit_resp.fire                                                                         ),                                                                         ),
     ("replay_resp_valid ", io.dcache.replay_resp.fire                                                                                ),
     ("coh_timeout       ", cohHasTimeOut                                                                                               ),
     ("sbuffer_1_4_valid ", (perf_valid_entry_count < (StoreBufferSize.U/4.U))                                                          ),

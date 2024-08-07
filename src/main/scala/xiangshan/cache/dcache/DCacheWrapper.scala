@@ -424,7 +424,7 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
   val req = Flipped(Decoupled(new DCacheLineReq))
 
   val main_pipe_hit_resp = ValidIO(new DCacheLineResp)
-  val refill_hit_resp = ValidIO(new DCacheLineResp)
+  val amo_hit_resp = ValidIO(new DCacheLineResp)
 
   val replay_resp = ValidIO(new DCacheLineResp)
 
@@ -436,7 +436,7 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
   val amo_refill_to_mp_req = Output(Bool())
   val amo_refill_to_mp_resp = Flipped(new AmoRefillToSbuffer)
 
-  def hit_resps: Seq[ValidIO[DCacheLineResp]] = Seq(main_pipe_hit_resp, refill_hit_resp)
+  def hit_resps: Seq[ValidIO[DCacheLineResp]] = Seq(main_pipe_hit_resp, amo_hit_resp)
 }
 
 class DCacheTLDBypassLduIO(implicit p: Parameters) extends DCacheBundle {
@@ -786,6 +786,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   io.lsu.store.replay_resp := RegNext(mainPipe.io.store_replay_resp)
   io.lsu.store.main_pipe_hit_resp := mainPipe.io.store_hit_resp
+  io.lsu.store.amo_hit_resp := mainPipe.io.amo_hit_resp
 
   arbiter(
     in = Seq(missQueue.io.main_pipe_req, atomicsReplayUnit.io.pipe_req),
@@ -800,7 +801,6 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 //  val mpStatus = mainPipe.io.status
   mainPipe.io.replace_req <> missQueue.io.replace_pipe_req
   missQueue.io.replace_pipe_resp := mainPipe.io.replace_resp
-  io.lsu.store.refill_hit_resp := DontCare
 
    //----------------------------------------
   //sbuffer
