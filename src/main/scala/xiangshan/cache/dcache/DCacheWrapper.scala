@@ -704,6 +704,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   val MainPipeMissReqPort = 0
 
   // Request
+//  val missReqArb = Module(new Arbiter(new MissReq, MissReqPortCount))
   val missReqArb = Module(new ArbiterFilterByCacheLineAddr(new MissReq, MissReqPortCount, blockOffBits, PAddrBits))
 
   missReqArb.io.in(MainPipeMissReqPort) <> mainPipe.io.miss_req
@@ -726,7 +727,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
     missReqArb.io.out.ready := false.B
   }
 
-  
+
   for (w <- 0 until LoadPipelineWidth) {
     //when not full and not conflict, only missqueue reject will replay
     io.lsu.load(w).resp.bits.mshr_full := missQueue.io.full
@@ -1026,7 +1027,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   XSPerfAccumulate("load_have_two_enq_valid", missReqArb.io.in(1).fire && missReqArb.io.in(2).valid && !missReqArb.io.in(0).valid)
   XSPerfAccumulate("load_confilct_with_mainpipe", (missReqArb.io.in(1).valid || missReqArb.io.in(2).valid) && missReqArb.io.in(0).fire)
-  
+
   XSPerfAccumulate("miss_queue_fire", PopCount(VecInit(missReqArb.io.in.map(_.fire))) >= 1.U)
   XSPerfAccumulate("miss_queue_muti_fire", PopCount(VecInit(missReqArb.io.in.map(_.fire))) > 1.U)
   XSPerfAccumulate("miss_queue_has_enq_req", PopCount(VecInit(missReqArb.io.in.map(_.valid))) >= 1.U)

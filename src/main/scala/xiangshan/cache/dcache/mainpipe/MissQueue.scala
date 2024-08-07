@@ -349,13 +349,13 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
       
   }
-  
+
   when(io.id >= ((cfg.nMissEntries).U - io.nMaxPrefetchEntry)){
      io.primary_ready := !req_valid
   }.otherwise{
     io.primary_ready := !req_valid && !io.req.bits.isPrefetch
   }
- 
+
   io.secondary_ready := should_merge(io.req.bits)
   io.secondary_reject := should_reject(io.req.bits)
 
@@ -415,7 +415,6 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   replace.refill := true.B
   replace.error := error
   replace.id := req.id
-  replace.pf_source := req.pf_source
   replace.pf_source := req.pf_source
 
 
@@ -709,7 +708,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     should_block_d := should_block_d_reg
   }
 
-  //amo 
+  //amo
   when(io.main_pipe_req.fire){
     isAMO := false.B
   }
