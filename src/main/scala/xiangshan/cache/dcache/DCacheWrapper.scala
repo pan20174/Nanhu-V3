@@ -303,6 +303,11 @@ class RefillToSbuffer(implicit p: Parameters) extends  DCacheBundle{
   val id = UInt(reqIdWidth.W)
   val refill_count = UInt((blockBytes/beatBytes).W)
 }
+class  AmoRefillToSbuffer(implicit p: Parameters) extends  DCacheBundle{
+  val word_idx = UInt(log2Up(blockWords).W)
+  val amo_data = UInt(DataBits.W)
+  val amo_mask = UInt((DataBits / 8).W)
+}
 
 class DCacheWordReqWithVaddr(implicit p: Parameters) extends DCacheWordReq {
   val vaddr = UInt(VAddrBits.W)
@@ -426,6 +431,10 @@ class DCacheToSbufferIO(implicit p: Parameters) extends DCacheBundle {
   val refill_row_data = ValidIO(new RefillToSbuffer)
   val refill_to_mp_req = ValidIO(Output(UInt(reqIdWidth.W)))
   val refill_to_mp_resp = Flipped(ValidIO(new DCacheLineReq))
+
+  val save_amo_row_data = ValidIO(new AmoRefillToSbuffer)
+  val amo_refill_to_mp_req = Output(Bool())
+  val amo_refill_to_mp_resp = Flipped(new AmoRefillToSbuffer)
 
   def hit_resps: Seq[ValidIO[DCacheLineResp]] = Seq(main_pipe_hit_resp, refill_hit_resp)
 }
@@ -793,10 +802,20 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
    //----------------------------------------
   //sbuffer
+  io.lsu.store.save_amo_row_data <> missQueue.io.save_amo_row_data
+  
   io.lsu.store.refill_row_data <> missQueue.io.refill_to_sbuffer
   io.lsu.store.refill_to_mp_req.valid := (missQueue.io.replace_pipe_req.fire && missQueue.io.replace_pipe_req.bits.source === STORE_SOURCE.U) || missQueue.io.main_pipe_req.fire
   io.lsu.store.refill_to_mp_req.bits := Mux(missQueue.io.replace_pipe_req.fire, missQueue.io.replace_pipe_req.bits.id, 0.U)
   mainPipe.io.refill_data <> io.lsu.store.refill_to_mp_resp
+
+  //amo
+  io.lsu.store.amo_refill_to_mp_req := missQueue.io.main_pipe_req.fire
+  when(missQueue.io.main_pipe_req.fire) {
+    mainPipe.io.atomic_req.bits.word_idx := io.lsu.store.amo_refill_to_mp_resp.word_idx
+    mainPipe.io.atomic_req.bits.amo_mask := io.lsu.store.amo_refill_to_mp_resp.amo_mask
+    mainPipe.io.atomic_req.bits.amo_data := io.lsu.store.amo_refill_to_mp_resp.amo_data
+  }
 
   //----------------------------------------
   // refill pipe

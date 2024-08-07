@@ -749,8 +749,7 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
     }
     assert(stateVec(io.dcache.refill_row_data.bits.id).state_inflight === true.B || stateVec(io.dcache.refill_row_data.bits.id).isInvalid())
   }
-  
-  //refill to dcache
+    //refill to dcache
   val refill_to_mp_req = io.dcache.refill_to_mp_req.valid 
   val refill_to_mp_id = RegEnable(io.dcache.refill_to_mp_req.bits, refill_to_mp_req)
 
@@ -759,6 +758,30 @@ class Sbuffer(implicit p: Parameters) extends DCacheModule with HasSbufferConst 
   io.dcache.refill_to_mp_resp.bits.data := data(refill_to_mp_id).asUInt
   io.dcache.refill_to_mp_resp.bits.mask := mask(refill_to_mp_id).asUInt
 
+  // save amo row data
+  val save_amo_row_data_id = 1
+  val amo_row_data =  VecInit(Seq.fill(3)(0.U(DataBits.W)))
+  when(io.dcache.save_amo_row_data.valid) {
+    amo_row_data(0) := io.dcache.save_amo_row_data.bits.word_idx
+    amo_row_data(1) := io.dcache.save_amo_row_data.bits.amo_mask
+    amo_row_data(2) := io.dcache.save_amo_row_data.bits.amo_data
+  }
+  when(io.dcache.save_amo_row_data.valid){
+    for(i <- 0 until amo_row_data.length){
+      writeReq(EnsbufferWidth + i).valid := true.B
+      writeReq(EnsbufferWidth + i).bits.wvec := UIntToOH(save_amo_row_data_id.U((log2Up(StoreBufferSize)).W))
+      writeReq(EnsbufferWidth + i).bits.mask := ~0.U(DataBytes.W)
+      writeReq(EnsbufferWidth + i).bits.data := amo_row_data(i)
+      writeReq(EnsbufferWidth + i).bits.wordOffset := i.U
+      writeReq(EnsbufferWidth + i).bits.wline := false.B
+    }
+  }
+
+  when(io.dcache.amo_refill_to_mp_req) {
+    io.dcache.amo_refill_to_mp_resp.word_idx := data(save_amo_row_data_id)(0).asUInt
+    io.dcache.amo_refill_to_mp_resp.amo_mask := data(save_amo_row_data_id)(1).asUInt
+    io.dcache.amo_refill_to_mp_resp.amo_data := data(save_amo_row_data_id)(2).asUInt
+  }
 
   // TODO: reuse cohCount
   (0 until StoreBufferSize).map(i => {
