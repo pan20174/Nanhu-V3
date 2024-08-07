@@ -459,6 +459,7 @@ class DCacheToLsuIO(implicit p: Parameters) extends DCacheBundle {
   val store = new DCacheToSbufferIO // for sbuffer
   val atomics  = Flipped(new AtomicWordIO)  // atomics reqs
   val release = ValidIO(new Release) // cacheline release hint for ld-ld violation check
+  val lduForwardMSHR = Flipped(Vec(LoadPipelineWidth ,new LduForwardFromMSHR))
 }
 
 class DCacheIO(implicit p: Parameters) extends DCacheBundle {
@@ -697,6 +698,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   ldu.head.io.lsu <> io.lsu.load.head
   ldu(1).io.lsu <> io.lsu.load(1)
 
+  missQueue.io.lduForward <> io.lsu.lduForwardMSHR
 
   //----------------------------------------
   // atomics
