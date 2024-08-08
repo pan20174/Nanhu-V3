@@ -47,6 +47,28 @@ class SelectRespArbiter(bankNum:Int, entryNum:Int, inNum:Int, haveEqual:Boolean)
   })
 }
 
+class SelectRespArbiterOldest(bankNum:Int, entryNum:Int, inNum:Int, haveEqual:Boolean)(implicit p: Parameters) extends Module{
+  val io = IO(new Bundle{
+    val in = Vec(inNum, Flipped(Decoupled(new SelectResp(bankNum, entryNum))))
+    val out = Decoupled(new SelectResp(bankNum, entryNum))
+    val chosen = Output(UInt(inNum.W))
+  })
+
+  private val selector = Module(new SelectPolicy(inNum, true, haveEqual))
+  selector.io.in.zip(io.in).foreach({case(si, in) =>
+    si.valid := in.valid
+    si.bits := in.bits.info.robPtr
+  })
+  io.out.valid := selector.io.out.valid
+  io.out.bits := Mux1H(selector.io.out.bits, io.in.map(_.bits))
+  io.chosen := selector.io.out.bits
+  val chosenLocal = selector.io.out.bits.asBools
+  io.in.map(_.ready).zipWithIndex.foreach({ case(r, i) =>
+    r := io.out.ready && chosenLocal(i)
+  })
+
+}
+
 
 class MemRSSelectRespArbiter(bankNum:Int, entryNum:Int, inNum:Int, haveEqual:Boolean)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
