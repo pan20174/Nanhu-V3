@@ -169,9 +169,9 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
     val stallWidth = UInt(log2Ceil(PredictWidth).W)
   }
 
-  val topdown_stages = RegInit(VecInit(Seq.fill(TopdownStage.NumStage.id)(0.U.asTypeOf(new FrontendTopDownBundle))))
+  val topdown_stages = RegInit(VecInit(Seq.fill(FrontendTopdownStage.NumStage.id)(0.U.asTypeOf(new FrontendTopDownBundle))))
   topdown_stages(0) := 0.U.asTypeOf(new FrontendTopDownBundle)
-  for (i <- 0 until TopdownStage.NumStage.id - 1) {
+  for (i <- 0 until FrontendTopdownStage.NumStage.id - 1) {
     topdown_stages(i + 1) := topdown_stages(i)
   }
   val bubbleSlots = WireInit(VecInit(Seq.fill(DecodeWidth)(0.U(log2Ceil(TopDownCounters.NumStallReasons.id).W))))
@@ -198,10 +198,10 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   val BackendStall         = io.backend.cfVec.map(_.ready)
 
   when(icacheMissBubble) {
-    topdown_stages(5).reasons(TopDownCounters.ICacheMissBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.IF2.id).reasons(TopDownCounters.ICacheMissBubble.id) := true.B
   }
   when(itlbMissBubble) {
-    topdown_stages(5).reasons(TopDownCounters.ITLBMissBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.IF2.id).reasons(TopDownCounters.ITLBMissBubble.id) := true.B
   }
 
   when(backendRedirectValid){
@@ -226,27 +226,27 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
     topdown_stages.init.foreach{ _.reasons(TopDownCounters.BTBMissBubble.id) := true.B }
   }
   when(overrideBubble(0)) {
-    topdown_stages.head.reasons(TopDownCounters.OverrideBubble.id) := true.B
-    topdown_stages(4).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP1.id).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.IF1.id).reasons(TopDownCounters.OverrideBubble.id) := true.B
   }
   when(overrideBubble(1)) {
-    topdown_stages(0).reasons(TopDownCounters.OverrideBubble.id) := true.B
-    topdown_stages(1).reasons(TopDownCounters.OverrideBubble.id) := true.B
-    topdown_stages(4).reasons(TopDownCounters.OverrideBubble.id) := true.B
-    topdown_stages(5).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP1.id).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP2.id).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.IF1.id).reasons(TopDownCounters.OverrideBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.IF2.id).reasons(TopDownCounters.OverrideBubble.id) := true.B
 
   }
   when(ftqUpdateBubble(0)){
-    topdown_stages(0).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP1.id).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
   }
   when(ftqUpdateBubble(1)){
-    topdown_stages(1).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP2.id).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
   }
   when(ftqUpdateBubble(2)){
-    topdown_stages(2).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP3.id).reasons(TopDownCounters.FtqUpdateBubble.id) := true.B
   }
   when(ftqFullStall) {
-    topdown_stages.head.reasons(TopDownCounters.FtqFullStall.id) := true.B
+    topdown_stages(FrontendTopdownStage.BP1.id).reasons(TopDownCounters.FtqFullStall.id) := true.B
   }
 
 

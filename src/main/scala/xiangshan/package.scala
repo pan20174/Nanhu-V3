@@ -449,17 +449,16 @@ package object xiangshan {
     val NumStallReasons = Value("NumStallReasons")
   }
 
-  object TopdownStage extends Enumeration {
-    val BP1 = Value("BP1")
-    val BP2 = Value("BP2")
-    val BP3 = Value("BP3")
-    val FTQ = Value("FTQ")
-    val IF1 = Value("IF1")
-    val IF2 = Value("IF2")
-    val IF3 = Value("IF3")
-    val IBF = Value("IBF")
+  object FrontendTopdownStage extends Enumeration {
+    val BP1 = Value("BP1") // 0
+    val BP2 = Value("BP2") // 1
+    val BP3 = Value("BP3") // 2
+    val FTQ = Value("FTQ") // 3
+    val IF1 = Value("IF1") // 4
+    val IF2 = Value("IF2") // 5
+    val IF3 = Value("IF3") // 6
+    val IBF = Value("IBF") // 7
 
     val NumStage = Value("NumStage")
   }
-
 }
