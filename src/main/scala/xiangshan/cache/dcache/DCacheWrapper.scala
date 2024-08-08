@@ -409,6 +409,8 @@ class DCacheLoadIO(implicit p: Parameters) extends DCacheWordIO
   // cycle 2: hit signal
   val s2_hit = Input(Bool()) // hit signal for lsu,
 
+  //pf can use missqArb.in
+  val pf_can_use_mqArb = Output(Bool())
   // debug
   val debug_s1_hit_way = Input(UInt(nWays.W))
 }
@@ -616,10 +618,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   pf_miss_req.addr := pf_req_s2.paddr
   pf_miss_req.vaddr := pf_req_s2.getVaddr()
   pf_miss_req.pf_source := pf_req_s2.pf_source.value
-
   val miss_invalid = Cat(Seq(!mainPipe.io.miss_req.valid) ++ ldu.map(!_.io.miss_req.valid))
-  val pfReqCanSend = miss_invalid.andR
-  // val s2_idx = PriorityEncoder(Reverse(miss_valid))
 
   //----------------------------------------
   // prefetch array
@@ -720,9 +719,21 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
   for (w <- 0 until LoadPipelineWidth) { missReqArb.io.in(w + 1) <> ldu(w).io.miss_req }
 
   //prefetch
+  val pf_arb_higher_ld0 = RegNext(RegNext(io.lsu.load(0).pf_can_use_mqArb))
+  val pf_arb_higher_ld1 = RegNext(RegNext(io.lsu.load(1).pf_can_use_mqArb))
+  
+  //loadunit0 do not need send missreq and loadunit1 is rsIssue load, will use missArb.in(1)
+  
+  val pfReqCanSendMp = !mainPipe.io.miss_req.valid && pf_arb_higher_ld0
+  val pfReqCanSendLd0 = (!ldu(0).io.miss_req.valid || !mainPipe.io.miss_req.valid) && pf_arb_higher_ld1
+  val pfReqCanSend = miss_invalid.andR || pfReqCanSendMp || pfReqCanSendLd0
+  val select_idx = Mux(!mainPipe.io.miss_req.valid, 0.U, 
+                    (Mux(!ldu(0).io.miss_req.valid, 1.U,
+                        2.U))
+                    )
   when(pf_req_s2_valid && !s2_hit && pfReqCanSend){
-    missReqArb.io.in(0).valid := true.B
-    missReqArb.io.in(0).bits := pf_miss_req
+    missReqArb.io.in(select_idx).valid := true.B
+    missReqArb.io.in(select_idx).bits := pf_miss_req
     // assert( !miss_valid(s2_idx) && RegNext(RegNext(pipe_invalid(idx))))
   }
 

@@ -930,7 +930,7 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.error.opType.release := DontCare
   io.error.opType.atom := RegEnable(s2_req.isAMO && !s2_req.probe, s2_fire)
 
-  io.forwardRegState(0).valid := io.replace_req.fire && (io.replace_req.bits.source =/= STORE_SOURCE.U)
+  io.forwardRegState(0).valid := io.replace_req.valid && (io.replace_req.bits.source =/= STORE_SOURCE.U)
   io.forwardRegState(0).paddr := io.replace_req.bits.addr
   io.forwardRegState(0).data := io.replace_req.bits.store_data
 

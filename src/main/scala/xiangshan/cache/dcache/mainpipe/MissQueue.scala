@@ -569,9 +569,12 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
       for(i <- 0 until 8){
         dataSlipt(i) := reg.data((i + 1) * DataBits - 1, i * DataBits)
       }
-
+      
       validVec(idx) := reqVReg && reg.valid && (get_block(reg.paddr) === get_block(reqPaddrReg))
       dataVec(idx) := dataSlipt(bankAddr)
+      when(idx.U === 0.U){
+        XSPerfAccumulate("reject addr mathc but not forward data", reqVReg && io.replace_pipe_req.valid && get_block(reg.paddr) === get_block(reqPaddrReg) && !reg.valid)
+      }      
     }})
 
     assert(PopCount(validVec) <= 1.U)

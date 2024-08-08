@@ -142,6 +142,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.rsIssueIn.ready := true.B
   io.replayQIssueIn.ready := true.B
   io.fastReplayIn.ready := true.B
+  io.dcache.pf_can_use_mqArb := !fastReplayIn.valid && !replayIssueIn.valid
 
   val s0_rsIssue = Wire(new LoadPipelineBundleS0)
   s0_rsIssue.uop := rsIssueIn.bits.uop
