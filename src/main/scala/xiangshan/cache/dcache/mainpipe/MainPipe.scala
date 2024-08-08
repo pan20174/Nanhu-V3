@@ -119,6 +119,8 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
     // atmoics
     val atomic_req = Flipped(DecoupledIO(new MainPipeReq))
     val atomic_resp = ValidIO(new AtomicsResp)
+    //store buffer
+    val amo_hit_resp = ValidIO(new DCacheLineResp)
     // replace
     val replace_req = Flipped(DecoupledIO(new MainPipeReq))
     val replace_resp = ValidIO(UInt(log2Up(cfg.nMissEntries).W))
@@ -792,7 +794,13 @@ class MainPipe(implicit p: Parameters) extends DCacheModule with HasPerfEvents w
   io.store_hit_resp.bits.data := DontCare
   io.store_hit_resp.bits.miss := false.B
   io.store_hit_resp.bits.replay := false.B
-  io.store_hit_resp.bits.id := s3_req.id
+  io.store_hit_resp.bits.id := s3_req.id  //flush cache data in sbuffer_id == s3_req.id
+
+  io.amo_hit_resp.valid := s3_valid && s3_miss_can_go
+  io.amo_hit_resp.bits.data := DontCare
+  io.amo_hit_resp.bits.miss := false.B
+  io.amo_hit_resp.bits.replay := false.B
+  io.amo_hit_resp.bits.id := 1.U  //flsuh amo data&mask&word_idx in sbuffer_id == 1
 
   io.error_flag_write.valid := s3_fire && update_meta && s3_l2_error
   io.error_flag_write.bits.idx := s3_idx

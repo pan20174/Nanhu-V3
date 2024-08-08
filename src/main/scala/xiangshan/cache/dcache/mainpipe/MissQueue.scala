@@ -349,13 +349,13 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
       
   }
-
+  
   when(io.id >= ((cfg.nMissEntries).U - io.nMaxPrefetchEntry)){
      io.primary_ready := !req_valid
   }.otherwise{
     io.primary_ready := !req_valid && !io.req.bits.isPrefetch
   }
-
+ 
   io.secondary_ready := should_merge(io.req.bits)
   io.secondary_reject := should_reject(io.req.bits)
 
@@ -493,6 +493,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     val mem_finish = DecoupledIO(new TLBundleE(edge.bundle))
 
     val refill_to_sbuffer = ValidIO(new RefillToSbuffer)
+    val save_amo_row_data = ValidIO(new AmoRefillToSbuffer)
 
     val replace_pipe_req = DecoupledIO(new MainPipeReq)
     val replace_pipe_resp = Flipped(ValidIO(UInt(log2Up(cfg.nMissEntries).W)))
@@ -547,7 +548,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val should_block_d = WireInit(false.B)
   val should_block_d_reg = RegNext(should_block_d, false.B)
 
-  val isAMO = RegInit(false.B)
+  // val isAMO = RegInit(false.B)
 
 
   when(io.req.valid){
@@ -605,10 +606,16 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   val refill_row_data = io.mem_grant.bits.data
   val (_, _, refill_done, refill_count) = edge.count(io.mem_grant)
 
+  io.save_amo_row_data.valid := false.B
+  io.save_amo_row_data.bits := DontCare
   when(io.req.bits.isAMO && io.req.fire){
-    refill_data_raw(0) := Cat(io.req.bits.amo_mask, io.req.bits.word_idx)
-    refill_data_raw(1) := io.req.bits.amo_data
-    isAMO := true.B
+    // refill_data_raw(0) := Cat(io.req.bits.amo_mask, io.req.bits.word_idx)
+    // refill_data_raw(1) := io.req.bits.amo_data
+    // isAMO := true.B
+    io.save_amo_row_data.valid := true.B
+    io.save_amo_row_data.bits.word_idx := io.req.bits.word_idx
+    io.save_amo_row_data.bits.amo_mask := io.req.bits.amo_mask
+    io.save_amo_row_data.bits.amo_data := io.req.bits.amo_data
   }
   val hasData = edge.hasData(io.mem_grant.bits)
 
@@ -650,7 +657,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
           }
         }.elsewhen(e.io.req_source === LOAD_SOURCE.U || e.io.req_source === DCACHE_PREFETCH_SOURCE.U) {
           io.mem_grant.ready := !should_block_d && e.io.mem_grant.ready
-          when(io.mem_grant.fire && hasData && !isAMO){
+          when(io.mem_grant.fire && hasData ){
             refill_data_raw(refill_count) := refill_row_data
             difftest_data_raw(refill_count) := refill_row_data
             refill_ldq_data_raw(refill_count) := refill_row_data
@@ -708,17 +715,13 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     should_block_d := should_block_d_reg
   }
 
-  //amo
-  when(io.main_pipe_req.fire){
-    isAMO := false.B
-  }
 
 
 
   fastArbiter(entries.map(_.io.main_pipe_req), io.main_pipe_req, Some("main_pipe_req"))
-  io.main_pipe_req.bits.word_idx := refill_data_raw(0)(log2Up(blockWords) - 1, 0)
-  io.main_pipe_req.bits.amo_mask := refill_data_raw(0)(log2Up(blockWords) + (DataBits / 8) - 1, log2Up(blockWords))
-  io.main_pipe_req.bits.amo_data := refill_data_raw(1)(DataBits - 1, 0)
+  // io.main_pipe_req.bits.word_idx := refill_data_raw(0)(log2Up(blockWords) - 1, 0)
+  // io.main_pipe_req.bits.amo_mask := refill_data_raw(0)(log2Up(blockWords) + (DataBits / 8) - 1, log2Up(blockWords))
+  // io.main_pipe_req.bits.amo_data := refill_data_raw(1)(DataBits - 1, 0)
 
   io.probe_block := Cat(probe_block_vec).orR
 
