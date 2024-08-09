@@ -121,6 +121,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   io.beu_errors.dcache := exuBlock.io.l1Error.toL1BusErrorUnitInfo()
 
   frontend.io.backend <> ctrlBlock.io.frontend
+  ctrlBlock.io.topdown.reasonsIn := frontend.io.topdown.reasonsOut
   frontend.io.sfence := fenceio.sfence
   frontend.io.tlbCsr <> csrioIn.tlb
   frontend.io.csrCtrl <> csrioIn.customCtrl

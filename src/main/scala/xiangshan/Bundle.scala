@@ -752,8 +752,9 @@ class MatchTriggerIO(implicit p: Parameters) extends XSBundle {
   val load = Output(Bool())
   val tdata2 = Output(UInt(64.W))
 }
-class StallReasonIO(width: Int) extends Bundle {
-  val reason = Output(Vec(width, UInt(log2Ceil(TopDownCounters.NumStallReasons.id).W)))
-  val backReason = Flipped(Valid(UInt(log2Ceil(TopDownCounters.NumStallReasons.id).W)))
-}
+
+  class TopDownBundle(implicit p: Parameters) extends XSBundle {
+    val reasons = Vec(TopDownCounters.NumStallReasons.id, Bool())
+    // val stallWidth = UInt(log2Ceil(PredictWidth).W)
+  }
 

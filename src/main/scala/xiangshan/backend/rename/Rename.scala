@@ -76,11 +76,6 @@ class Rename(implicit p: Parameters) extends XSModule  with HasCircularQueuePtrH
     val snptIsFull= Input(Bool())
     val vlUpdate = Input(Valid(UInt(log2Ceil(VLEN + 1).W)))
     val dispatchIn = Vec(RenameWidth, Input(Valid(new RobPtr)))
-    // topdown bundle
-    val stallReason = new Bundle {
-      val in = Flipped(new StallReasonIO(RenameWidth))
-      val out = new StallReasonIO(RenameWidth)
-    }
   })
 
   // create free list and rat
@@ -507,19 +502,4 @@ class Rename(implicit p: Parameters) extends XSModule  with HasCircularQueuePtrH
     !vtyperename.io.canAccept)) > 1.U)
   // other stall
     val otherStall = notRecStall && !intFlStall && !fpFlStall && !vtypeRenameStall
-  io.stallReason.in.backReason.valid := io.stallReason.out.backReason.valid || !io.in.head.ready
-  io.stallReason.in.backReason.bits := Mux(io.stallReason.out.backReason.valid, io.stallReason.out.backReason.bits,
-    MuxCase(TopDownCounters.OtherCoreStall.id.U, Seq(
-      ctrlRecStall     -> TopDownCounters.ControlRecoveryStall.id.U,
-      mvioRecStall     -> TopDownCounters.MemVioRecoveryStall.id.U,
-      otherRecStall    -> TopDownCounters.OtherRecoveryStall.id.U,
-      intFlStall       -> TopDownCounters.IntFlStall.id.U,
-      fpFlStall        -> TopDownCounters.FpFlStall.id.U,
-      vtypeRenameStall -> TopDownCounters.vtypeRenameStall.id.U,
-      multiFlStall     -> TopDownCounters.MultiFlStall.id.U,
-    )
-  ))
-  io.stallReason.out.reason.zip(io.stallReason.in.reason).zip(io.in.map(_.valid)).foreach { case ((out, in), valid) =>
-    out := Mux(io.stallReason.in.backReason.valid, io.stallReason.in.backReason.bits, in)
-  }
 }

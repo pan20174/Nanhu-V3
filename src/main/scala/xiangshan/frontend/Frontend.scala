@@ -64,6 +64,9 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
         val bpWrong = Output(UInt(XLEN.W))
       }
     }
+    val topdown = new Bundle{
+      val reasonsOut = Output(Vec(TopDownCounters.NumStallReasons.id, Bool()))
+    }
   })
   //fence.i signals bundle not used, tie to default value
   //io.fencei.done := true.B
@@ -164,13 +167,9 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   icache.io.hartId := io.hartId
   icache.io.fencei <> io.fencei
 
-  class FrontendTopDownBundle(implicit p: Parameters) extends XSBundle {
-    val reasons = Vec(TopDownCounters.NumStallReasons.id, Bool())
-    val stallWidth = UInt(log2Ceil(PredictWidth).W)
-  }
-
-  val topdown_stages = RegInit(VecInit(Seq.fill(FrontendTopdownStage.NumStage.id)(0.U.asTypeOf(new FrontendTopDownBundle))))
-  topdown_stages(0) := 0.U.asTypeOf(new FrontendTopDownBundle)
+  val topdown_stages = RegInit(VecInit(Seq.fill(FrontendTopdownStage.NumStage.id)(0.U.asTypeOf(new TopDownBundle))))
+  // Top-down reasoning is passed down stage by stage along the pipeline
+  topdown_stages(0) := 0.U.asTypeOf(new TopDownBundle)
   for (i <- 0 until FrontendTopdownStage.NumStage.id - 1) {
     topdown_stages(i + 1) := topdown_stages(i)
   }
@@ -249,7 +248,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
     topdown_stages(FrontendTopdownStage.BP1.id).reasons(TopDownCounters.FtqFullStall.id) := true.B
   }
 
-
+  io.topdown.reasonsOut := topdown_stages(FrontendTopdownStage.IBF.id).reasons
   val matchBubble = Wire(UInt(log2Up(TopDownCounters.NumStallReasons.id).W))
   matchBubble := (TopDownCounters.NumStallReasons.id - 1).U - PriorityEncoder(topdown_stages.last.reasons.reverse)
 

@@ -49,6 +49,10 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
     val flush = Input(Bool())
     val robempty = Input(Bool())
     val singleStep = Input(Bool())
+    val topdown = new Bundle{
+      val specExecBlked = Output(Vec(vecLen, Bool()))
+      val outEmpty = Output(Vec(vecLen, Bool()))
+    }
   })
 
   //reg
@@ -166,6 +170,10 @@ class RouterQueue(vecLen:Int, outNum:Int, size:Int)(implicit p: Parameters) exte
       ptr := ptr + actualDeqNum
     }
   })
+
+  // top-down io connection
+  io.topdown.specExecBlked := io.out(0).zipWithIndex.map{case (out, i) => out.ready && (i.U < numValidEntries) && !thisCanActualOut(i) && !(io.redirect.valid || io.flush)}
+  io.topdown.outEmpty := io.out(0).zipWithIndex.map{case (out, i) => out.ready && (i.U >= numValidEntries) && thisCanActualOut(i) && !(io.redirect.valid || io.flush)}
 
   //perf counter
   XSPerfAccumulate("decqueue_in_fire", actualEnqNum)

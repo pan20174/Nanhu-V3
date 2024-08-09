@@ -39,6 +39,10 @@ import xiangshan.backend.rob.{Rob, RobCSRIO, RobLsqIO, RobPtr, RollBackList}
 import xiangshan.backend.issue.DqDispatchNode
 import xiangshan.backend.execute.fu.csr.vcsr._
 import xs.utils.perf.HasPerfLogging
+import xiangshan.CtrlBlkTopdownStage
+import xiangshan.frontend.BranchPredictionRedirect
+import huancun.CtrlReq
+import xiangshan.CtrlBlkTopdownStage
 
 class CtrlToFtqIO(implicit p: Parameters) extends XSBundle {
   val rob_commits = Vec(CommitWidth, Valid(new RobCommitInfo))
@@ -103,6 +107,10 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
     val lsqVecDeqCnt = Input(new LsqVecDeqIO)
     val vecFaultOnlyFirst = Output(ValidIO(new ExuOutput))
+
+    val topdown = new Bundle{
+      val reasonsIn  = Input(Vec(TopDownCounters.NumStallReasons.id, Bool()))
+    }
   })
   require(outer.dispatchNode.out.count(_._2._1.isIntRs) == 1)
   require(outer.dispatchNode.out.count(_._2._1.isFpRs) == 1)
@@ -498,8 +506,62 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   // rob to mem block
   io.robio.lsq <> rob.io.lsq
 
-  // performance counter
-  rename.io.stallReason := DontCare
+  val topdown_stages = RegInit(VecInit(Seq.fill(CtrlBlkTopdownStage.NumStage.id)(
+    VecInit(Seq.fill(RenameWidth)(0.U.asTypeOf(new TopDownBundle)))
+  )))
+
+  // Top-down reasoning is passed down stage by stage along the pipeline
+  topdown_stages(CtrlBlkTopdownStage.DECP.id).foreach{_.reasons := io.topdown.reasonsIn}
+  for (i <- 0 until CtrlBlkTopdownStage.NumStage.id - 1) {
+    topdown_stages(i + 1) := topdown_stages(i)
+  }
+
+  val backendRedirect = WireInit(0.U.asTypeOf(new BranchPredictionRedirect))
+  backendRedirect := redirectDelay.bits
+  val ctrlRedirect = backendRedirect.debugIsCtrl
+  val memRedirect  = backendRedirect.debugIsMemVio
+  val ControlBTBMissBubble = backendRedirect.ControlBTBMissBubble
+  val TAGEMissBubble       = backendRedirect.TAGEMissBubble
+  val SCMissBubble         = backendRedirect.SCMissBubble
+  val ITTAGEMissBubble     = backendRedirect.ITTAGEMissBubble
+  val RASMissBubble        = backendRedirect.RASMissBubble
+
+  when(redirectDelay.valid){
+    when (ctrlRedirect) {
+      when(ControlBTBMissBubble) {
+        topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.BTBMissBubble.id) := true.B }}
+      }.elsewhen (TAGEMissBubble) {
+        topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.TAGEMissBubble.id) := true.B }}
+      }.elsewhen (SCMissBubble) {
+        topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.SCMissBubble.id) := true.B }}
+      }.elsewhen (ITTAGEMissBubble) {
+        topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.ITTAGEMissBubble.id) := true.B }}
+      }.elsewhen (RASMissBubble) {
+        topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.RASMissBubble.id) := true.B }}
+      }
+    }.elsewhen (memRedirect) {
+      topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.MemVioRedirectBubble.id) := true.B }}
+    }.otherwise {
+      topdown_stages.foreach{ _.foreach{_.reasons(TopDownCounters.OtherRedirectBubble.id) := true.B }}
+    }
+  }
+  // Update Top-down reasoning in Decode-DecPipe stage
+  decQueue.io.topdown.specExecBlked.zipWithIndex.map{
+    case (blked, i) => when(blked){
+      topdown_stages(CtrlBlkTopdownStage.DECP.id)(i).reasons(TopDownCounters.SpecExecBubble.id) := true.B
+    }
+  }
+  decQueue.io.topdown.outEmpty.zipWithIndex.map{
+    case (empty, i) => when(empty){
+      topdown_stages(CtrlBlkTopdownStage.DECP.id)(i).reasons(TopDownCounters.DecQueueHungryBubble.id) := true.B
+    }
+  }
+  decQueue.io.out(0).zipWithIndex.map{
+    case (out, i) => when(!out.ready){
+      topdown_stages(CtrlBlkTopdownStage.DECP.id)(i).reasons(TopDownCounters.BackendStall.id) := true.B
+    }
+  }
+  // Update Top-down reasoning in Rename-Dispatch stage
 
   if (env.EnableTopDown) {
     val stage2Redirect_valid_when_pending = pendingRedirect && redirectDelay.valid

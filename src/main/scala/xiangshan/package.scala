@@ -412,6 +412,7 @@ package object xiangshan {
   object TopDownCounters extends Enumeration {
     val NoStall = Value("NoStall") // Base
 
+    val DecQueueHungryBubble = Value("DecQueueEmptyBubble") // decQueue Pipe execute efficiency fast than enq
     // frontend
     val OverrideBubble = Value("OverrideBubble")
     val FtqUpdateBubble = Value("FtqUpdateBubble")
@@ -432,6 +433,7 @@ package object xiangshan {
     val BTBMissBubble = Value("BTBMissBubble")
     val FetchFragBubble = Value("FetchFragBubble")
 
+    val SpecExecBubble = Value("SpecExecBubble")
     val BackendStall = Value("BackendStall")
 
     // freelist full
@@ -458,6 +460,12 @@ package object xiangshan {
     val IF2 = Value("IF2") // 5
     val IF3 = Value("IF3") // 6
     val IBF = Value("IBF") // 7
+
+    val NumStage = Value("NumStage")
+  }
+  object CtrlBlkTopdownStage extends Enumeration {
+    val DECP = Value("DecodePipe") // 0
+    val REN_DIS = Value("RenameDispatch")   // 1
 
     val NumStage = Value("NumStage")
   }
