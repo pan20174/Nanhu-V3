@@ -25,6 +25,7 @@ import chisel3.util._
 import xiangshan.backend.execute.fu.FuConfigs.i2fCfg
 import xiangshan.backend.execute.fu.HasPipelineReg
 import xs.utils.{SignExt, ZeroExt}
+import fudian._
 
 class IntToFPDataModule(latency: Int)(implicit p: Parameters) extends FPUDataModule {
   val regEnables = IO(Input(Vec(latency, Bool())))
@@ -43,39 +44,50 @@ class IntToFPDataModule(latency: Int)(implicit p: Parameters) extends FPUDataMod
   val ctrlReg = RegEnable(ctrl, regEnables(0))
   val rmReg = RegEnable(rm, regEnables(0))
 
-  // stage2
-  val s2_tag = ctrlReg.typeTagOut
-  val s2_wflags = ctrlReg.wflags
-  val s2_typ = ctrlReg.typ
+  // // stage2
+  // val s2_tag = ctrlReg.typeTagOut
+  // val s2_wflags = ctrlReg.wflags
+  // val s2_typ = ctrlReg.typ
 
-  val mux = Wire(new Bundle() {
-    val data = UInt(XLEN.W)
-    val exc = UInt(5.W)
-  })
+  // val mux = Wire(new Bundle() {
+  //   val data = UInt(XLEN.W)
+  //   val exc = UInt(5.W)
+  // })
 
-  mux.data := intValue
-  mux.exc := 0.U
+  // mux.data := intValue
+  // mux.exc := 0.U
 
-  when(s2_wflags){
-    val i2fResults = for(t <- FPU.ftypes) yield {
-      val i2f = Module(new fudian.IntToFP(t.expWidth, t.precision))
-      i2f.io.sign := ~s2_typ(0)
-      i2f.io.long := s2_typ(1)
-      i2f.io.int := intValue
-      i2f.io.rm := rmReg
-      (i2f.io.result, i2f.io.fflags)
-    }
-    val (data, exc) = i2fResults.unzip
-    mux.data := VecInit(data)(s2_tag)
-    mux.exc := VecInit(exc)(s2_tag)
-  }
+  // when(s2_wflags){
+  //   val i2fResults = for(t <- FPU.ftypes) yield {
+  //     val i2f = Module(new fudian.IntToFP(t.expWidth, t.precision))
+  //     i2f.io.sign := ~s2_typ(0)
+  //     i2f.io.long := s2_typ(1)
+  //     i2f.io.int := intValue
+  //     i2f.io.rm := rmReg
+  //     (i2f.io.result, i2f.io.fflags)
+  //   }
+  //   val (data, exc) = i2fResults.unzip
+  //   mux.data := VecInit(data)(s2_tag)
+  //   mux.exc := VecInit(exc)(s2_tag)
+  // }
 
-  // stage3
-  val s3_out = RegEnable(mux, regEnables(1))
-  val s3_tag = RegEnable(s2_tag, regEnables(1))
+  // // stage3
+  // val s3_out = RegEnable(mux, regEnables(1))
+  // val s3_tag = RegEnable(s2_tag, regEnables(1))
 
-  fflags := s3_out.exc
-  io.out.data := FPU.box(s3_out.data, s3_tag)
+  val intToFP_new = Module(new IntToFP_new)
+  intToFP_new.io.src1 := in
+  intToFP_new.io.tagOut := ctrl.typeTagOut
+  intToFP_new.io.wflag := ctrl.wflags
+  intToFP_new.io.typ := ctrl.typ
+  intToFP_new.io.rm := rm
+  intToFP_new.io.regEnable := regEnables(0)
+
+  io.out.data := RegEnable(intToFP_new.io.data, regEnables(1))
+  io.out.fflags := RegEnable(intToFP_new.io.fflags, regEnables(1))
+
+  // fflags := s3_out.exc
+  // io.out.data := FPU.box(s3_out.data, s3_tag)
 }
 
 class IntToFP(implicit p: Parameters) extends FPUSubModule with HasPipelineReg {
